@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { WorkflowConfig } from './builders/workflow-config';
 
 export type EditorNode = {
@@ -39,8 +39,9 @@ export function WorkflowEditor({ graph, onChange, statuses = {}, outputs = {} }:
   const [selected, setSelected] = useState<string | null>(graph.nodes[0]?.id ?? null);
   const [edgeStart, setEdgeStart] = useState<string | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<number | null>(null);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
   const canvasRef = useRef<HTMLDivElement>(null);
+  const fittedNodeCount = useRef(0);
   const selectedNode = graph.nodes.find((node) => node.id === selected);
   const bindings = useMemo(() => {
     const values = ['{{trigger.email}}', '{{trigger.domain}}'];
@@ -48,6 +49,40 @@ export function WorkflowEditor({ graph, onChange, statuses = {}, outputs = {} }:
     Object.keys(outputs).forEach((key) => values.push(`{{${key}}}`));
     return values;
   }, [graph.nodes, outputs]);
+
+  const fitGraph = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || graph.nodes.length === 0) return;
+    const bounds = graph.nodes.reduce(
+      (result, node) => ({
+        minX: Math.min(result.minX, node.position.x),
+        minY: Math.min(result.minY, node.position.y),
+        maxX: Math.max(result.maxX, node.position.x + 170),
+        maxY: Math.max(result.maxY, node.position.y + 78),
+      }),
+      { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+    );
+    const padding = 36;
+    const availableWidth = Math.max(260, canvas.clientWidth - padding * 2);
+    const availableHeight = Math.max(260, canvas.clientHeight - padding * 2);
+    const scale = Math.min(
+      1,
+      availableWidth / Math.max(1, bounds.maxX - bounds.minX),
+      availableHeight / Math.max(1, bounds.maxY - bounds.minY),
+    );
+    setView({
+      scale,
+      x: (canvas.clientWidth - (bounds.maxX - bounds.minX) * scale) / 2 - bounds.minX * scale,
+      y: (canvas.clientHeight - (bounds.maxY - bounds.minY) * scale) / 2 - bounds.minY * scale,
+    });
+  }, [graph.nodes]);
+
+  useEffect(() => {
+    if (graph.nodes.length === 0 || fittedNodeCount.current === graph.nodes.length) return;
+    fittedNodeCount.current = graph.nodes.length;
+    const frame = requestAnimationFrame(fitGraph);
+    return () => cancelAnimationFrame(frame);
+  }, [fitGraph, graph.nodes.length]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -76,7 +111,7 @@ export function WorkflowEditor({ graph, onChange, statuses = {}, outputs = {} }:
       type,
       config: {},
       position: {
-        x: 80 + (graph.nodes.length % 3) * 230,
+        x: 40 + graph.nodes.length * 220,
         y: 60 + Math.floor(graph.nodes.length / 3) * 150,
       },
     };
@@ -120,6 +155,21 @@ export function WorkflowEditor({ graph, onChange, statuses = {}, outputs = {} }:
     setEdgeStart(null);
   }
 
+  function toggleConditionEdge(index: number) {
+    const edge = graph.edges[index];
+    if (!edge) return;
+    const source = graph.nodes.find((node) => node.id === edge.from);
+    if (source?.type !== 'condition') return;
+    onChange({
+      ...graph,
+      edges: graph.edges.map((item, edgeIndex) =>
+        edgeIndex === index
+          ? { ...item, condition: item.condition === 'true' ? 'false' : 'true' }
+          : item,
+      ),
+    });
+  }
+
   return (
     <div className="editor-layout">
       <div className="panel palette">
@@ -129,19 +179,31 @@ export function WorkflowEditor({ graph, onChange, statuses = {}, outputs = {} }:
             {type}
           </button>
         ))}
-        <button className="button" onClick={() => setPan({ x: 0, y: 0 })}>
+        <button className="button" onClick={fitGraph}>
           Auto-fit
         </button>
       </div>
       <div
         className="panel workflow-canvas"
         ref={canvasRef}
+        onWheel={(event) => {
+          event.preventDefault();
+          setView((current) => ({
+            ...current,
+            x: current.x - event.deltaX,
+            y: current.y - event.deltaY,
+          }));
+        }}
         onPointerDown={(event) => {
           if (event.target !== event.currentTarget) return;
           const start = { x: event.clientX, y: event.clientY };
-          const origin = { ...pan };
+          const origin = { x: view.x, y: view.y };
           const move = (next: globalThis.PointerEvent) =>
-            setPan({ x: origin.x + next.clientX - start.x, y: origin.y + next.clientY - start.y });
+            setView((current) => ({
+              ...current,
+              x: origin.x + next.clientX - start.x,
+              y: origin.y + next.clientY - start.y,
+            }));
           const stop = () => {
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', stop);
@@ -152,7 +214,26 @@ export function WorkflowEditor({ graph, onChange, statuses = {}, outputs = {} }:
       >
         <div
           className="canvas-surface editor-canvas"
-          style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}
+          onPointerDown={(event) => {
+            if (event.target !== event.currentTarget) return;
+            const start = { x: event.clientX, y: event.clientY };
+            const origin = { x: view.x, y: view.y };
+            const move = (next: globalThis.PointerEvent) =>
+              setView((current) => ({
+                ...current,
+                x: origin.x + next.clientX - start.x,
+                y: origin.y + next.clientY - start.y,
+              }));
+            const stop = () => {
+              window.removeEventListener('pointermove', move);
+              window.removeEventListener('pointerup', stop);
+            };
+            window.addEventListener('pointermove', move);
+            window.addEventListener('pointerup', stop);
+          }}
+          style={{
+            transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+          }}
         >
           <svg className="edge-layer">
             {graph.edges.map((edge, index) => {
@@ -160,11 +241,17 @@ export function WorkflowEditor({ graph, onChange, statuses = {}, outputs = {} }:
               const to = graph.nodes.find((node) => node.id === edge.to);
               if (!from || !to) return null;
               const x1 = from.position.x + 170;
-              const y1 = from.position.y + 35;
+              const y1 = from.position.y + 39;
               const x2 = to.position.x;
-              const y2 = to.position.y + 35;
+              const y2 = to.position.y + 39;
               return (
-                <g key={`${edge.from}-${edge.to}-${index}`} onClick={() => setSelectedEdge(index)}>
+                <g
+                  key={`${edge.from}-${edge.to}-${index}`}
+                  onClick={() => {
+                    setSelectedEdge(index);
+                    toggleConditionEdge(index);
+                  }}
+                >
                   <path
                     className={selectedEdge === index ? 'selected-edge' : ''}
                     d={`M ${x1} ${y1} C ${x1 + 60} ${y1}, ${x2 - 60} ${y2}, ${x2} ${y2}`}
@@ -186,7 +273,7 @@ export function WorkflowEditor({ graph, onChange, statuses = {}, outputs = {} }:
             >
               <span className={`status-dot ${statuses[node.id] ?? ''}`} />
               <span>{node.type}</span>
-              <strong>{node.id}</strong>
+              <strong>{typeof node.config.label === 'string' ? node.config.label : node.id}</strong>
               <button
                 className="node-delete"
                 onClick={(event) => {

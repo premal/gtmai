@@ -96,7 +96,7 @@ export default function FunctionsPage() {
   return (
     <main className="app-shell">
       <Phase2Nav active="functions" />
-      <section className="content">
+      <section className="content wide">
         <header className="topbar">
           <div>
             <div className="eyebrow">REUSABLE LOGIC</div>
@@ -106,8 +106,8 @@ export default function FunctionsPage() {
             ＋ New function
           </button>
         </header>
-        <div className="split-grid">
-          <div className="panel">
+        <div className="function-layout">
+          <div className="panel function-library">
             <h3>Library</h3>
             {items.map((item) => (
               <button
@@ -121,7 +121,7 @@ export default function FunctionsPage() {
             ))}
           </div>
           {selected ? (
-            <div className="panel">
+            <div className="panel function-editor">
               <div className="canvas-toolbar">
                 <h3>{selected.name}</h3>
                 <div className="button-row">
@@ -175,30 +175,51 @@ export default function FunctionsPage() {
               <WorkflowEditor graph={graph} onChange={setGraph} />
               <div className="panel">
                 <h3>Test cases</h3>
-                {cases.map((testCase, index) => (
-                  <div className="test-case" key={index}>
-                    <textarea
-                      value={testCase.input}
-                      onChange={(event) =>
-                        setCases(
-                          cases.map((item, itemIndex) =>
-                            itemIndex === index ? { ...item, input: event.target.value } : item,
-                          ),
-                        )
-                      }
-                    />
-                    <input
-                      value={testCase.expected}
-                      onChange={(event) =>
-                        setCases(
-                          cases.map((item, itemIndex) =>
-                            itemIndex === index ? { ...item, expected: event.target.value } : item,
-                          ),
-                        )
-                      }
-                    />
+                <div className="test-table">
+                  <div className="test-row test-head">
+                    <span>Input JSON</span>
+                    <span>Expected</span>
+                    <span>Actual</span>
+                    <span>Result</span>
                   </div>
-                ))}
+                  {cases.map((testCase, index) => {
+                    const result = results[index];
+                    return (
+                      <div className="test-row" key={index}>
+                        <textarea
+                          value={testCase.input}
+                          onChange={(event) =>
+                            setCases(
+                              cases.map((item, itemIndex) =>
+                                itemIndex === index ? { ...item, input: event.target.value } : item,
+                              ),
+                            )
+                          }
+                        />
+                        <input
+                          value={testCase.expected}
+                          onChange={(event) =>
+                            setCases(
+                              cases.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, expected: event.target.value }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                        <code>{result ? JSON.stringify(result.output) : '—'}</code>
+                        {result ? (
+                          <span className={`result-badge ${result.pass ? 'pass' : 'fail'}`}>
+                            {result.pass ? 'PASS' : 'FAIL'}
+                          </span>
+                        ) : (
+                          <span className="result-badge">—</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
                 <button
                   className="button"
                   onClick={() => setCases([...cases, { input: '{}', expected: '' }])}

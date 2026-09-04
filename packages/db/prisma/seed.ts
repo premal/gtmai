@@ -297,13 +297,13 @@ async function main(): Promise<void> {
                 domain: '{{trigger.domain}}',
               },
             },
-            position: { x: 320, y: 80 },
+            position: { x: 260, y: 80 },
           },
           {
             id: 'condition',
             type: 'condition',
             config: { expression: '{{enrich.output.title}} contains "Engineer"' },
-            position: { x: 580, y: 80 },
+            position: { x: 480, y: 80 },
           },
           {
             id: 'append',
@@ -315,7 +315,7 @@ async function main(): Promise<void> {
                 'Display name': '{{enrich.output.fullName}}',
               },
             },
-            position: { x: 840, y: 20 },
+            position: { x: 700, y: 20 },
           },
           {
             id: 'webhook',
@@ -324,7 +324,7 @@ async function main(): Promise<void> {
               url: 'http://localhost:4000/health',
               body: { title: '{{enrich.output.title}}' },
             },
-            position: { x: 840, y: 170 },
+            position: { x: 700, y: 180 },
           },
         ],
         edges: [

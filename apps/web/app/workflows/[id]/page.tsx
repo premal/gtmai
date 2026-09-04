@@ -13,6 +13,7 @@ type Step = {
   output?: unknown;
   error?: string;
   credits: number;
+  durationMs?: number;
 };
 type Run = { id: string; status: string; output?: unknown; steps?: Step[] };
 
@@ -98,6 +99,10 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   const statuses = Object.fromEntries(
     (selectedRun?.steps ?? []).map((step) => [step.nodeId, step.status]),
   );
+  const nodeTitle = (nodeId: string) => {
+    const node = workflow?.graph.nodes.find((item) => item.id === nodeId);
+    return typeof node?.config?.label === 'string' ? node.config.label : nodeId;
+  };
 
   if (!workflow)
     return (
@@ -109,7 +114,7 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   return (
     <main className="app-shell">
       <Phase2Nav active="workflows" />
-      <section className="content">
+      <section className="content wide">
         <header className="topbar">
           <div>
             <div className="eyebrow">WORKFLOW EDITOR {dirty && '· UNSAVED'}</div>
@@ -157,7 +162,7 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
           {runs.map((run) => (
             <button className="list-row" key={run.id} onClick={() => selectRun(run)}>
               <strong>{run.status}</strong>
-              <span>{run.id}</span>
+              <span>{run.id.slice(0, 18)}</span>
             </button>
           ))}
         </div>
@@ -166,7 +171,7 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
             <h3>Run {selectedRun.status}</h3>
             {(selectedRun.steps ?? []).map((step) => (
               <button className="list-row" key={step.nodeId} onClick={() => setSelectedStep(step)}>
-                <strong>{step.nodeId}</strong>
+                <strong>{nodeTitle(step.nodeId)}</strong>
                 <span>
                   {step.status} · {step.credits} credits
                 </span>
@@ -175,17 +180,33 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
           </div>
         )}
         {selectedStep && (
-          <aside className="drawer">
-            <button className="button" onClick={() => setSelectedStep(null)}>
-              Close
+          <aside className="detail-drawer">
+            <button
+              className="drawer-close"
+              onClick={() => setSelectedStep(null)}
+              aria-label="Close"
+            >
+              ×
             </button>
-            <h3>{selectedStep.nodeId}</h3>
+            <div className="eyebrow">STEP DETAIL</div>
+            <h3>{nodeTitle(selectedStep.nodeId)}</h3>
+            <div className="detail-row">
+              <span>Status</span>
+              <strong>{selectedStep.status}</strong>
+            </div>
             <h4>Input</h4>
-            <pre>{JSON.stringify(selectedStep.input, null, 2)}</pre>
+            <pre>{JSON.stringify(selectedStep.input ?? {}, null, 2)}</pre>
             <h4>Output</h4>
-            <pre>{JSON.stringify(selectedStep.output, null, 2)}</pre>
+            <pre>{JSON.stringify(selectedStep.output ?? {}, null, 2)}</pre>
             {selectedStep.error && <div className="error-text">{selectedStep.error}</div>}
-            <div>Credits: {selectedStep.credits}</div>
+            <div className="detail-row">
+              <span>Credits</span>
+              <strong>{selectedStep.credits}</strong>
+            </div>
+            <div className="detail-row">
+              <span>Duration</span>
+              <strong>{selectedStep.durationMs ?? 0}ms</strong>
+            </div>
           </aside>
         )}
         {message && <div className="toast">{message}</div>}
