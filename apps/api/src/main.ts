@@ -1,50 +1,25 @@
-import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import cors from '@fastify/cors';
-import jwt from '@fastify/jwt';
-import multipart from '@fastify/multipart';
-import swagger from '@fastify/swagger';
-import swaggerUi from '@fastify/swagger-ui';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { PrismaClient, Prisma } from '@gtmai/db';
-import { providerCatalog } from '@gtmai/providers';
-import { evaluateFormula, resolveBindings } from '@gtmai/shared';
-import { Queue } from 'bullmq';
-import Redis from 'ioredis';
-import { z } from 'zod';
+import 'reflect-metadata';
+import { NestFactory } from '@nestjs/core';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AppModule } from './app.module';
 
-const db = new PrismaClient();
-const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: null });
-const cells = new Queue('cells', { connection: redis });
-const envKey = ():Buffer => Buffer.from(process.env.ENCRYPTION_KEY ?? '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef','hex');
-function encrypt(value:Record<string,string>):string {const iv=randomBytes(12);const cipher=createCipheriv('aes-256-gcm',envKey(),iv);const body=Buffer.concat([cipher.update(JSON.stringify(value),'utf8'),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),body]).toString('base64')}
-export function decrypt(value:string):Record<string,string>{const data=Buffer.from(value,'base64');const decipher=createDecipheriv('aes-256-gcm',envKey(),data.subarray(0,12));decipher.setAuthTag(data.subarray(12,28));return JSON.parse(Buffer.concat([decipher.update(data.subarray(28)),decipher.final()]).toString()) as Record<string,string>}
-type AuthRequest=FastifyRequest & {user:{id:string;workspaceId:string}};
-const auth = async (request:FastifyRequest,reply:FastifyReply):Promise<void> => {try{const payload=await request.jwtVerify<{id:string;workspaceId:string}>();(request as AuthRequest).user=payload}catch{await reply.code(401).send({error:'Unauthorized'})}};
-const body=(request:FastifyRequest):Record<string,unknown> => (request.body??{}) as Record<string,unknown>;
-export async function buildApp():Promise<FastifyInstance> {
-  const app=Fastify({logger:false});
-  await app.register(cors,{origin:true});await app.register(jwt,{secret:process.env.JWT_SECRET??'development-secret'});await app.register(multipart);await app.register(swagger,{openapi:{info:{title:'GTM AI API',version:'1.0.0'}}});await app.register(swaggerUi,{routePrefix:'/docs'});
-  app.get('/health',async()=>({ok:true}));
-  app.post('/auth/register',async(request,reply)=>{const input=z.object({email:z.string().email(),password:z.string().min(8),name:z.string().min(1)}).parse(body(request));const passwordHash=createHash('sha256').update(input.password).digest('hex');const user=await db.user.create({data:{email:input.email,passwordHash,name:input.name}});const workspace=await db.workspace.create({data:{name:`${input.name}'s Workspace`,users:{create:{userId:user.id,role:'owner'}}}});return reply.send({token:app.jwt.sign({id:user.id,workspaceId:workspace.id}),user:{id:user.id,email:user.email,name:user.name},workspace})});
-  app.post('/auth/login',async(request,reply)=>{const input=z.object({email:z.string().email(),password:z.string()}).parse(body(request));const user=await db.user.findUnique({where:{email:input.email}});if(!user||user.passwordHash!==createHash('sha256').update(input.password).digest('hex'))return reply.code(401).send({error:'Invalid credentials'});const membership=await db.membership.findFirst({where:{userId:user.id}});if(!membership)return reply.code(403).send({error:'No workspace'});return {token:app.jwt.sign({id:user.id,workspaceId:membership.workspaceId}),user:{id:user.id,email:user.email,name:user.name},workspaceId:membership.workspaceId}});
-  app.get('/auth/me',{preHandler:auth},async(request)=>{const req=request as AuthRequest;return db.user.findUnique({where:{id:req.user.id},select:{id:true,email:true,name:true,memberships:{include:{workspace:true}}}})});
-  app.get('/providers/catalog',async()=>providerCatalog.map((item)=>({provider:item.provider,id:item.id,name:item.name,category:item.category,creditCost:item.creditCost,badges:item.badges})));
-  app.get('/workspaces/:workspaceId/tables',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const params=request.params as {workspaceId:string};if(params.workspaceId!==req.user.workspaceId)return {error:'Forbidden'};return db.table.findMany({where:{workspaceId:req.user.workspaceId},include:{columns:true,_count:{select:{rows:true}}},orderBy:{updatedAt:'desc'}})});
-  app.post('/workspaces/:workspaceId/tables',{preHandler:auth},async(request,reply)=>{const req=request as AuthRequest;const params=request.params as {workspaceId:string};if(params.workspaceId!==req.user.workspaceId)return reply.code(403).send({error:'Forbidden'});const input=z.object({name:z.string().min(1)}).parse(body(request));return db.table.create({data:{workspaceId:req.user.workspaceId,name:input.name}})});
-  app.patch('/tables/:id',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const input=z.object({name:z.string().min(1)}).parse(body(request));return db.table.updateMany({where:{id:(request.params as {id:string}).id,workspaceId:req.user.workspaceId},data:{name:input.name}})});
-  app.delete('/tables/:id',{preHandler:auth},async(request)=>{const req=request as AuthRequest;await db.table.deleteMany({where:{id:(request.params as {id:string}).id,workspaceId:req.user.workspaceId}});return {ok:true}});
-  app.get('/tables/:id',{preHandler:auth},async(request,reply)=>{const req=request as AuthRequest;const table=await db.table.findFirst({where:{id:(request.params as {id:string}).id,workspaceId:req.user.workspaceId},include:{columns:{orderBy:{position:'asc'}},rows:{orderBy:{position:'asc'},include:{cells:true}}}});if(!table)return reply.code(404).send({error:'Not found'});return table});
-  app.post('/tables/:id/columns',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const tableId=(request.params as {id:string}).id;const input=z.object({name:z.string(),type:z.enum(['text','number','boolean','date','url','email','json']),kind:z.enum(['input','enrichment','waterfall','agent','formula','http','function']),config:z.unknown().default({})}).parse(body(request));const count=await db.column.count({where:{tableId,table:{workspaceId:req.user.workspaceId}}});return db.column.create({data:{tableId,name:input.name,type:input.type,kind:input.kind,config:input.config as Prisma.InputJsonValue,position:count}})});
-  app.post('/tables/:id/rows',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const tableId=(request.params as {id:string}).id;const input=z.object({values:z.record(z.unknown()).default({})}).parse(body(request));const count=await db.row.count({where:{tableId,table:{workspaceId:req.user.workspaceId}}});const row=await db.row.create({data:{tableId,position:count}});const columns=await db.column.findMany({where:{tableId}});await db.$transaction(columns.map((column)=>{const value=input.values[column.name];return db.cell.create({data:value===undefined?{rowId:row.id,columnId:column.id,status:'queued'}:{rowId:row.id,columnId:column.id,value:value as Prisma.InputJsonValue,status:'done'}})}));return row});
-  app.post('/tables/:id/columns/:colId/run',{preHandler:auth},async(request,reply)=>{const req=request as AuthRequest;const params=request.params as {id:string;colId:string};const input=z.object({rowIds:z.array(z.string()).optional(),onlyEmpty:z.boolean().default(false)}).parse(body(request));const table=await db.table.findFirst({where:{id:params.id,workspaceId:req.user.workspaceId}});if(!table)return reply.code(404).send({error:'Not found'});const rowWhere=input.rowIds===undefined?{tableId:params.id}:{tableId:params.id,id:{in:input.rowIds}};const rows=await db.row.findMany({where:rowWhere});for(const row of rows){if(input.onlyEmpty){const cell=await db.cell.findUnique({where:{rowId_columnId:{rowId:row.id,columnId:params.colId}}});if(cell?.value!==null&&cell?.value!==undefined)continue}await cells.add('cell',{rowId:row.id,columnId:params.colId,workspaceId:req.user.workspaceId})}return {queued:rows.length}});
-  app.post('/tables/:id/rows/:rowId/run',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const params=request.params as {id:string;rowId:string};const columns=await db.column.findMany({where:{tableId:params.id,table:{workspaceId:req.user.workspaceId}}});for(const column of columns)await cells.add('cell',{rowId:params.rowId,columnId:column.id,workspaceId:req.user.workspaceId});return {queued:columns.length}});
-  app.post('/tables/:id/import',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const file=await request.file();if(!file)return {imported:0};const text=await file.toBuffer().then((b)=>b.toString());const [header,...lines]=text.trim().split(/\r?\n/);if(!header)return {imported:0};const names=header.split(',');const tableId=(request.params as {id:string}).id;const columns=await db.column.findMany({where:{tableId,table:{workspaceId:req.user.workspaceId}}});let imported=0;for(const line of lines){const values=line.split(',');const row=await db.row.create({data:{tableId,position:imported++}});await db.$transaction(columns.map((column,index)=>{const value=values[index];return db.cell.create({data:value===undefined?{rowId:row.id,columnId:column.id,status:'queued'}:{rowId:row.id,columnId:column.id,value,status:'done'}})}))}return {imported}});
-  app.get('/tables/:id/export',{preHandler:auth},async(request,reply)=>{const req=request as AuthRequest;const table=await db.table.findFirst({where:{id:(request.params as {id:string}).id,workspaceId:req.user.workspaceId},include:{columns:true,rows:{include:{cells:true},orderBy:{position:'asc'}}}});if(!table)return reply.code(404).send('Not found');const lines=[table.columns.map((c)=>c.name).join(','),...table.rows.map((row)=>table.columns.map((column)=>JSON.stringify(row.cells.find((cell)=>cell.columnId===column.id)?.value??'')).join(','))];return reply.header('Content-Type','text/csv').send(lines.join('\n'))});
-  app.post('/formula/preview',{preHandler:auth},async(request)=>{const input=z.object({expression:z.string(),row:z.record(z.unknown())}).parse(body(request));try{return {value:evaluateFormula(resolveBindings(input.expression,input.row),input.row)}}catch(error){return {error:error instanceof Error?error.message:'Formula error'}}});
-  app.get('/tables/:id/events',{preHandler:auth},async(request,reply)=>{reply.raw.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});const subscriber=new Redis(process.env.REDIS_URL??'redis://localhost:6379');await subscriber.subscribe(`table:${(request.params as {id:string}).id}`);subscriber.on('message',(_channel,message)=>reply.raw.write(`data: ${message}\n\n`));request.raw.socket?.on('close',()=>void subscriber.quit());});
-  app.get('/connections',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const rows=await db.connection.findMany({where:{workspaceId:req.user.workspaceId},select:{id:true,name:true,provider:true,createdAt:true,updatedAt:true}});return rows});
-  app.post('/connections',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const input=z.object({provider:z.string(),name:z.string(),credentials:z.record(z.string())}).parse(body(request));return db.connection.create({data:{workspaceId:req.user.workspaceId,createdById:req.user.id,provider:input.provider,name:input.name,encryptedCredentials:encrypt(input.credentials)},select:{id:true,provider:true,name:true,createdAt:true}})});
-  app.get('/credits',{preHandler:auth},async(request)=>{const req=request as AuthRequest;const rows=await db.creditLedger.findMany({where:{workspaceId:req.user.workspaceId}});return {balance:rows.reduce((sum,row)=>sum+row.delta,0),ledger:rows}});
+export async function createApp(): Promise<NestFastifyApplication> {
+  const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
+  app.enableCors({ origin: true });
+  const document = SwaggerModule.createDocument(
+    app,
+    new DocumentBuilder().setTitle('GTM AI API').setVersion('1.0').build(),
+  );
+  SwaggerModule.setup('docs', app, document);
   return app;
 }
-if (process.env.NODE_ENV!=='test')buildApp().then((app)=>app.listen({port:Number(process.env.PORT??4000),host:'0.0.0.0'}));
+
+async function bootstrap(): Promise<void> {
+  const app = await createApp();
+  await app.listen(Number(process.env.PORT ?? 4000), '0.0.0.0');
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  void bootstrap();
+}

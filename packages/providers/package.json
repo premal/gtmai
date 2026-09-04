@@ -1,1 +1,23 @@
-{"name":"@gtmai/providers","version":"0.1.0","private":true,"main":"dist/index.js","types":"dist/index.d.ts","scripts":{"build":"tsc -p tsconfig.json","dev":"tsc -p tsconfig.json --watch","lint":"eslint src --no-warn-ignored","typecheck":"tsc -p tsconfig.json --noEmit","test":"vitest run --passWithNoTests"},"dependencies":{"@anthropic-ai/sdk":"0.32.1","openai":"4.77.0","zod":"3.23.8"},"devDependencies":{"typescript":"5.7.2","vitest":"2.1.8"}}
+{
+  "name": "@gtmai/providers",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src --no-warn-ignored",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.32.1",
+    "openai": "4.77.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "5.7.2",
+    "vitest": "2.1.8"
+  }
+}

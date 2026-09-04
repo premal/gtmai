@@ -57,21 +57,33 @@ Concurrency is per worker (`CELL_CONCURRENCY`, default 20); per-provider rate li
 
 ```ts
 interface Provider {
-  id: string;                        // 'hunter'
+  id: string; // 'hunter'
   name: string;
   auth: { type: 'apiKey'; fields: [{ key: 'apiKey'; label: string; secret: true }] };
   actions: ProviderAction[];
 }
 interface ProviderAction<I, O> {
-  id: string;                        // 'hunter.findEmail'
+  id: string; // 'hunter.findEmail'
   name: string;
-  category: 'work_email' | 'personal_email' | 'phone' | 'person' | 'company' | 'verify' | 'search' | 'ai' | 'other';
-  input: z.ZodType<I>;               // drives the column config form
+  category:
+    | 'work_email'
+    | 'personal_email'
+    | 'phone'
+    | 'person'
+    | 'company'
+    | 'verify'
+    | 'search'
+    | 'ai'
+    | 'other';
+  input: z.ZodType<I>; // drives the column config form
   output: z.ZodType<O>;
-  creditCost: number;                // internal credits charged when result found
-  run(input: I, ctx: { credentials: Record<string,string>; fetch: typeof fetch; logger }): Promise<ActionResult<O>>;
+  creditCost: number; // internal credits charged when result found
+  run(
+    input: I,
+    ctx: { credentials: Record<string, string>; fetch: typeof fetch; logger },
+  ): Promise<ActionResult<O>>;
 }
-type ActionResult<O> = { found: true; data: O; raw?: unknown } | { found: false; reason?: string } ;
+type ActionResult<O> = { found: true; data: O; raw?: unknown } | { found: false; reason?: string };
 ```
 
 Waterfalls are just `ProviderAction[]` of the same category plus an `accept(data)` predicate.

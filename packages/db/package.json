@@ -14,7 +14,8 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "6.1.0"
+    "@prisma/client": "6.1.0",
+    "argon2": "0.41.1"
   },
   "devDependencies": {
     "prisma": "6.1.0",

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "lint": "turbo lint",
+    "lint": "prettier --check . && turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test"
   },
