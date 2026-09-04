@@ -118,4 +118,92 @@ integration('api smoke', () => {
     ).toBe(true);
     await app.close();
   });
+
+  it('imports a table into audiences, refreshes a segment, and queues a workflow run', async () => {
+    process.env.NODE_ENV = 'test';
+    const app = await createApp();
+    await app.init();
+    const instance = app.getHttpAdapter().getInstance();
+    const email = `audience-${Date.now()}@gtmai.dev`;
+    const register = await instance.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { email, password: 'password123', name: 'Audience User' },
+    });
+    const auth = register.json() as { token: string; workspaceId: string };
+    const headers = { authorization: `Bearer ${auth.token}` };
+    const tableResponse = await instance.inject({
+      method: 'POST',
+      url: `/workspaces/${auth.workspaceId}/tables`,
+      headers,
+      payload: { name: 'Audience import' },
+    });
+    const table = tableResponse.json() as { id: string };
+    for (const [name, type] of [
+      ['Email', 'email'],
+      ['First name', 'text'],
+      ['Domain', 'url'],
+    ] as const) {
+      await instance.inject({
+        method: 'POST',
+        url: `/tables/${table.id}/columns`,
+        headers,
+        payload: { name, type, kind: 'input', config: {} },
+      });
+    }
+    await instance.inject({
+      method: 'POST',
+      url: `/tables/${table.id}/rows`,
+      headers,
+      payload: {
+        values: { Email: 'phase2@example.com', 'First name': 'Phase', Domain: 'example.com' },
+      },
+    });
+    const imported = await instance.inject({
+      method: 'POST',
+      url: `/audiences/import/table/${table.id}`,
+      headers,
+      payload: { mapping: { email: 'Email', firstName: 'First name', domain: 'Domain' } },
+    });
+    expect(imported.statusCode).toBe(201);
+    expect(imported.json()).toMatchObject({ contacts: 1, companies: 1 });
+    const segment = await instance.inject({
+      method: 'POST',
+      url: '/audiences/segments',
+      headers,
+      payload: {
+        name: 'Imported contacts',
+        filter: { field: 'email', op: 'contains', value: 'phase2@' },
+      },
+    });
+    const segmentBody = segment.json() as { id: string };
+    const refreshed = await instance.inject({
+      method: 'POST',
+      url: `/audiences/segments/${segmentBody.id}/refresh`,
+      headers,
+    });
+    expect(refreshed.json()).toMatchObject({ count: 1 });
+    const workflow = await instance.inject({
+      method: 'POST',
+      url: '/workflows',
+      headers,
+      payload: {
+        name: 'Phase 2 workflow',
+        graph: {
+          nodes: [{ id: 'trigger', type: 'trigger.manual', config: {}, position: { x: 0, y: 0 } }],
+          edges: [],
+        },
+      },
+    });
+    const workflowBody = workflow.json() as { id: string };
+    const run = await instance.inject({
+      method: 'POST',
+      url: `/workflows/${workflowBody.id}/run`,
+      headers,
+      payload: { source: 'integration' },
+    });
+    expect(run.statusCode).toBe(201);
+    expect(run.json()).toMatchObject({ workflowId: workflowBody.id, status: 'queued' });
+    await app.close();
+  });
 });
