@@ -15,6 +15,20 @@ export type CellData = { rowId: string; columnId: string; workspaceId: string };
 type Values = Record<string, unknown>;
 type ProviderConfig = { provider: string; action: string; input?: Values };
 
+function getJsonPath(value: unknown, path: string | undefined): unknown {
+  if (!path) return value;
+  return path.split('.').reduce<unknown>((current, key) => {
+    if (current && typeof current === 'object') {
+      return (current as Values)[key];
+    }
+    return undefined;
+  }, value);
+}
+
+export function evaluateWorkerFormula(expression: string, values: Values): unknown {
+  return evaluateFormula(expression, values);
+}
+
 function decrypt(value: string): Record<string, string> {
   const secret = process.env.ENCRYPTION_KEY;
   if (!secret) throw new Error('ENCRYPTION_KEY is required');
@@ -114,10 +128,7 @@ async function execute(job: Job<CellData>): Promise<void> {
   const started = Date.now();
   let creditsUsed = 0;
   try {
-    if (
-      column.runCondition &&
-      !evaluateFormula(resolveBindings(column.runCondition, values), values)
-    ) {
+    if (column.runCondition && !evaluateWorkerFormula(column.runCondition, values)) {
       await db.cell.update({
         where: { id: cell.id },
         data: { status: 'skipped', durationMs: Date.now() - started },
@@ -130,7 +141,7 @@ async function execute(job: Job<CellData>): Promise<void> {
     if (column.kind === 'formula') {
       result = {
         found: true,
-        data: evaluateFormula(resolveBindings(String(config.expression ?? ''), values), values),
+        data: evaluateWorkerFormula(String(config.expression ?? ''), values),
       };
     } else if (column.kind === 'waterfall') {
       result = { found: false };
@@ -166,14 +177,24 @@ async function execute(job: Job<CellData>): Promise<void> {
       provider = current.provider;
       creditsUsed = current.result.found ? current.action.creditCost : 0;
     } else if (column.kind === 'agent') {
+      const agentProvider = config.provider === 'anthropic' ? 'anthropic' : 'openai';
+      const connection = await db.connection.findFirst({
+        where: {
+          workspaceId,
+          provider: { in: [agentProvider, 'llm'] },
+        },
+      });
+      if (!connection) {
+        throw new Error(`No connection for ${agentProvider} — add one in Connections`);
+      }
       const agent = await runAgent(
         resolveBindings(String(config.prompt ?? ''), values),
         {
-          credentials: {},
+          credentials: decrypt(connection.encryptedCredentials),
           fetch,
           logger: { info: () => undefined, error: () => undefined },
         },
-        config.provider === 'anthropic' ? 'anthropic' : 'openai',
+        agentProvider,
         typeof config.model === 'string' ? config.model : undefined,
       );
       result = { found: true, data: agent };
@@ -191,6 +212,9 @@ async function execute(job: Job<CellData>): Promise<void> {
         workspaceId,
       );
       result = current.result;
+      if (result.found && config.outputPath) {
+        result = { ...result, data: getJsonPath(result.data, String(config.outputPath)) };
+      }
       provider = current.provider;
       creditsUsed = current.result.found ? current.action.creditCost : 0;
     } else {

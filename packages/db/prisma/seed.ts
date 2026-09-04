@@ -1,5 +1,7 @@
 import { createCipheriv, randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
+import { Queue } from 'bullmq';
+import Redis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
 
 const db = new PrismaClient();
@@ -83,7 +85,20 @@ async function main(): Promise<void> {
       name: 'Work email',
       type: 'email',
       kind: 'waterfall',
-      config: { providers: [{ provider: 'mock', action: 'mock.findEmail' }], accept: 'email' },
+      config: {
+        providers: [
+          {
+            provider: 'mock',
+            action: 'mock.findEmail',
+            input: {
+              firstName: '{{First name}}',
+              lastName: '{{Last name}}',
+              domain: '{{Domain}}',
+            },
+          },
+        ],
+        accept: 'any',
+      },
       position: 3,
     },
     {
@@ -128,12 +143,31 @@ async function main(): Promise<void> {
         return db.cell.create({
           data:
             value === undefined
-              ? { rowId: row.id, columnId: column.id, status: 'queued' }
+              ? { rowId: row.id, columnId: column.id, status: 'skipped' }
               : { rowId: row.id, columnId: column.id, value, status: 'done' },
         });
       }),
     );
   }
+  const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+    maxRetriesPerRequest: null,
+  });
+  const queue = new Queue('cells', { connection: redis });
+  const runnableColumns = createdColumns.filter((column) =>
+    ['waterfall', 'formula', 'agent'].includes(column.kind),
+  );
+  const rows = await db.row.findMany({ where: { tableId: table.id }, select: { id: true } });
+  for (const row of rows) {
+    for (const column of runnableColumns) {
+      await queue.add('cell', {
+        rowId: row.id,
+        columnId: column.id,
+        workspaceId: workspace.id,
+      });
+    }
+  }
+  await queue.close();
+  await redis.quit();
 }
 
 main().finally(() => db.$disconnect());

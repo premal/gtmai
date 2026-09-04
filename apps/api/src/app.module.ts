@@ -10,6 +10,7 @@ import { ProvidersModule } from './providers/providers.module';
 import { TablesModule } from './tables/tables.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
 import { FormulaController } from './formula.controller';
+import { DocsModule } from './docs.module';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -45,6 +46,7 @@ function required(name: string): string {
     ProvidersModule,
     CreditsModule,
     EventsModule,
+    DocsModule,
   ],
   controllers: [FormulaController],
 })

@@ -55,8 +55,21 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const [csv, setCsv] = useState('');
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [waterfallSteps, setWaterfallSteps] = useState<
+    { provider: string; action: string; input: Record<string, string> }[]
+  >([{ provider: 'mock', action: 'mock.findEmail', input: {} }]);
+  const [httpUrl, setHttpUrl] = useState('');
+  const [httpHeaders, setHttpHeaders] = useState('{}');
+  const [httpBody, setHttpBody] = useState('');
+  const [httpOutputPath, setHttpOutputPath] = useState('');
+  const [agentPreview, setAgentPreview] = useState('');
+  const [menuColumnId, setMenuColumnId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const gridRef = useRef<HTMLDivElement>(null);
+  const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   useEffect(() => {
     void params.then(({ id }) => setTableId(id));
@@ -96,6 +109,31 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   async function saveColumn(): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
     const editing = Boolean(selectedColumn);
+    const defaultInput = fuzzyInputMapping();
+    const config =
+      kind === 'formula'
+        ? { expression }
+        : kind === 'agent'
+          ? { prompt, outputFields: { answer: 'string', summary: 'string' }, provider: 'openai' }
+          : kind === 'waterfall'
+            ? {
+                providers: waterfallSteps.map((item) => ({
+                  ...item,
+                  input: Object.keys(item.input).length ? item.input : fuzzyInputMapping(),
+                })),
+                accept,
+              }
+            : kind === 'http'
+              ? {
+                  method: 'GET',
+                  url: httpUrl,
+                  headers: JSON.parse(httpHeaders || '{}') as Record<string, string>,
+                  body: httpBody || undefined,
+                  outputPath: httpOutputPath || undefined,
+                }
+              : kind === 'input'
+                ? { value: '' }
+                : { provider, action, input: defaultInput };
     await fetch(
       editing
         ? `${api}/tables/${tableId}/columns/${selectedColumn?.id}`
@@ -109,14 +147,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           kind,
           colorLabel,
           runCondition: runCondition || undefined,
-          config:
-            kind === 'formula'
-              ? { expression }
-              : kind === 'agent'
-                ? { prompt, outputFields: { answer: 'string' }, provider: 'openai' }
-                : kind === 'waterfall'
-                  ? { providers: [{ provider, action }], accept }
-                  : { provider, action, input: { domain: '{{Domain}}' } },
+          config,
         }),
       },
     );
@@ -153,16 +184,104 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     });
   }
 
+  function scheduleCellUpdate(rowId: string, column: Column, value: string): void {
+    const key = `${rowId}:${column.id}`;
+    const existing = editTimers.current.get(key);
+    if (existing) clearTimeout(existing);
+    editTimers.current.set(
+      key,
+      setTimeout(() => {
+        void updateCell(rowId, column, value);
+        editTimers.current.delete(key);
+      }, 400),
+    );
+  }
+
+  function fuzzyInputMapping(): Record<string, string> {
+    const columns = table?.columns ?? [];
+    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const aliases: Record<string, string[]> = {
+      firstname: ['firstname', 'givenname', 'first'],
+      lastname: ['lastname', 'familyname', 'last'],
+      domain: ['domain', 'website', 'webdomain'],
+    };
+    const keys = action.includes('findEmail') ? ['firstName', 'lastName', 'domain'] : ['domain'];
+    return Object.fromEntries(
+      keys.flatMap((key) => {
+        const match = columns.find((column) =>
+          (aliases[normalize(key)] ?? [normalize(key)]).some(
+            (alias) => normalize(column.name) === alias,
+          ),
+        );
+        return match ? [[key, `{{${match.name}}}`]] : [];
+      }),
+    );
+  }
+
+  function openColumn(column: Column): void {
+    const config = (column.config ?? {}) as Record<string, unknown>;
+    setSelectedColumn(column);
+    setColumnName(column.name);
+    setKind(column.kind as ColumnKind);
+    setColumnType(column.type);
+    setColorLabel(column.colorLabel ?? 'indigo');
+    setRunCondition('');
+    setProvider(String(config.provider ?? 'mock'));
+    setAction(String(config.action ?? 'mock.findEmail'));
+    setExpression(String(config.expression ?? expression));
+    setPrompt(String(config.prompt ?? prompt));
+    setAccept(String(config.accept ?? 'any'));
+    setWaterfallSteps(
+      Array.isArray(config.providers)
+        ? (config.providers as {
+            provider: string;
+            action: string;
+            input: Record<string, string>;
+          }[])
+        : [{ provider: 'mock', action: 'mock.findEmail', input: {} }],
+    );
+    setHttpUrl(String(config.url ?? ''));
+    setHttpHeaders(JSON.stringify(config.headers ?? {}, null, 2));
+    setHttpBody(typeof config.body === 'string' ? config.body : '');
+    setHttpOutputPath(String(config.outputPath ?? ''));
+    setStep(0);
+    setAdding(true);
+  }
+
   async function importCsv(): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
+    const headers = csvFile ? {} : { 'content-type': 'application/json' };
+    const body = csvFile
+      ? (() => {
+          const form = new FormData();
+          form.append('file', csvFile);
+          form.append('mapping', JSON.stringify(mapping));
+          return form;
+        })()
+      : JSON.stringify({ csv, mapping });
     await fetch(`${api}/tables/${tableId}/import`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ csv }),
+      headers: { authorization: `Bearer ${token}`, ...headers },
+      body,
     });
     setImportOpen(false);
     setCsv('');
+    setCsvFile(null);
+    setCsvHeaders([]);
     await reload();
+  }
+
+  async function previewAgent(): Promise<void> {
+    if (!selectedColumn) return;
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    const response = await fetch(`${api}/tables/${tableId}/columns/${selectedColumn.id}/preview`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const result = (await response.json()) as { previews?: unknown[]; message?: string };
+    setAgentPreview(
+      result.previews ? JSON.stringify(result.previews, null, 2) : (result.message ?? ''),
+    );
   }
 
   async function previewFormula(): Promise<void> {
@@ -262,6 +381,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               className="button"
               onClick={() => {
                 setSelectedColumn(null);
+                setColumnName('New enrichment');
+                setKind('enrichment');
+                setStep(0);
                 setAdding(true);
               }}
             >
@@ -306,20 +428,89 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                     <span className="column-meta">
                       {column.kind} · {column.type}
                     </span>
-                    <button className="run-link" onClick={() => void run(column.id)}>
-                      Run
-                    </button>
-                    <button
-                      className="run-link"
-                      onClick={() => {
-                        setSelectedColumn(column);
-                        setColumnName(column.name);
-                        setKind(column.kind as ColumnKind);
-                        setAdding(true);
-                      }}
-                    >
-                      Edit
-                    </button>
+                    <div className="column-actions">
+                      <button className="run-link" onClick={() => void run(column.id)}>
+                        ▶ Run
+                      </button>
+                      <button className="run-link" onClick={() => openColumn(column)}>
+                        ✎ Edit
+                      </button>
+                      <button
+                        className="icon-button"
+                        aria-label={`More actions for ${column.name}`}
+                        onClick={() =>
+                          setMenuColumnId(menuColumnId === column.id ? null : column.id)
+                        }
+                      >
+                        ⋮
+                      </button>
+                      {menuColumnId === column.id && (
+                        <div className="column-menu">
+                          <button onClick={() => void run(column.id, { onlyEmpty: true })}>
+                            Run empty
+                          </button>
+                          <button onClick={() => void run(column.id, { onlyErrored: true })}>
+                            Run errored
+                          </button>
+                          <button onClick={() => openColumn(column)}>Edit config</button>
+                          <div className="menu-label">Color label</div>
+                          <div className="color-options">
+                            {['indigo', 'green', 'orange', 'pink'].map((color) => (
+                              <button
+                                key={color}
+                                className={`color-dot ${color}`}
+                                aria-label={`Set ${color} label`}
+                                onClick={async () => {
+                                  const token = localStorage.getItem('gtmai-token') ?? '';
+                                  await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                    method: 'PATCH',
+                                    headers: {
+                                      authorization: `Bearer ${token}`,
+                                      'content-type': 'application/json',
+                                    },
+                                    body: JSON.stringify({ colorLabel: color }),
+                                  });
+                                  setMenuColumnId(null);
+                                  await reload();
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const name = window.prompt('Rename column', column.name);
+                              if (!name) return;
+                              const token = localStorage.getItem('gtmai-token') ?? '';
+                              await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                method: 'PATCH',
+                                headers: {
+                                  authorization: `Bearer ${token}`,
+                                  'content-type': 'application/json',
+                                },
+                                body: JSON.stringify({ name }),
+                              });
+                              await reload();
+                            }}
+                          >
+                            Rename
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`Delete ${column.name}?`)) return;
+                              const token = localStorage.getItem('gtmai-token') ?? '';
+                              await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                method: 'DELETE',
+                                headers: { authorization: `Bearer ${token}` },
+                              });
+                              setMenuColumnId(null);
+                              await reload();
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </th>
                 ))}
               </tr>
@@ -360,13 +551,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                             cell && setSelected({ ...cell, provenance: cell.provenance })
                           }
                         >
-                          {cell?.status === 'done' ? (
+                          {!cell || cell.status === 'skipped' ? null : cell.status === 'done' ? (
                             editable ? (
                               <input
                                 className="cell-input"
                                 defaultValue={displayValue(cell.value, column)}
-                                onBlur={(event) =>
-                                  void updateCell(row.id, column, event.target.value)
+                                onChange={(event) =>
+                                  scheduleCellUpdate(row.id, column, event.target.value)
                                 }
                               />
                             ) : (
@@ -375,8 +566,8 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                               </span>
                             )
                           ) : (
-                            <span className={`status ${cell?.status ?? 'queued'}`}>
-                              {cell?.status ?? 'queued'}
+                            <span className={`status ${cell.status}`}>
+                              {cell.status === 'error' ? (cell.error ?? 'error') : cell.status}
                             </span>
                           )}
                         </td>
@@ -469,13 +660,64 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   </label>
                 )}
                 {kind === 'waterfall' && (
-                  <label>
-                    Accept rule
-                    <select value={accept} onChange={(event) => setAccept(event.target.value)}>
-                      <option value="any">Any result</option>
-                      <option value="verified-email-only">Verified email only</option>
-                    </select>
-                  </label>
+                  <>
+                    <label>
+                      Accept rule
+                      <select value={accept} onChange={(event) => setAccept(event.target.value)}>
+                        <option value="any">Any result</option>
+                        <option value="verified-email-only">Verified email only</option>
+                      </select>
+                    </label>
+                    <div className="waterfall-list">
+                      {waterfallSteps.map((item, index) => (
+                        <div
+                          className="waterfall-step"
+                          key={`${item.provider}-${item.action}-${index}`}
+                        >
+                          <strong>
+                            {index + 1}. {item.provider} / {item.action}
+                          </strong>
+                          <button
+                            className="icon-button"
+                            disabled={index === 0}
+                            onClick={() =>
+                              setWaterfallSteps((steps) => {
+                                const next = [...steps];
+                                [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
+                                return next;
+                              })
+                            }
+                          >
+                            ↑
+                          </button>
+                          <button
+                            className="icon-button"
+                            disabled={index === waterfallSteps.length - 1}
+                            onClick={() =>
+                              setWaterfallSteps((steps) => {
+                                const next = [...steps];
+                                [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
+                                return next;
+                              })
+                            }
+                          >
+                            ↓
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        className="button"
+                        onClick={() =>
+                          setWaterfallSteps((steps) => [
+                            ...steps,
+                            { provider, action, input: fuzzyInputMapping() },
+                          ])
+                        }
+                      >
+                        + Add provider step
+                      </button>
+                    </div>
+                  </>
                 )}
                 {kind === 'formula' && (
                   <>
@@ -514,21 +756,40 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                         <option>claude-3-5-haiku-latest</option>
                       </select>
                     </label>
+                    <button className="button" onClick={() => void previewAgent()}>
+                      Test on first 3 rows
+                    </button>
+                    {agentPreview && <pre className="preview-value">{agentPreview}</pre>}
                   </>
                 )}
                 {kind === 'http' && (
                   <>
                     <label>
                       URL
-                      <input placeholder="https://api.example.com/{{Domain}}" />
+                      <input value={httpUrl} onChange={(event) => setHttpUrl(event.target.value)} />
                     </label>
                     <label>
                       Headers
-                      <textarea placeholder='{"Authorization":"Bearer {{API key}}"}' />
+                      <textarea
+                        value={httpHeaders}
+                        onChange={(event) => setHttpHeaders(event.target.value)}
+                        placeholder='{"Authorization":"Bearer {{API key}}"}'
+                      />
+                    </label>
+                    <label>
+                      Body
+                      <textarea
+                        value={httpBody}
+                        onChange={(event) => setHttpBody(event.target.value)}
+                      />
                     </label>
                     <label>
                       JSON path
-                      <input placeholder="data.email" />
+                      <input
+                        value={httpOutputPath}
+                        onChange={(event) => setHttpOutputPath(event.target.value)}
+                        placeholder="data.email"
+                      />
                     </label>
                   </>
                 )}
@@ -605,13 +866,55 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         <div className="modal-backdrop">
           <div className="modal">
             <h3>Import CSV</h3>
-            <p className="muted">Paste CSV with a header row. New headers become input columns.</p>
+            <p className="muted">Paste CSV or upload a file, then map headers to columns.</p>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setCsvFile(file);
+                if (!file) return;
+                void file.text().then((text) => {
+                  setCsv(text);
+                  setCsvHeaders(
+                    text
+                      .split(/\r?\n/)[0]
+                      ?.split(',')
+                      .map((value) => value.trim()) ?? [],
+                  );
+                });
+              }}
+            />
             <textarea
               className="csv-input"
               value={csv}
               onChange={(event) => setCsv(event.target.value)}
               placeholder="First name,Last name\nAda,Lovelace"
             />
+            {csvHeaders.length > 0 && (
+              <div className="mapping-list">
+                {csvHeaders.map((header) => (
+                  <label key={header}>
+                    {header}
+                    <select
+                      value={mapping[header] ?? header}
+                      onChange={(event) =>
+                        setMapping((current) => ({ ...current, [header]: event.target.value }))
+                      }
+                    >
+                      <option value={header}>{header} (new/input)</option>
+                      {table.columns
+                        .filter((column) => column.kind === 'input')
+                        .map((column) => (
+                          <option key={column.id} value={column.name}>
+                            {column.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            )}
             <div className="modal-actions">
               <button className="button" onClick={() => setImportOpen(false)}>
                 Cancel

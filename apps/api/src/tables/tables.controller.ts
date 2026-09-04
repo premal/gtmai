@@ -13,10 +13,13 @@ import {
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import type { FastifyRequest } from 'fastify';
+import type { MultipartFile } from '@fastify/multipart';
 import { Prisma } from '@gtmai/db';
+import { runAgent } from '@gtmai/providers';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { decryptCredentials } from '../common/crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 const tableBody = z.object({ name: z.string().min(1) });
@@ -29,6 +32,10 @@ const columnBody = z.object({
   colorLabel: z.string().optional(),
 });
 type Request = FastifyRequest & { user: AuthUser };
+type MultipartRequest = Request & {
+  isMultipart: () => boolean;
+  file: () => Promise<MultipartFile | undefined>;
+};
 
 @Controller('tables')
 @UseGuards(JwtAuthGuard)
@@ -139,7 +146,7 @@ export class TablesController {
         return this.prisma.cell.create({
           data:
             value === undefined
-              ? { rowId: row.id, columnId: column.id, status: 'queued' }
+              ? { rowId: row.id, columnId: column.id, status: 'skipped' }
               : {
                   rowId: row.id,
                   columnId: column.id,
@@ -153,14 +160,24 @@ export class TablesController {
   }
 
   @Post(':id/import')
-  async importCsv(@Param('id') tableId: string, @Body() body: unknown, @Req() request: Request) {
-    const input = z.object({ csv: z.string().min(1) }).parse(body);
+  async importCsv(
+    @Param('id') tableId: string,
+    @Body() body: unknown,
+    @Req() request: MultipartRequest,
+  ) {
+    const jsonBody = z
+      .object({ csv: z.string().optional(), mapping: z.record(z.string()).optional() })
+      .parse(body ?? {});
+    const upload = request.isMultipart() ? await request.file() : undefined;
+    const uploadedCsv = upload ? (await upload.toBuffer()).toString('utf8') : undefined;
+    const csv = uploadedCsv ?? jsonBody.csv;
+    if (!csv) throw new Error('CSV content is required');
     const table = await this.prisma.table.findFirst({
       where: { id: tableId, workspaceId: request.user.workspaceId },
       include: { columns: true },
     });
     if (!table) throw new Error('Table not found');
-    const lines = input.csv.trim().split(/\r?\n/);
+    const lines = csv.trim().split(/\r?\n/);
     const parseLine = (line: string): string[] => {
       const values: string[] = [];
       let current = '';
@@ -175,7 +192,9 @@ export class TablesController {
       values.push(current.trim());
       return values.map((value) => value.replace(/^"|"$/g, '').replace(/""/g, '"'));
     };
-    const headers = parseLine(lines[0] ?? '');
+    const sourceHeaders = parseLine(lines[0] ?? '');
+    const mapping = jsonBody.mapping ?? {};
+    const headers = sourceHeaders.map((header) => mapping[header] || header);
     const columns = [...table.columns];
     for (const [position, name] of headers.entries()) {
       if (columns.some((column) => column.name === name)) continue;
@@ -188,14 +207,17 @@ export class TablesController {
     for (const [position, line] of lines.slice(1).entries()) {
       if (!line.trim()) continue;
       const values = parseLine(line);
+      const imported = new Map(headers.map((header, index) => [header, values[index] ?? '']));
       const row = await this.prisma.row.create({ data: { tableId, position } });
       await this.prisma.$transaction(
-        columns.map((column, index) =>
+        columns.map((column) =>
           this.prisma.cell.create({
             data: {
               rowId: row.id,
               columnId: column.id,
-              value: values[index] ?? Prisma.JsonNull,
+              value: imported.has(column.name)
+                ? (imported.get(column.name) as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
               status: 'done',
             },
           }),
@@ -312,6 +334,11 @@ export class TablesController {
         columnId,
         workspaceId: request.user.workspaceId,
       });
+      await this.prisma.cell.upsert({
+        where: { rowId_columnId: { rowId: row.id, columnId } },
+        create: { rowId: row.id, columnId, status: 'queued' },
+        update: { status: 'queued', error: null },
+      });
       queued += 1;
     }
     return { queued };
@@ -332,7 +359,72 @@ export class TablesController {
         columnId: column.id,
         workspaceId: request.user.workspaceId,
       });
+      await this.prisma.cell.upsert({
+        where: { rowId_columnId: { rowId, columnId: column.id } },
+        create: { rowId, columnId: column.id, status: 'queued' },
+        update: { status: 'queued', error: null },
+      });
     }
     return { queued: columns.length };
+  }
+
+  @Post(':id/columns/:columnId/preview')
+  async previewAgent(
+    @Param('id') tableId: string,
+    @Param('columnId') columnId: string,
+    @Req() request: Request,
+  ) {
+    const column = await this.prisma.column.findFirst({
+      where: { id: columnId, tableId, table: { workspaceId: request.user.workspaceId } },
+    });
+    if (!column || column.kind !== 'agent') throw new Error('Agent column not found');
+    const config = column.config as Record<string, unknown>;
+    const provider = config.provider === 'anthropic' ? 'anthropic' : 'openai';
+    const connection = await this.prisma.connection.findFirst({
+      where: { workspaceId: request.user.workspaceId, provider: { in: [provider, 'llm'] } },
+    });
+    if (!connection) {
+      return {
+        previews: [
+          { error: `No connection for ${provider} — add one in Connections` },
+          { error: `No connection for ${provider} — add one in Connections` },
+          { error: `No connection for ${provider} — add one in Connections` },
+        ],
+      };
+    }
+    const rows = await this.prisma.row.findMany({
+      where: { tableId },
+      orderBy: { position: 'asc' },
+      take: 3,
+      include: { cells: { include: { column: true } } },
+    });
+    const credentials = decryptCredentials(connection.encryptedCredentials);
+    const previews = [];
+    for (const row of rows) {
+      const values = Object.fromEntries(row.cells.map((cell) => [cell.column.name, cell.value]));
+      const prompt = String(config.prompt ?? '').replace(
+        /\{\{([^}]+)\}\}/g,
+        (_match, name: string) => String(values[name.trim()] ?? ''),
+      );
+      try {
+        const result = await runAgent(
+          prompt,
+          {
+            credentials,
+            fetch,
+            logger: { info: () => undefined, error: () => undefined },
+          },
+          provider,
+          typeof config.model === 'string' ? config.model : undefined,
+        );
+        previews.push({ rowId: row.id, value: result });
+      } catch (error) {
+        previews.push({
+          rowId: row.id,
+          error: error instanceof Error ? error.message : 'Preview failed',
+        });
+      }
+    }
+    return { previews };
   }
 }

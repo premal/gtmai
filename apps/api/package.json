@@ -10,6 +10,8 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@fastify/multipart": "8.3.1",
+    "@fastify/static": "7.0.4",
     "@gtmai/db": "workspace:*",
     "@gtmai/providers": "workspace:*",
     "@gtmai/shared": "workspace:*",
@@ -22,7 +24,7 @@
     "@nestjs/swagger": "8.1.0",
     "argon2": "0.41.1",
     "bullmq": "5.34.8",
-    "fastify": "5.2.1",
+    "fastify": "4.28.1",
     "ioredis": "5.4.1",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.1",
@@ -30,9 +32,9 @@
   },
   "devDependencies": {
     "@nestjs/testing": "10.4.15",
+    "supertest": "7.0.0",
     "tsx": "4.19.2",
     "typescript": "5.7.2",
-    "vitest": "2.1.8",
-    "supertest": "7.0.0"
+    "vitest": "2.1.8"
   }
 }
