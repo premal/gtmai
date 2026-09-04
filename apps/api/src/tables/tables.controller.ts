@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import type { FastifyRequest } from 'fastify';
@@ -21,7 +32,7 @@ type Request = FastifyRequest & { user: AuthUser };
 @UseGuards(JwtAuthGuard)
 export class TablesController {
   constructor(
-    private readonly prisma: PrismaService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
     @InjectQueue('cells') private readonly queue: Queue,
   ) {}
 

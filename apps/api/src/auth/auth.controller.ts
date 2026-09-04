@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Post, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service';
@@ -15,8 +15,8 @@ const credentials = z.object({
 @Controller('auth')
 export class AuthController {
   constructor(
-    private readonly auth: AuthService,
-    private readonly prisma: PrismaService,
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
   @Post('register')

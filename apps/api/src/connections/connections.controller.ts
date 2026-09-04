@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Post, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
@@ -11,7 +11,7 @@ type Request = FastifyRequest & { user: AuthUser };
 @Controller('connections')
 @UseGuards(JwtAuthGuard)
 export class ConnectionsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get()
   list(@Req() request: Request) {

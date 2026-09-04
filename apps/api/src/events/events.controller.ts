@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Req, Res, UseGuards } from '@nestjs/common';
 import Redis from 'ioredis';
+import { JwtService } from '@nestjs/jwt';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
@@ -8,7 +9,10 @@ import { PrismaService } from '../prisma/prisma.service';
 @Controller('tables')
 @UseGuards(JwtAuthGuard)
 export class EventsController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(JwtService) private readonly jwt: JwtService,
+  ) {}
 
   @Get(':id/events')
   async events(
@@ -16,6 +20,15 @@ export class EventsController {
     @Req() request: FastifyRequest & { user: AuthUser },
     @Res() response: FastifyReply,
   ): Promise<void> {
+    const query = request.query as { token?: string };
+    if (query.token) {
+      try {
+        request.user = this.jwt.verify<AuthUser>(query.token);
+      } catch {
+        response.code(401).send({ error: 'Unauthorized' });
+        return;
+      }
+    }
     const table = await this.prisma.table.findFirst({
       where: { id: tableId, workspaceId: request.user.workspaceId },
       select: { id: true },

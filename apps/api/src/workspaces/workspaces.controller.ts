@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 @Controller('workspaces')
 @UseGuards(JwtAuthGuard, WorkspaceScopedGuard)
 export class WorkspacesController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get(':workspaceId/tables')
   listTables(@Param('workspaceId') workspaceId: string) {

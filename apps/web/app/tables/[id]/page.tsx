@@ -35,7 +35,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         .then(setTable);
     };
     load();
-    const stream = new EventSource(`${api}/tables/${tableId}/events`);
+    const stream = new EventSource(
+      `${api}/tables/${tableId}/events?token=${encodeURIComponent(token)}`,
+    );
     stream.onmessage = () => load();
     return () => stream.close();
   }, [tableId]);
