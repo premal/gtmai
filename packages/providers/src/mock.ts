@@ -21,6 +21,12 @@ function fake(
       fullName: `${first} ${last}`,
       company: domain,
       confidence: 0.92,
+      eventType: action.endsWith('jobChanges')
+        ? 'job_change'
+        : action.endsWith('funding')
+          ? 'funding'
+          : undefined,
+      occurredAt: new Date(0).toISOString(),
     },
     raw: { seed },
   };
@@ -48,5 +54,7 @@ export const mockProvider: Provider = {
     action('mock.enrichPerson', 'Enrich person', 'person'),
     action('mock.enrichCompany', 'Enrich company', 'company'),
     action('mock.verifyEmail', 'Verify email', 'verify'),
+    action('mock.jobChanges', 'Job changes', 'other'),
+    action('mock.funding', 'Funding events', 'other'),
   ] as unknown as Provider['actions'],
 };
