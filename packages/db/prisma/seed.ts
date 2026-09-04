@@ -5,6 +5,12 @@ import Redis from 'ioredis';
 import { PrismaClient } from '@prisma/client';
 
 const db = new PrismaClient();
+type SeedColumn = {
+  id: string;
+  name: string;
+  kind: string;
+};
+
 const people = [
   ['Ada', 'Lovelace', 'analytical.engine', 'Analytical Engines'],
   ['Grace', 'Hopper', 'navy.mil', 'US Navy'],
@@ -122,7 +128,7 @@ async function main(): Promise<void> {
   for (const column of columns) {
     await db.column.create({ data: { tableId: table.id, config: {}, ...column } });
   }
-  const createdColumns = await db.column.findMany({
+  const createdColumns: SeedColumn[] = await db.column.findMany({
     where: { tableId: table.id },
     orderBy: { position: 'asc' },
     select: { id: true, name: true, kind: true },
