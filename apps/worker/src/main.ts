@@ -29,6 +29,17 @@ export function evaluateWorkerFormula(expression: string, values: Values): unkno
   return evaluateFormula(expression, values);
 }
 
+export function hasMissingInputs(input: Values): boolean {
+  const values = Object.values(input);
+  return (
+    values.length === 0 ||
+    values.every(
+      (value) =>
+        value === null || value === undefined || (typeof value === 'string' && value.trim() === ''),
+    )
+  );
+}
+
 function encryptionKey(): Buffer {
   const secret = process.env.ENCRYPTION_KEY;
   if (!secret) throw new Error('ENCRYPTION_KEY is required');
@@ -104,6 +115,11 @@ async function enqueueDependents(
     const config = column.config as Values;
     const text = JSON.stringify(config);
     if (findBindings(text).includes(completedName)) {
+      await db.cell.upsert({
+        where: { rowId_columnId: { rowId, columnId: column.id } },
+        create: { rowId, columnId: column.id, status: 'queued' },
+        update: { status: 'queued', error: null },
+      });
       await queue.add('cell', { rowId, columnId: column.id, workspaceId });
     }
   }
@@ -122,10 +138,13 @@ async function execute(job: Job<CellData>): Promise<void> {
   });
   if (!column || !row) throw new Error('Cell target not found');
   const values = rowValues(row);
-  const cell = await db.cell.upsert({
+  const claimed = await db.cell.updateMany({
+    where: { rowId, columnId, status: 'queued' },
+    data: { status: 'running', error: null },
+  });
+  if (claimed.count === 0) return;
+  const cell = await db.cell.findUniqueOrThrow({
     where: { rowId_columnId: { rowId, columnId } },
-    create: { rowId, columnId, status: 'running' },
-    update: { status: 'running', error: null },
   });
   const started = Date.now();
   let creditsUsed = 0;
@@ -147,6 +166,7 @@ async function execute(job: Job<CellData>): Promise<void> {
       };
     } else if (column.kind === 'waterfall') {
       result = { found: false };
+      let attempted = false;
       for (const item of (config.providers ?? []) as ProviderConfig[]) {
         const input = Object.fromEntries(
           Object.entries(item.input ?? {}).map(([key, value]) => [
@@ -154,6 +174,8 @@ async function execute(job: Job<CellData>): Promise<void> {
             typeof value === 'string' ? resolveBindings(value, values) : value,
           ]),
         );
+        if (hasMissingInputs(input)) continue;
+        attempted = true;
         const current = await runAction(item.provider, item.action, input, workspaceId);
         if (accepted(current.result, String(config.accept ?? ''))) {
           result = current.result;
@@ -162,6 +184,17 @@ async function execute(job: Job<CellData>): Promise<void> {
           break;
         }
       }
+      if (!attempted) {
+        await db.cell.update({
+          where: { id: cell.id },
+          data: { status: 'skipped', error: 'missing inputs', durationMs: Date.now() - started },
+        });
+        await publisher.publish(
+          `table:${column.tableId}`,
+          JSON.stringify({ rowId, columnId, status: 'skipped', error: 'missing inputs' }),
+        );
+        return;
+      }
     } else if (column.kind === 'enrichment') {
       const input = Object.fromEntries(
         Object.entries((config.input ?? {}) as Values).map(([key, value]) => [
@@ -169,6 +202,17 @@ async function execute(job: Job<CellData>): Promise<void> {
           typeof value === 'string' ? resolveBindings(value, values) : value,
         ]),
       );
+      if (hasMissingInputs(input)) {
+        await db.cell.update({
+          where: { id: cell.id },
+          data: { status: 'skipped', error: 'missing inputs', durationMs: Date.now() - started },
+        });
+        await publisher.publish(
+          `table:${column.tableId}`,
+          JSON.stringify({ rowId, columnId, status: 'skipped', error: 'missing inputs' }),
+        );
+        return;
+      }
       const current = await runAction(
         String(config.provider),
         String(config.action),

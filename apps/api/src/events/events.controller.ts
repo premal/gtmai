@@ -1,5 +1,4 @@
 import { Controller, Get, Inject, Param, Req, Res, UseGuards } from '@nestjs/common';
-import { ApiExcludeEndpoint } from '@nestjs/swagger';
 import Redis from 'ioredis';
 import { JwtService } from '@nestjs/jwt';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -16,7 +15,6 @@ export class EventsController {
   ) {}
 
   @Get(':id/events')
-  @ApiExcludeEndpoint()
   async events(
     @Param('id') tableId: string,
     @Req() request: FastifyRequest & { user: AuthUser },

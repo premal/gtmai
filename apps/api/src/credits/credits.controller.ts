@@ -45,6 +45,14 @@ export class CreditsController {
       include: { table: true },
       orderBy: { createdAt: 'asc' },
     });
+    const cellIds = ledger.flatMap((entry) =>
+      entry.refType === 'cell' && entry.refId ? [entry.refId] : [],
+    );
+    const cells = await this.prisma.cell.findMany({
+      where: { id: { in: cellIds } },
+      select: { id: true, provider: true },
+    });
+    const providerByCell = new Map(cells.map((cell) => [cell.id, cell.provider]));
     const byTable = new Map<string, { name: string; spend: number }>();
     const byProvider = new Map<string, number>();
     for (const entry of ledger) {
@@ -53,7 +61,10 @@ export class CreditsController {
       const current = byTable.get(tableKey) ?? { name: entry.table?.name ?? 'Workspace', spend: 0 };
       current.spend += spend;
       byTable.set(tableKey, current);
-      const provider = entry.reason.split(':')[0] ?? 'unknown';
+      let provider = 'unknown';
+      if (entry.refType === 'cell' && entry.refId) {
+        provider = providerByCell.get(entry.refId) ?? provider;
+      }
       byProvider.set(provider, (byProvider.get(provider) ?? 0) + spend);
     }
     return {

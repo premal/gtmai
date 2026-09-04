@@ -229,6 +229,39 @@ h3 {
   margin-left: auto;
   color: #9aa4b6;
 }
+.ledger-table {
+  overflow: hidden;
+  max-width: 900px;
+  border: 1px solid #e5e9f2;
+  border-radius: 10px;
+  background: #fff;
+}
+.ledger-head,
+.ledger-row {
+  display: grid;
+  grid-template-columns: 150px minmax(160px, 1fr) minmax(180px, 1.5fr) 90px;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 14px;
+  border-bottom: 1px solid #eef1f6;
+  font-size: 12px;
+}
+.ledger-head {
+  background: #f8f9fc;
+  color: #7b879c;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.ledger-row:last-child {
+  border-bottom: 0;
+}
+.ledger-row .negative {
+  color: #c2414b;
+}
+.ledger-row .positive {
+  color: #27845b;
+}
 .builder-strip {
   display: flex;
   gap: 24px;

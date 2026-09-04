@@ -143,6 +143,16 @@ export class TablesController {
     await this.prisma.$transaction(
       columns.map((column) => {
         const value = input.values[column.name];
+        if (column.kind === 'input') {
+          return this.prisma.cell.create({
+            data: {
+              rowId: row.id,
+              columnId: column.id,
+              value: value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue),
+              status: 'done',
+            },
+          });
+        }
         return this.prisma.cell.create({
           data:
             value === undefined
@@ -170,6 +180,17 @@ export class TablesController {
       .parse(body ?? {});
     const upload = request.isMultipart() ? await request.file() : undefined;
     const uploadedCsv = upload ? (await upload.toBuffer()).toString('utf8') : undefined;
+    const multipartMapping = upload?.fields.mapping;
+    const mappingField =
+      multipartMapping && !Array.isArray(multipartMapping) && multipartMapping.type === 'field'
+        ? multipartMapping.value
+        : undefined;
+    const mapping =
+      jsonBody.mapping ??
+      (typeof mappingField === 'string'
+        ? z.record(z.string()).parse(JSON.parse(mappingField))
+        : undefined) ??
+      {};
     const csv = uploadedCsv ?? jsonBody.csv;
     if (!csv) throw new Error('CSV content is required');
     const table = await this.prisma.table.findFirst({
@@ -193,7 +214,6 @@ export class TablesController {
       return values.map((value) => value.replace(/^"|"$/g, '').replace(/""/g, '"'));
     };
     const sourceHeaders = parseLine(lines[0] ?? '');
-    const mapping = jsonBody.mapping ?? {};
     const headers = sourceHeaders.map((header) => mapping[header] || header);
     const columns = [...table.columns];
     for (const [position, name] of headers.entries()) {
@@ -329,15 +349,15 @@ export class TablesController {
         if (input.onlyEmpty && cell?.value !== null && cell?.value !== undefined) continue;
         if (input.onlyErrored && cell?.status !== 'error') continue;
       }
-      await this.queue.add('cell', {
-        rowId: row.id,
-        columnId,
-        workspaceId: request.user.workspaceId,
-      });
       await this.prisma.cell.upsert({
         where: { rowId_columnId: { rowId: row.id, columnId } },
         create: { rowId: row.id, columnId, status: 'queued' },
         update: { status: 'queued', error: null },
+      });
+      await this.queue.add('cell', {
+        rowId: row.id,
+        columnId,
+        workspaceId: request.user.workspaceId,
       });
       queued += 1;
     }
@@ -354,15 +374,15 @@ export class TablesController {
       where: { tableId, table: { workspaceId: request.user.workspaceId } },
     });
     for (const column of columns) {
-      await this.queue.add('cell', {
-        rowId,
-        columnId: column.id,
-        workspaceId: request.user.workspaceId,
-      });
       await this.prisma.cell.upsert({
         where: { rowId_columnId: { rowId, columnId: column.id } },
         create: { rowId, columnId: column.id, status: 'queued' },
         update: { status: 'queued', error: null },
+      });
+      await this.queue.add('cell', {
+        rowId,
+        columnId: column.id,
+        workspaceId: request.user.workspaceId,
       });
     }
     return { queued: columns.length };

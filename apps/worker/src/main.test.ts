@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateWorkerFormula, startWorker } from './main';
+import { evaluateWorkerFormula, hasMissingInputs, startWorker } from './main';
 
 describe('worker', () => {
   it('exports a worker factory', () => expect(typeof startWorker).toBe('function'));
@@ -11,5 +11,10 @@ describe('worker', () => {
         'Last name': 'Lovelace',
       }),
     ).toBe('Ada Lovelace');
+  });
+
+  it('detects empty resolved provider inputs', () => {
+    expect(hasMissingInputs({ firstName: '', domain: null })).toBe(true);
+    expect(hasMissingInputs({ firstName: 'Ada', domain: '' })).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import { SignOutFooter } from '../../auth';
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Cell = {
   id?: string;
+  rowId?: string;
   columnId: string;
   value: unknown;
   status: string;
@@ -16,6 +17,7 @@ type Cell = {
   durationMs?: number;
   provenance?: unknown;
 };
+type SelectedCell = Cell & { rowId: string };
 type Column = {
   id: string;
   name: string;
@@ -27,6 +29,11 @@ type Column = {
 type Row = { id: string; cells: Cell[] };
 type Table = { id: string; name: string; columns: Column[]; rows: Row[] };
 type ColumnKind = 'input' | 'enrichment' | 'waterfall' | 'agent' | 'formula' | 'http';
+type RunOptions = {
+  rowIds?: string[];
+  onlyEmpty?: boolean;
+  onlyErrored?: boolean;
+};
 type CatalogAction = {
   provider: string;
   id: string;
@@ -38,7 +45,7 @@ type CatalogAction = {
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const [tableId, setTableId] = useState('');
   const [table, setTable] = useState<Table | null>(null);
-  const [selected, setSelected] = useState<Cell | null>(null);
+  const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [selectedColumn, setSelectedColumn] = useState<Column | null>(null);
   const [adding, setAdding] = useState(false);
   const [step, setStep] = useState(0);
@@ -95,15 +102,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     return () => stream.close();
   }, [tableId]);
 
-  async function run(
-    columnId: string,
-    options: { onlyEmpty?: boolean; onlyErrored?: boolean } = {},
-  ): Promise<void> {
+  async function run(columnId: string, options: RunOptions = {}): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
+    const rowIds = options.rowIds ?? (selectedRows.length ? selectedRows : undefined);
     await fetch(`${api}/tables/${tableId}/columns/${columnId}/run`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ ...options, rowIds: selectedRows.length ? selectedRows : undefined }),
+      body: JSON.stringify({ ...options, rowIds }),
     });
   }
 
@@ -255,8 +260,8 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     const body = csvFile
       ? (() => {
           const form = new FormData();
-          form.append('file', csvFile);
           form.append('mapping', JSON.stringify(mapping));
+          form.append('file', csvFile);
           return form;
         })()
       : JSON.stringify({ csv, mapping });
@@ -550,23 +555,24 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                         <td
                           key={column.id}
                           onClick={() =>
-                            cell && setSelected({ ...cell, provenance: cell.provenance })
+                            cell &&
+                            setSelected({ ...cell, rowId: row.id, provenance: cell.provenance })
                           }
                         >
-                          {!cell || cell.status === 'skipped' ? null : cell.status === 'done' ? (
-                            editable ? (
-                              <input
-                                className="cell-input"
-                                defaultValue={displayValue(cell.value, column)}
-                                onChange={(event) =>
-                                  scheduleCellUpdate(row.id, column, event.target.value)
-                                }
-                              />
-                            ) : (
-                              <span title={JSON.stringify(cell.value)}>
-                                {displayValue(cell.value, column)}
-                              </span>
-                            )
+                          {editable ? (
+                            <input
+                              className="cell-input"
+                              defaultValue={
+                                cell?.value == null ? '' : displayValue(cell.value, column)
+                              }
+                              onChange={(event) =>
+                                scheduleCellUpdate(row.id, column, event.target.value)
+                              }
+                            />
+                          ) : !cell || cell.status === 'skipped' ? null : cell.status === 'done' ? (
+                            <span title={JSON.stringify(cell.value)}>
+                              {displayValue(cell.value, column)}
+                            </span>
                           ) : (
                             <span className={`status ${cell.status}`}>
                               {cell.status === 'error' ? (cell.error ?? 'error') : cell.status}
@@ -961,7 +967,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           <button
             className="button primary"
             onClick={() => {
-              void run(selected.columnId);
+              void run(selected.columnId, { rowIds: [selected.rowId] });
               setSelected(null);
             }}
           >

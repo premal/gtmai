@@ -50,6 +50,72 @@ integration('api smoke', () => {
       },
     });
     expect(column.statusCode).toBe(201);
+    const firstName = await instance.inject({
+      method: 'POST',
+      url: `/tables/${table.id}/columns`,
+      headers: { authorization: `Bearer ${auth.token}` },
+      payload: {
+        name: 'First name',
+        type: 'text',
+        kind: 'input',
+        config: {},
+      },
+    });
+    expect(firstName.statusCode).toBe(201);
+    const lastName = await instance.inject({
+      method: 'POST',
+      url: `/tables/${table.id}/columns`,
+      headers: { authorization: `Bearer ${auth.token}` },
+      payload: {
+        name: 'Last name',
+        type: 'text',
+        kind: 'input',
+        config: {},
+      },
+    });
+    expect(lastName.statusCode).toBe(201);
+    const boundary = `----gtmai-${Date.now()}`;
+    const mapping = JSON.stringify({ given: 'First name', surname: 'Last name' });
+    const multipart = [
+      `--${boundary}\r\nContent-Disposition: form-data; name="mapping"\r\n\r\n`,
+      mapping,
+      '\r\n',
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="people.csv"\r\nContent-Type: text/csv\r\n\r\n`,
+      'given,surname\r\nGrace,Hopper\r\n',
+      `\r\n--${boundary}--\r\n`,
+    ].join('');
+    const imported = await instance.inject({
+      method: 'POST',
+      url: `/tables/${table.id}/import`,
+      headers: {
+        authorization: `Bearer ${auth.token}`,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: multipart,
+    });
+    expect(imported.statusCode).toBe(201);
+    const importedTable = await instance.inject({
+      method: 'GET',
+      url: `/tables/${table.id}`,
+      headers: { authorization: `Bearer ${auth.token}` },
+    });
+    expect(importedTable.statusCode).toBe(200);
+    const tableBody = importedTable.json() as {
+      columns: { id: string; name: string }[];
+      rows: { cells: { value: unknown; columnId: string }[] }[];
+    };
+    const importedValues = tableBody.rows.at(-1)?.cells;
+    const columnNameById = new Map(tableBody.columns.map((item) => [item.id, item.name]));
+    expect(
+      importedValues?.some(
+        (cell) => columnNameById.get(cell.columnId) === 'First name' && cell.value === 'Grace',
+      ),
+    ).toBe(true);
+    expect(
+      importedValues?.some(
+        (cell) => columnNameById.get(cell.columnId) === 'Last name' && cell.value === 'Hopper',
+      ),
+    ).toBe(true);
     await app.close();
   });
 });
