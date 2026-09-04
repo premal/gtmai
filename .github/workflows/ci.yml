@@ -40,6 +40,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @gtmai/db prisma generate
       - run: pnpm --filter @gtmai/db prisma migrate deploy
       - run: pnpm exec prettier --check .
       - run: pnpm lint
