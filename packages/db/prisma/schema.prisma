@@ -186,17 +186,21 @@ model Company {
   workspaceId String
   name String
   domain String?
+  domainKey String?
   data Json
   createdAt DateTime @default(now())
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   contacts Contact[]
   signalEvents SignalEvent[]
+  @@unique([workspaceId, domainKey])
+  @@index([workspaceId, domain])
 }
 model Contact {
   id String @id @default(cuid())
   workspaceId String
   companyId String?
   email String?
+  emailKey String?
   firstName String?
   lastName String?
   data Json
@@ -205,6 +209,8 @@ model Contact {
   company Company? @relation(fields: [companyId], references: [id])
   signalEvents SignalEvent[]
   segmentMemberships SegmentMembership[]
+  @@unique([workspaceId, emailKey])
+  @@index([workspaceId, email])
 }
 model FieldDefinition {
   id String @id @default(cuid())
@@ -229,6 +235,7 @@ model Segment {
   filter Json
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   memberships SegmentMembership[]
+  @@index([workspaceId])
 }
 model SegmentMembership {
   id String @id @default(cuid())
@@ -244,8 +251,11 @@ model SignalDefinition {
   name String
   type SignalType
   config Json
+  secret String?
+  triggerWorkflowId String?
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   events SignalEvent[]
+  @@index([workspaceId, type])
 }
 model SignalEvent {
   id String @id @default(cuid())
@@ -257,14 +267,20 @@ model SignalEvent {
   definition SignalDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
   contact Contact? @relation(fields: [contactId], references: [id])
   company Company? @relation(fields: [companyId], references: [id])
+  @@index([definitionId, occurredAt])
+  @@index([contactId, occurredAt])
+  @@index([companyId, occurredAt])
 }
 model Workflow {
   id String @id @default(cuid())
   workspaceId String
   name String
   graph Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   runs WorkflowRun[]
+  @@index([workspaceId, createdAt])
 }
 model WorkflowRun {
   id String @id @default(cuid())
@@ -424,9 +440,10 @@ model UsageSnapshot {
 }
 model Template {
   id String @id @default(cuid())
-  workspaceId String
+  workspaceId String?
   name String
   kind String
   definition Json
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId, kind])
 }
