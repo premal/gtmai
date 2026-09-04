@@ -186,6 +186,28 @@ h3 {
   padding: 17px;
   transition: box-shadow 0.15s;
 }
+.table-card-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+}
+.icon-button {
+  border: 0;
+  background: transparent;
+  color: #5146e5;
+  cursor: pointer;
+  font-size: 11px;
+}
+.icon-button.danger {
+  color: #c2414b;
+}
+.search-input {
+  border: 1px solid #dce2ed;
+  border-radius: 7px;
+  padding: 10px 12px;
+  min-width: 190px;
+}
 .table-card:hover {
   box-shadow: 0 5px 16px #dce2ef;
 }
@@ -256,6 +278,19 @@ h3 {
   padding: 11px 12px;
   height: 43px;
   white-space: nowrap;
+}
+.cell-input {
+  width: 100%;
+  min-width: 120px;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 4px;
+  color: inherit;
+}
+.cell-input:focus {
+  border-color: #a7a2f7;
+  outline: none;
+  background: #fff;
 }
 .data-grid td:hover {
   background: #fafbff;
@@ -439,4 +474,95 @@ h3 {
 }
 .detail-row strong {
   color: #293650;
+}
+.json-value {
+  max-height: 190px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 7px;
+  background: #f7f8fb;
+  color: #4b5870;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+.selection-bar {
+  position: sticky;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: fit-content;
+  margin: 12px auto 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #252c46;
+  color: #fff;
+  font-size: 12px;
+}
+.selection-bar .button {
+  padding: 6px 9px;
+}
+.csv-input {
+  width: 100%;
+  min-height: 170px;
+  border: 1px solid #dce2ed;
+  border-radius: 7px;
+  padding: 10px;
+  font: inherit;
+}
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #252c46;
+  color: white;
+}
+.settings-card {
+  max-width: 700px;
+  margin-bottom: 18px;
+  padding: 20px;
+  border: 1px solid #e5e9f2;
+  border-radius: 10px;
+  background: #fff;
+}
+.settings-card input,
+.settings-card select {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  border: 1px solid #dce2ed;
+  border-radius: 7px;
+  padding: 10px;
+}
+.member-row {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #edf0f5;
+  padding: 12px 0;
+  font-size: 13px;
+}
+.member-row small {
+  display: block;
+  margin-top: 4px;
+  color: #8a95a8;
+}
+.section-title {
+  margin-top: 30px;
+}
+.sparkline {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  height: 100px;
+  max-width: 700px;
+  margin: 18px 0 30px;
+  padding: 10px;
+  border-bottom: 1px solid #e5e9f2;
+}
+.sparkline span {
+  width: 10px;
+  border-radius: 3px 3px 0 0;
+  background: #8179eb;
 }

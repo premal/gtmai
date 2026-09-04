@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Table = { id: string; name: string; _count: { rows: number }; columns: { name: string }[] };
@@ -12,6 +12,7 @@ export default function Home() {
   const [workspace, setWorkspace] = useState('');
   const [tables, setTables] = useState<Table[]>([]);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem('gtmai-token');
@@ -62,6 +63,32 @@ export default function Home() {
     window.location.reload();
   }
 
+  async function deleteTable(id: string): Promise<void> {
+    await fetch(`${api}/tables/${id}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    setTables((current) => current.filter((table) => table.id !== id));
+  }
+
+  async function renameTable(table: Table): Promise<void> {
+    const name = window.prompt('Table name', table.name);
+    if (!name) return;
+    await fetch(`${api}/tables/${table.id}`, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    setTables((current) =>
+      current.map((item) => (item.id === table.id ? { ...item, name } : item)),
+    );
+  }
+
+  const filteredTables = useMemo(
+    () => tables.filter((table) => table.name.toLowerCase().includes(search.toLowerCase())),
+    [search, tables],
+  );
+
   if (!token) {
     return (
       <main className="login-shell">
@@ -104,6 +131,7 @@ export default function Home() {
           </a>
           <a href="/connections">⌁ Connections</a>
           <a href="/credits">◈ Credits</a>
+          <a href="/settings">⚙ Settings</a>
         </nav>
         <div className="sidebar-footer">
           <span className="avatar">DU</span>
@@ -116,6 +144,12 @@ export default function Home() {
             <div className="eyebrow">WORKSPACE</div>
             <h2>Tables</h2>
           </div>
+          <input
+            className="search-input"
+            placeholder="Search tables"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
           <button className="button primary" onClick={() => void createTable()}>
             ＋ New table
           </button>
@@ -135,17 +169,25 @@ export default function Home() {
           </div>
         </div>
         <div className="table-list">
-          {tables.map((table) => (
-            <a className="table-card" href={`/tables/${table.id}`} key={table.id}>
-              <div className="table-icon">▦</div>
-              <div>
-                <h3>{table.name}</h3>
-                <p>
-                  {table._count.rows} rows · {table.columns.length} columns
-                </p>
-              </div>
-              <span className="arrow">→</span>
-            </a>
+          {filteredTables.map((table) => (
+            <div className="table-card" key={table.id}>
+              <a className="table-card-link" href={`/tables/${table.id}`}>
+                <div className="table-icon">▦</div>
+                <div>
+                  <h3>{table.name}</h3>
+                  <p>
+                    {table._count.rows} rows · {table.columns.length} columns
+                  </p>
+                </div>
+                <span className="arrow">→</span>
+              </a>
+              <button className="icon-button" onClick={() => void renameTable(table)}>
+                Rename
+              </button>
+              <button className="icon-button danger" onClick={() => void deleteTable(table.id)}>
+                Delete
+              </button>
+            </div>
           ))}
         </div>
       </section>
