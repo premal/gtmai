@@ -19,6 +19,7 @@ function fake(
       email: `${first}.${last}@${domain}`,
       phone: `+1-555-${seed.slice(0, 3)}-${seed.slice(3, 7)}`,
       fullName: `${first} ${last}`,
+      title: action.endsWith('enrichPerson') ? 'Engineer' : undefined,
       company: domain,
       confidence: 0.92,
       eventType: action.endsWith('jobChanges')

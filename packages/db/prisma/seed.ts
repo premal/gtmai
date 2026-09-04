@@ -291,20 +291,47 @@ async function main(): Promise<void> {
             config: {
               provider: 'mock',
               action: 'mock.enrichPerson',
-              firstName: '{{trigger.firstName}}',
+              input: {
+                firstName: '{{trigger.firstName}}',
+                lastName: '{{trigger.lastName}}',
+                domain: '{{trigger.domain}}',
+              },
             },
             position: { x: 320, y: 80 },
           },
           {
+            id: 'condition',
+            type: 'condition',
+            config: { expression: '{{enrich.output.title}} contains "Engineer"' },
+            position: { x: 580, y: 80 },
+          },
+          {
             id: 'append',
             type: 'table.appendRow',
-            config: { tableId: table.id },
-            position: { x: 620, y: 80 },
+            config: {
+              tableId: table.id,
+              values: {
+                'Work email': '{{enrich.output.email}}',
+                'Display name': '{{enrich.output.fullName}}',
+              },
+            },
+            position: { x: 840, y: 20 },
+          },
+          {
+            id: 'webhook',
+            type: 'webhook.out',
+            config: {
+              url: 'http://localhost:4000/health',
+              body: { title: '{{enrich.output.title}}' },
+            },
+            position: { x: 840, y: 170 },
           },
         ],
         edges: [
           { from: 'trigger', to: 'enrich' },
-          { from: 'enrich', to: 'append' },
+          { from: 'enrich', to: 'condition' },
+          { from: 'condition', to: 'append', condition: 'true' },
+          { from: 'condition', to: 'webhook', condition: 'false' },
         ],
       },
     },
@@ -315,15 +342,16 @@ async function main(): Promise<void> {
       status: 'done',
       input: { signalId: signal.id },
       output: { imported: true },
+      credits: 1,
       startedAt: new Date(),
       completedAt: new Date(),
     },
   });
   await db.stepRun.createMany({
-    data: ['trigger', 'enrich', 'append'].map((nodeId) => ({
+    data: ['trigger', 'enrich', 'condition', 'append', 'webhook'].map((nodeId) => ({
       workflowRunId: run.id,
       nodeId,
-      status: 'done',
+      status: nodeId === 'webhook' ? 'skipped' : 'done',
       input: {},
       output: {},
     })),
@@ -339,8 +367,28 @@ async function main(): Promise<void> {
     data: {
       functionId: fn.id,
       version: 1,
-      program: { inputs: [{ name: 'name', type: 'text' }], nodes: [], output: '{{name}}' },
-      testCases: [{ input: { name: '  Acme  ' }, expected: '  Acme  ' }],
+      program: {
+        inputs: [{ name: 'name', type: 'text' }],
+        nodes: [
+          {
+            id: 'trim',
+            type: 'formula',
+            config: { expression: 'trim({{inputs.name}})' },
+            position: { x: 100, y: 80 },
+          },
+          {
+            id: 'lower',
+            type: 'formula',
+            config: { expression: 'lower({{trim.output}})' },
+            position: { x: 360, y: 80 },
+          },
+        ],
+        output: '{{lower.output}}',
+      },
+      testCases: [
+        { input: { name: '  Acme  ' }, expected: 'acme' },
+        { input: { name: '  Globex  ' }, expected: 'globex' },
+      ],
     },
   });
 }
