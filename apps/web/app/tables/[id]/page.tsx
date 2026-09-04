@@ -2,6 +2,7 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { SignOutFooter } from '../../auth';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Cell = {
@@ -369,6 +370,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
           <a href="/connections">⌁ Connections</a>
           <a href="/credits">◈ Credits</a>
         </nav>
+        <SignOutFooter />
       </aside>
       <section className="content wide">
         <header className="topbar">

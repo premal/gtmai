@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { SignOutFooter } from '../auth';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Connection = {
@@ -74,6 +75,7 @@ export default function ConnectionsPage() {
           <a href="/credits">◈ Credits</a>
           <a href="/settings">⚙ Settings</a>
         </nav>
+        <SignOutFooter />
       </aside>
       <section className="content">
         <header className="topbar">

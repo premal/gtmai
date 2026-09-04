@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { SignOutFooter } from '../auth';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Member = { user: { name: string; email: string }; role: string };
@@ -32,6 +33,7 @@ export default function SettingsPage() {
             ⚙ Settings
           </a>
         </nav>
+        <SignOutFooter />
       </aside>
       <section className="content">
         <header className="topbar">

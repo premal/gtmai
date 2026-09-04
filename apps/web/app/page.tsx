@@ -1,17 +1,15 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { SignOutFooter } from './auth';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Table = { id: string; name: string; _count: { rows: number }; columns: { name: string }[] };
 
 export default function Home() {
-  const [email, setEmail] = useState('demo@gtmai.dev');
-  const [password, setPassword] = useState('demo1234');
   const [token, setToken] = useState('');
   const [workspace, setWorkspace] = useState('');
   const [tables, setTables] = useState<Table[]>([]);
-  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -31,28 +29,6 @@ export default function Home() {
       .then((response) => response.json() as Promise<Table[]>)
       .then(setTables);
   }, [token, workspace]);
-
-  async function login(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    const response = await fetch(`${api}/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = (await response.json()) as {
-      token?: string;
-      workspaceId?: string;
-      error?: string;
-    };
-    if (!response.ok || !data.token || !data.workspaceId) {
-      setError(data.error ?? 'Login failed');
-      return;
-    }
-    localStorage.setItem('gtmai-token', data.token);
-    localStorage.setItem('gtmai-workspace', data.workspaceId);
-    setToken(data.token);
-    setWorkspace(data.workspaceId);
-  }
 
   async function createTable(): Promise<void> {
     await fetch(`${api}/workspaces/${workspace}/tables`, {
@@ -89,33 +65,7 @@ export default function Home() {
     [search, tables],
   );
 
-  if (!token) {
-    return (
-      <main className="login-shell">
-        <form className="login-card" onSubmit={(event) => void login(event)}>
-          <div className="eyebrow">REVENUE OPERATIONS</div>
-          <h1>GTM AI</h1>
-          <p className="muted">A focused workspace for enrichment and outbound data.</p>
-          <label>
-            Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} />
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-          <button className="button primary" type="submit">
-            Log in
-          </button>
-          {error && <p className="error">{error}</p>}
-        </form>
-      </main>
-    );
-  }
+  if (!token) return <main className="loading">Redirecting to login…</main>;
 
   return (
     <main className="app-shell">
@@ -133,10 +83,7 @@ export default function Home() {
           <a href="/credits">◈ Credits</a>
           <a href="/settings">⚙ Settings</a>
         </nav>
-        <div className="sidebar-footer">
-          <span className="avatar">DU</span>
-          <span>Demo User</span>
-        </div>
+        <SignOutFooter />
       </aside>
       <section className="content">
         <header className="topbar">
