@@ -125,6 +125,7 @@ async function main(): Promise<void> {
   const createdColumns = await db.column.findMany({
     where: { tableId: table.id },
     orderBy: { position: 'asc' },
+    select: { id: true, name: true, kind: true },
   });
   const requestedRows = Number(
     process.argv.find((argument) => argument.startsWith('--rows='))?.split('=')[1] ?? people.length,
