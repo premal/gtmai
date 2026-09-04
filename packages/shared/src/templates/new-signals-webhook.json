@@ -1,0 +1,12 @@
+{
+  "id": "builtin-webhook",
+  "name": "New signals → Slack-style webhook",
+  "kind": "workflow",
+  "definition": {
+    "nodes": [
+      { "id": "trigger", "type": "trigger.signal", "config": {}, "position": { "x": 40, "y": 80 } },
+      { "id": "webhook", "type": "webhook.out", "config": {}, "position": { "x": 320, "y": 80 } }
+    ],
+    "edges": [{ "from": "trigger", "to": "webhook" }]
+  }
+}

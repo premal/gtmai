@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import { PrismaClient } from '@gtmai/db';
 import { providers, runAgent, type ActionResult, type ProviderAction } from '@gtmai/providers';
 import { evaluateFormula, findBindings, resolveBindings } from '@gtmai/shared';
+import { startPhase2Workers } from './phase2-worker';
 
 const db = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
@@ -263,6 +264,27 @@ async function execute(job: Job<CellData>): Promise<void> {
       }
       provider = current.provider;
       creditsUsed = current.result.found ? current.action.creditCost : 0;
+    } else if (column.kind === 'function') {
+      const functionId = String(config.functionId ?? '');
+      const versionNumber = typeof config.version === 'number' ? config.version : undefined;
+      const version = await db.functionVersion.findFirst({
+        where: { functionId, ...(versionNumber ? { version: versionNumber } : {}) },
+        orderBy: { version: 'desc' },
+      });
+      if (!version) throw new Error('Function version not found');
+      const program = version.program as { output?: string };
+      const bindings = (config.input ?? {}) as Values;
+      const input = Object.fromEntries(
+        Object.entries(bindings).map(([key, value]) => [
+          key,
+          typeof value === 'string' ? resolveBindings(value, values) : value,
+        ]),
+      );
+      result = {
+        found: true,
+        data: typeof program.output === 'string' ? resolveBindings(program.output, input) : input,
+      };
+      provider = 'function';
     } else {
       result = { found: true, data: config.value ?? null };
     }
@@ -324,4 +346,7 @@ export function startWorker(): Worker<CellData> {
   });
 }
 
-if (process.env.NODE_ENV !== 'test') startWorker();
+if (process.env.NODE_ENV !== 'test') {
+  startWorker();
+  startPhase2Workers();
+}

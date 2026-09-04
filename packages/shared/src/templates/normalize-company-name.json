@@ -1,0 +1,10 @@
+{
+  "id": "builtin-normalize-company",
+  "name": "Normalize company name",
+  "kind": "function",
+  "definition": {
+    "inputs": [{ "name": "name", "type": "text" }],
+    "nodes": [],
+    "output": "{{name}}"
+  }
+}
