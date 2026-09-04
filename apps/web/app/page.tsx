@@ -1,9 +1,154 @@
 'use client';
-import { useEffect,useState } from 'react';
-const api=process.env.NEXT_PUBLIC_API_URL??'http://localhost:4000';
-type Table={id:string;name:string;_count:{rows:number};columns:{name:string;kind:string}[]};
-export default function Home(){const [email,setEmail]=useState('demo@gtmai.dev');const [password,setPassword]=useState('demo1234');const [token,setToken]=useState('');const [tables,setTables]=useState<Table[]>([]);const [workspace,setWorkspace]=useState('');const [error,setError]=useState('');
-async function login(){const response=await fetch(`${api}/auth/login`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password})});const data=await response.json() as {token?:string;workspaceId?:string;error?:string};if(!response.ok){setError(data.error??'Login failed');return}localStorage.setItem('token',data.token??'');setToken(data.token??'');setWorkspace(data.workspaceId??'')}
-useEffect(()=>{if(!token||!workspace)return;fetch(`${api}/workspaces/${workspace}/tables`,{headers:{authorization:`Bearer ${token}`}}).then((r)=>r.json()).then((data:Table[])=>setTables(data))},[token,workspace]);
-if(!token)return <main className="min-h-screen grid place-items-center"><form className="w-96 rounded-xl bg-white p-8 shadow" onSubmit={(e)=>{e.preventDefault();void login()}}><h1 className="mb-6 text-2xl font-bold">GTM AI</h1><input className="mb-3 w-full rounded border p-2" value={email} onChange={(e)=>setEmail(e.target.value)} placeholder="Email"/><input className="mb-3 w-full rounded border p-2" type="password" value={password} onChange={(e)=>setPassword(e.target.value)} placeholder="Password"/><button className="w-full rounded bg-indigo-600 p-2 text-white">Log in</button>{error&&<p className="text-red-600">{error}</p>}</form></main>;
-return <main className="flex min-h-screen"><aside className="w-60 border-r bg-white p-5"><h1 className="mb-8 text-xl font-bold">GTM AI</h1><nav className="space-y-3 text-sm"><div>Tables</div><div>Connections</div><div>Credits</div></nav></aside><section className="flex-1 p-8"><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">Your tables</h2><button className="rounded bg-indigo-600 px-4 py-2 text-white" onClick={()=>void fetch(`${api}/workspaces/${workspace}/tables`,{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({name:'New table'})}).then(()=>location.reload())}>+ New table</button></div><div className="grid gap-4 md:grid-cols-3">{tables.map((table)=><a className="rounded-xl border bg-white p-5 shadow-sm" href={`/tables/${table.id}`} key={table.id}><h3 className="font-semibold">{table.name}</h3><p className="mt-2 text-sm text-slate-500">{table._count.rows} rows · {table.columns.length} columns</p></a>)}</div></section></main>}
+
+import { FormEvent, useEffect, useState } from 'react';
+
+const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+type Table = { id: string; name: string; _count: { rows: number }; columns: { name: string }[] };
+
+export default function Home() {
+  const [email, setEmail] = useState('demo@gtmai.dev');
+  const [password, setPassword] = useState('demo1234');
+  const [token, setToken] = useState('');
+  const [workspace, setWorkspace] = useState('');
+  const [tables, setTables] = useState<Table[]>([]);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('gtmai-token');
+    const savedWorkspace = localStorage.getItem('gtmai-workspace');
+    if (saved && savedWorkspace) {
+      setToken(saved);
+      setWorkspace(savedWorkspace);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!token || !workspace) return;
+    void fetch(`${api}/workspaces/${workspace}/tables`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((response) => response.json() as Promise<Table[]>)
+      .then(setTables);
+  }, [token, workspace]);
+
+  async function login(event: FormEvent): Promise<void> {
+    event.preventDefault();
+    const response = await fetch(`${api}/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = (await response.json()) as {
+      token?: string;
+      workspaceId?: string;
+      error?: string;
+    };
+    if (!response.ok || !data.token || !data.workspaceId) {
+      setError(data.error ?? 'Login failed');
+      return;
+    }
+    localStorage.setItem('gtmai-token', data.token);
+    localStorage.setItem('gtmai-workspace', data.workspaceId);
+    setToken(data.token);
+    setWorkspace(data.workspaceId);
+  }
+
+  async function createTable(): Promise<void> {
+    await fetch(`${api}/workspaces/${workspace}/tables`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'New table' }),
+    });
+    window.location.reload();
+  }
+
+  if (!token) {
+    return (
+      <main className="login-shell">
+        <form className="login-card" onSubmit={(event) => void login(event)}>
+          <div className="eyebrow">REVENUE OPERATIONS</div>
+          <h1>GTM AI</h1>
+          <p className="muted">A focused workspace for enrichment and outbound data.</p>
+          <label>
+            Email
+            <input value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+            />
+          </label>
+          <button className="button primary" type="submit">
+            Log in
+          </button>
+          {error && <p className="error">{error}</p>}
+        </form>
+      </main>
+    );
+  }
+
+  return (
+    <main className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">G</span>
+          <strong>GTM AI</strong>
+        </div>
+        <div className="workspace-pill">⌘ Demo Workspace</div>
+        <nav>
+          <a className="active" href="/">
+            ▦ Tables
+          </a>
+          <a href="/connections">⌁ Connections</a>
+          <a href="/credits">◈ Credits</a>
+        </nav>
+        <div className="sidebar-footer">
+          <span className="avatar">DU</span>
+          <span>Demo User</span>
+        </div>
+      </aside>
+      <section className="content">
+        <header className="topbar">
+          <div>
+            <div className="eyebrow">WORKSPACE</div>
+            <h2>Tables</h2>
+          </div>
+          <button className="button primary" onClick={() => void createTable()}>
+            ＋ New table
+          </button>
+        </header>
+        <div className="metric-row">
+          <div>
+            <span className="metric-label">Tables</span>
+            <strong>{tables.length}</strong>
+          </div>
+          <div>
+            <span className="metric-label">Workspace</span>
+            <strong>Demo</strong>
+          </div>
+          <div>
+            <span className="metric-label">Plan</span>
+            <strong>Phase 1</strong>
+          </div>
+        </div>
+        <div className="table-list">
+          {tables.map((table) => (
+            <a className="table-card" href={`/tables/${table.id}`} key={table.id}>
+              <div className="table-icon">▦</div>
+              <div>
+                <h3>{table.name}</h3>
+                <p>
+                  {table._count.rows} rows · {table.columns.length} columns
+                </p>
+              </div>
+              <span className="arrow">→</span>
+            </a>
+          ))}
+        </div>
+      </section>
+    </main>
+  );
+}
