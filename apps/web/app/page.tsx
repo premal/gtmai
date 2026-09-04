@@ -81,6 +81,11 @@ export default function Home() {
           </a>
           <a href="/connections">⌁ Connections</a>
           <a href="/credits">◈ Credits</a>
+          <a href="/audiences">◎ Audiences</a>
+          <a href="/signals">◌ Signals</a>
+          <a href="/workflows">⌘ Workflows</a>
+          <a href="/functions">ƒ Functions</a>
+          <a href="/templates">▤ Templates</a>
           <a href="/settings">⚙ Settings</a>
         </nav>
         <SignOutFooter />

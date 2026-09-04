@@ -569,7 +569,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                                 scheduleCellUpdate(row.id, column, event.target.value)
                               }
                             />
-                          ) : !cell || cell.status === 'skipped' ? null : cell.status === 'done' ? (
+                          ) : !cell ? null : cell.status === 'skipped' ? (
+                            <span className="status skipped" title={cell.error ?? 'Skipped'}>
+                              skipped
+                            </span>
+                          ) : cell.status === 'done' ? (
                             <span title={JSON.stringify(cell.value)}>
                               {displayValue(cell.value, column)}
                             </span>
