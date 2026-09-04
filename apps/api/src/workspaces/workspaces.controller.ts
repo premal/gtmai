@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
@@ -29,5 +29,24 @@ export class WorkspacesController {
     if (workspaceId !== request.user.workspaceId) throw new Error('Workspace access denied');
     const input = z.object({ name: z.string().min(1) }).parse(body);
     return this.prisma.table.create({ data: { workspaceId, name: input.name } });
+  }
+
+  @Patch(':workspaceId')
+  renameWorkspace(
+    @Param('workspaceId') workspaceId: string,
+    @Body() body: unknown,
+    @Req() request: FastifyRequest & { user: AuthUser },
+  ) {
+    if (workspaceId !== request.user.workspaceId) throw new Error('Workspace access denied');
+    const input = z.object({ name: z.string().min(1) }).parse(body);
+    return this.prisma.workspace.update({ where: { id: workspaceId }, data: { name: input.name } });
+  }
+
+  @Get(':workspaceId/members')
+  members(@Param('workspaceId') workspaceId: string) {
+    return this.prisma.membership.findMany({
+      where: { workspaceId },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    });
   }
 }

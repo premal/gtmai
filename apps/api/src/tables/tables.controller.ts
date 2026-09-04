@@ -25,6 +25,8 @@ const columnBody = z.object({
   type: z.enum(['text', 'number', 'boolean', 'date', 'url', 'email', 'json']),
   kind: z.enum(['input', 'enrichment', 'waterfall', 'agent', 'formula', 'http', 'function']),
   config: z.unknown().default({}),
+  runCondition: z.string().optional(),
+  colorLabel: z.string().optional(),
 });
 type Request = FastifyRequest & { user: AuthUser };
 
@@ -72,16 +74,53 @@ export class TablesController {
     });
     if (!table) throw new Error('Table not found');
     const position = await this.prisma.column.count({ where: { tableId } });
+    const data: Prisma.ColumnUncheckedCreateInput = {
+      tableId,
+      name: input.name,
+      type: input.type,
+      kind: input.kind,
+      config: input.config as Prisma.InputJsonValue,
+      position,
+    };
+    if (input.runCondition !== undefined) data.runCondition = input.runCondition;
+    if (input.colorLabel !== undefined) data.colorLabel = input.colorLabel;
     return this.prisma.column.create({
-      data: {
-        tableId,
-        name: input.name,
-        type: input.type,
-        kind: input.kind,
-        config: input.config as Prisma.InputJsonValue,
-        position,
-      },
+      data,
     });
+  }
+
+  @Patch(':id/columns/:columnId')
+  async updateColumn(
+    @Param('id') tableId: string,
+    @Param('columnId') columnId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    const input = columnBody.partial().parse(body);
+    const column = await this.prisma.column.findFirst({
+      where: { id: columnId, tableId, table: { workspaceId: request.user.workspaceId } },
+    });
+    if (!column) throw new Error('Column not found');
+    const data: Prisma.ColumnUpdateInput = {};
+    if (input.name !== undefined) data.name = input.name;
+    if (input.type !== undefined) data.type = input.type;
+    if (input.kind !== undefined) data.kind = input.kind;
+    if (input.config !== undefined) data.config = input.config as Prisma.InputJsonValue;
+    if (input.runCondition !== undefined) data.runCondition = input.runCondition;
+    if (input.colorLabel !== undefined) data.colorLabel = input.colorLabel;
+    return this.prisma.column.update({ where: { id: columnId }, data });
+  }
+
+  @Delete(':id/columns/:columnId')
+  async deleteColumn(
+    @Param('id') tableId: string,
+    @Param('columnId') columnId: string,
+    @Req() request: Request,
+  ) {
+    await this.prisma.column.deleteMany({
+      where: { id: columnId, tableId, table: { workspaceId: request.user.workspaceId } },
+    });
+    return { ok: true };
   }
 
   @Post(':id/rows')
@@ -113,6 +152,131 @@ export class TablesController {
     return row;
   }
 
+  @Post(':id/import')
+  async importCsv(@Param('id') tableId: string, @Body() body: unknown, @Req() request: Request) {
+    const input = z.object({ csv: z.string().min(1) }).parse(body);
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      include: { columns: true },
+    });
+    if (!table) throw new Error('Table not found');
+    const lines = input.csv.trim().split(/\r?\n/);
+    const parseLine = (line: string): string[] => {
+      const values: string[] = [];
+      let current = '';
+      let quoted = false;
+      for (const character of line) {
+        if (character === '"') quoted = !quoted;
+        else if (character === ',' && !quoted) {
+          values.push(current.trim());
+          current = '';
+        } else current += character;
+      }
+      values.push(current.trim());
+      return values.map((value) => value.replace(/^"|"$/g, '').replace(/""/g, '"'));
+    };
+    const headers = parseLine(lines[0] ?? '');
+    const columns = [...table.columns];
+    for (const [position, name] of headers.entries()) {
+      if (columns.some((column) => column.name === name)) continue;
+      columns.push(
+        await this.prisma.column.create({
+          data: { tableId, name, type: 'text', kind: 'input', config: {}, position },
+        }),
+      );
+    }
+    for (const [position, line] of lines.slice(1).entries()) {
+      if (!line.trim()) continue;
+      const values = parseLine(line);
+      const row = await this.prisma.row.create({ data: { tableId, position } });
+      await this.prisma.$transaction(
+        columns.map((column, index) =>
+          this.prisma.cell.create({
+            data: {
+              rowId: row.id,
+              columnId: column.id,
+              value: values[index] ?? Prisma.JsonNull,
+              status: 'done',
+            },
+          }),
+        ),
+      );
+    }
+    return { rows: Math.max(0, lines.length - 1), columns: headers.length };
+  }
+
+  @Get(':id/export')
+  async exportCsv(@Param('id') tableId: string, @Req() request: Request) {
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      include: { columns: true, rows: { include: { cells: true }, orderBy: { position: 'asc' } } },
+    });
+    if (!table) throw new Error('Table not found');
+    const escape = (value: unknown): string => {
+      const text =
+        typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '');
+      return `"${text.replace(/"/g, '""')}"`;
+    };
+    const lines = [
+      table.columns.map((column) => escape(column.name)).join(','),
+      ...table.rows.map((row) =>
+        table.columns
+          .map((column) => escape(row.cells.find((cell) => cell.columnId === column.id)?.value))
+          .join(','),
+      ),
+    ];
+    return { csv: lines.join('\n') };
+  }
+
+  @Patch(':id/rows/:rowId')
+  async updateRow(
+    @Param('id') tableId: string,
+    @Param('rowId') rowId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    const input = z.object({ values: z.record(z.unknown()) }).parse(body);
+    const row = await this.prisma.row.findFirst({
+      where: { id: rowId, tableId, table: { workspaceId: request.user.workspaceId } },
+      include: { cells: { include: { column: true } } },
+    });
+    if (!row) throw new Error('Row not found');
+    for (const cell of row.cells) {
+      if (!(cell.column.name in input.values)) continue;
+      const value = input.values[cell.column.name];
+      await this.prisma.cell.update({
+        where: { id: cell.id },
+        data: { value: value as Prisma.InputJsonValue, status: 'done', error: null },
+      });
+    }
+    return this.prisma.row.findUnique({ where: { id: rowId }, include: { cells: true } });
+  }
+
+  @Delete(':id/rows/:rowId')
+  async deleteRow(
+    @Param('id') tableId: string,
+    @Param('rowId') rowId: string,
+    @Req() request: Request,
+  ) {
+    await this.prisma.row.deleteMany({
+      where: { id: rowId, tableId, table: { workspaceId: request.user.workspaceId } },
+    });
+    return { ok: true };
+  }
+
+  @Post(':id/rows/delete')
+  async deleteRows(@Param('id') tableId: string, @Body() body: unknown, @Req() request: Request) {
+    const input = z.object({ rowIds: z.array(z.string()).min(1) }).parse(body);
+    await this.prisma.row.deleteMany({
+      where: {
+        id: { in: input.rowIds },
+        tableId,
+        table: { workspaceId: request.user.workspaceId },
+      },
+    });
+    return { ok: true };
+  }
+
   @Post(':id/columns/:columnId/run')
   async runColumn(
     @Param('id') tableId: string,
@@ -121,7 +285,11 @@ export class TablesController {
     @Req() request: Request,
   ) {
     const input = z
-      .object({ rowIds: z.array(z.string()).optional(), onlyEmpty: z.boolean().default(false) })
+      .object({
+        rowIds: z.array(z.string()).optional(),
+        onlyEmpty: z.boolean().default(false),
+        onlyErrored: z.boolean().default(false),
+      })
       .parse(body);
     const table = await this.prisma.table.findFirst({
       where: { id: tableId, workspaceId: request.user.workspaceId },
@@ -132,11 +300,12 @@ export class TablesController {
     });
     let queued = 0;
     for (const row of rows) {
-      if (input.onlyEmpty) {
+      if (input.onlyEmpty || input.onlyErrored) {
         const cell = await this.prisma.cell.findUnique({
           where: { rowId_columnId: { rowId: row.id, columnId } },
         });
-        if (cell?.value !== null && cell?.value !== undefined) continue;
+        if (input.onlyEmpty && cell?.value !== null && cell?.value !== undefined) continue;
+        if (input.onlyErrored && cell?.status !== 'error') continue;
       }
       await this.queue.add('cell', {
         rowId: row.id,

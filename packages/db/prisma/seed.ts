@@ -42,21 +42,38 @@ async function main(): Promise<void> {
     update: { passwordHash },
     create: { email: 'demo@gtmai.dev', name: 'Demo User', passwordHash },
   });
-  const workspace = await db.workspace.create({
-    data: {
-      name: 'Demo Workspace',
-      users: { create: { userId: user.id, role: 'owner' } },
-    },
+  const existingMembership = await db.membership.findFirst({ where: { userId: user.id } });
+  const workspace = existingMembership
+    ? await db.workspace.findUniqueOrThrow({ where: { id: existingMembership.workspaceId } })
+    : await db.workspace.create({
+        data: {
+          name: 'Demo Workspace',
+          users: { create: { userId: user.id, role: 'owner' } },
+        },
+      });
+  const connection = await db.connection.findFirst({
+    where: { workspaceId: workspace.id, provider: 'mock' },
   });
-  await db.connection.create({
-    data: {
-      workspaceId: workspace.id,
-      createdById: user.id,
-      provider: 'mock',
-      name: 'Mock Provider',
-      encryptedCredentials: encrypt({ apiKey: 'demo-mock-key' }),
-    },
+  if (connection) {
+    await db.connection.update({
+      where: { id: connection.id },
+      data: { encryptedCredentials: encrypt({ apiKey: 'demo-mock-key' }) },
+    });
+  } else {
+    await db.connection.create({
+      data: {
+        workspaceId: workspace.id,
+        createdById: user.id,
+        provider: 'mock',
+        name: 'Mock Provider',
+        encryptedCredentials: encrypt({ apiKey: 'demo-mock-key' }),
+      },
+    });
+  }
+  const oldTable = await db.table.findFirst({
+    where: { workspaceId: workspace.id, name: 'Prospects' },
   });
+  if (oldTable) await db.table.delete({ where: { id: oldTable.id } });
   const table = await db.table.create({ data: { workspaceId: workspace.id, name: 'Prospects' } });
   const columns = [
     { name: 'First name', type: 'text', kind: 'input', position: 0 },
@@ -94,7 +111,11 @@ async function main(): Promise<void> {
     where: { tableId: table.id },
     orderBy: { position: 'asc' },
   });
-  for (const [position, person] of people.entries()) {
+  const requestedRows = Number(
+    process.argv.find((argument) => argument.startsWith('--rows='))?.split('=')[1] ?? people.length,
+  );
+  for (let position = 0; position < requestedRows; position += 1) {
+    const person = people[position % people.length]!;
     const row = await db.row.create({ data: { tableId: table.id, position } });
     const values: Record<string, string> = {
       'First name': person[0],

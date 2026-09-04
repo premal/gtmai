@@ -23,6 +23,7 @@ export const enrichmentSchema = z.object({
 
 type JsonRecord = Record<string, unknown>;
 type Method = 'GET' | 'POST';
+type AuthMode = 'hunter' | 'prospeo' | 'datagma' | 'apollo' | 'pdl';
 
 function record(value: unknown): JsonRecord {
   return value && typeof value === 'object' ? (value as JsonRecord) : {};
@@ -68,6 +69,7 @@ function action(
   method: Method,
   creditCost: number,
   map: (value: unknown) => unknown = normalize,
+  authMode: AuthMode = 'datagma',
 ): ProviderAction {
   return {
     id,
@@ -78,14 +80,21 @@ function action(
     creditCost,
     async run(value: unknown, context: RunContext) {
       const parsed = input.parse(value) as JsonRecord;
-      const headers = {
+      const headers: Record<string, string> = {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${context.credentials.apiKey ?? ''}`,
       };
+      if (authMode === 'prospeo') headers['X-KEY'] = context.credentials.apiKey ?? '';
+      else if (authMode === 'apollo') headers['x-api-key'] = context.credentials.apiKey ?? '';
+      else if (authMode === 'pdl') headers['X-API-Key'] = context.credentials.apiKey ?? '';
+      else headers.Authorization = `Bearer ${context.credentials.apiKey ?? ''}`;
+      const query =
+        authMode === 'hunter'
+          ? { ...stringify(parsed), api_key: context.credentials.apiKey ?? '' }
+          : stringify(parsed);
       const url =
         method === 'GET'
-          ? `${endpoint}?${new URLSearchParams(stringify(parsed) as Record<string, string>)}`
+          ? `${endpoint}?${new URLSearchParams(query as Record<string, string>)}`
           : endpoint;
       const response = await context.fetch(url, {
         method,
@@ -101,7 +110,16 @@ function action(
   };
 }
 
-const personInput = z.record(z.string());
+const personInput = z.object({
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  first_name: z.string().optional(),
+  last_name: z.string().optional(),
+  email: z.string().optional(),
+  domain: z.string().optional(),
+  linkedinUrl: z.string().optional(),
+  linkedin_url: z.string().optional(),
+});
 const companyInput = z.object({ domain: z.string().min(1) });
 
 function provider(id: string, name: string, actions: ProviderAction[]): Provider {
@@ -123,6 +141,7 @@ export const hunterProvider = provider('hunter', 'Hunter', [
     'GET',
     2,
     (value) => normalize(record(value).data),
+    'hunter',
   ),
   action(
     'hunter.verifyEmail',
@@ -133,6 +152,7 @@ export const hunterProvider = provider('hunter', 'Hunter', [
     'GET',
     1,
     (value) => normalize(record(value).data),
+    'hunter',
   ),
   action(
     'hunter.domainSearch',
@@ -143,6 +163,7 @@ export const hunterProvider = provider('hunter', 'Hunter', [
     'GET',
     2,
     (value) => normalize(record(value).data),
+    'hunter',
   ),
   action(
     'hunter.enrichCompany',
@@ -152,6 +173,8 @@ export const hunterProvider = provider('hunter', 'Hunter', [
     'https://api.hunter.io/v2/companies/find',
     'GET',
     2,
+    normalize,
+    'hunter',
   ),
 ]);
 
@@ -164,6 +187,8 @@ export const prospeoProvider = provider('prospeo', 'Prospeo', [
     'https://api.prospeo.io/email-finder',
     'POST',
     2,
+    normalize,
+    'prospeo',
   ),
   action(
     'prospeo.findMobile',
@@ -173,6 +198,8 @@ export const prospeoProvider = provider('prospeo', 'Prospeo', [
     'https://api.prospeo.io/mobile-finder',
     'POST',
     3,
+    normalize,
+    'prospeo',
   ),
   action(
     'prospeo.enrichCompany',
@@ -182,6 +209,8 @@ export const prospeoProvider = provider('prospeo', 'Prospeo', [
     'https://api.prospeo.io/company-enrich',
     'POST',
     2,
+    normalize,
+    'prospeo',
   ),
 ]);
 
@@ -194,6 +223,8 @@ export const datagmaProvider = provider('datagma', 'Datagma', [
     'https://api.datagma.com/api/enrich',
     'POST',
     3,
+    normalize,
+    'datagma',
   ),
 ]);
 
@@ -206,6 +237,8 @@ export const apolloProvider = provider('apollo', 'Apollo', [
     'https://api.apollo.io/v1/people/match',
     'POST',
     3,
+    normalize,
+    'apollo',
   ),
   action(
     'apollo.orgEnrich',
@@ -215,6 +248,8 @@ export const apolloProvider = provider('apollo', 'Apollo', [
     'https://api.apollo.io/v1/organizations/enrich',
     'POST',
     2,
+    normalize,
+    'apollo',
   ),
 ]);
 
@@ -227,6 +262,8 @@ export const pdlProvider = provider('peopledatalabs', 'People Data Labs', [
     'https://api.peopledatalabs.com/v5/person/enrich',
     'GET',
     3,
+    normalize,
+    'pdl',
   ),
   action(
     'peopledatalabs.companyEnrich',
@@ -236,5 +273,7 @@ export const pdlProvider = provider('peopledatalabs', 'People Data Labs', [
     'https://api.peopledatalabs.com/v5/company/enrich',
     'GET',
     2,
+    normalize,
+    'pdl',
   ),
 ]);

@@ -16,6 +16,10 @@ const output = z.object({
   reasoning: z.string(),
 });
 export type AgentResult = z.infer<typeof output>;
+export type AgentMessage = { role: 'system' | 'user' | 'tool'; content: string };
+export type AgentClient = {
+  complete(messages: AgentMessage[]): Promise<string>;
+};
 
 async function structuredChat(
   value: z.infer<typeof input>,
@@ -75,7 +79,7 @@ export const llmProvider: Provider = {
   ],
 };
 
-async function fetchPage(url: string, fetcher: typeof fetch): Promise<string> {
+export async function fetchPage(url: string, fetcher: typeof fetch): Promise<string> {
   const response = await fetcher(url);
   const html = await response.text();
   return html
@@ -86,7 +90,7 @@ async function fetchPage(url: string, fetcher: typeof fetch): Promise<string> {
     .slice(0, 20_000);
 }
 
-async function webSearch(
+export async function webSearch(
   query: string,
   context: RunContext,
 ): Promise<{ text: string; sources: string[] }> {
@@ -121,10 +125,112 @@ async function webSearch(
   };
 }
 
-export async function runAgent(prompt: string, context: RunContext): Promise<AgentResult> {
-  const search = await webSearch(prompt, context);
-  const page = search.sources[0] ? await fetchPage(search.sources[0], context.fetch) : '';
-  const augmented = `${prompt}\n\nSearch results:\n${search.text}\n\nPage text:\n${page}`;
-  const result = await structuredChat({ prompt: augmented, provider: 'openai' }, context);
-  return output.parse({ ...result, sources: [...new Set([...search.sources, ...result.sources])] });
+function parseToolMessage(value: string): {
+  tool?: 'web_search' | 'fetch_page' | 'finish';
+  arguments?: Record<string, string>;
+  result?: AgentResult;
+} {
+  try {
+    return JSON.parse(value) as {
+      tool?: 'web_search' | 'fetch_page' | 'finish';
+      arguments?: Record<string, string>;
+      result?: AgentResult;
+    };
+  } catch {
+    return { tool: 'finish', result: { answer: value, fields: {}, sources: [], reasoning: '' } };
+  }
+}
+
+export async function runAgentWithClient(
+  prompt: string,
+  context: RunContext,
+  client: AgentClient,
+): Promise<AgentResult> {
+  const messages: AgentMessage[] = [
+    {
+      role: 'system',
+      content:
+        'You are a research agent. Respond only as JSON: {"tool":"web_search"|"fetch_page"|"finish","arguments":{},"result":{}}. Finish result must contain answer, fields, sources, reasoning.',
+    },
+    { role: 'user', content: prompt },
+  ];
+  const sources: string[] = [];
+  for (let step = 0; step < 8; step += 1) {
+    const message = parseToolMessage(await client.complete(messages));
+    if (message.tool === 'finish') {
+      return output.parse({
+        ...(message.result ?? { answer: '', fields: {}, reasoning: '' }),
+        sources: [...new Set([...(message.result?.sources ?? []), ...sources])],
+      });
+    }
+    if (message.tool === 'web_search') {
+      const result = await webSearch(message.arguments?.query ?? prompt, context);
+      sources.push(...result.sources);
+      messages.push({ role: 'tool', content: JSON.stringify({ tool: 'web_search', ...result }) });
+      continue;
+    }
+    if (message.tool === 'fetch_page') {
+      const url = message.arguments?.url;
+      if (!url) {
+        messages.push({ role: 'tool', content: JSON.stringify({ error: 'url is required' }) });
+        continue;
+      }
+      const text = await fetchPage(url, context.fetch);
+      sources.push(url);
+      messages.push({ role: 'tool', content: JSON.stringify({ tool: 'fetch_page', url, text }) });
+      continue;
+    }
+    messages.push({ role: 'tool', content: JSON.stringify({ error: 'Unknown tool' }) });
+  }
+  return { answer: 'Agent reached its step limit.', fields: {}, sources, reasoning: 'max_steps' };
+}
+
+function sdkClient(
+  context: RunContext,
+  provider: 'openai' | 'anthropic',
+  model?: string,
+): AgentClient {
+  if (provider === 'anthropic') {
+    const client = new Anthropic({ apiKey: context.credentials.apiKey });
+    return {
+      async complete(messages) {
+        const system = messages.find((item) => item.role === 'system')?.content;
+        const response = await client.messages.create({
+          model: model ?? 'claude-3-5-haiku-latest',
+          max_tokens: 2_000,
+          ...(system ? { system } : {}),
+          messages: messages
+            .filter((item) => item.role !== 'system')
+            .map((item) => ({
+              role: 'user' as const,
+              content: item.content,
+            })),
+        });
+        return response.content.find((item) => item.type === 'text')?.text ?? '{}';
+      },
+    };
+  }
+  const client = new OpenAI({ apiKey: context.credentials.apiKey });
+  return {
+    async complete(messages) {
+      const response = await client.chat.completions.create({
+        model: model ?? 'gpt-4o-mini',
+        messages: messages.map((item) => ({
+          role: item.role === 'tool' ? ('user' as const) : item.role,
+          content: item.content,
+        })),
+        response_format: { type: 'json_object' },
+      });
+      return response.choices[0]?.message.content ?? '{}';
+    },
+  };
+}
+
+export async function runAgent(
+  prompt: string,
+  context: RunContext,
+  provider: 'openai' | 'anthropic' = 'openai',
+  model?: string,
+): Promise<AgentResult> {
+  return runAgentWithClient(prompt, context, sdkClient(context, provider, model));
 }

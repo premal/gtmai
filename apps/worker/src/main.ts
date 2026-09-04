@@ -2,7 +2,7 @@ import { Worker, type Job } from 'bullmq';
 import { createDecipheriv } from 'node:crypto';
 import Redis from 'ioredis';
 import { PrismaClient } from '@gtmai/db';
-import { providers, type ActionResult, type ProviderAction } from '@gtmai/providers';
+import { providers, runAgent, type ActionResult, type ProviderAction } from '@gtmai/providers';
 import { evaluateFormula, findBindings, resolveBindings } from '@gtmai/shared';
 
 const db = new PrismaClient();
@@ -165,6 +165,34 @@ async function execute(job: Job<CellData>): Promise<void> {
       result = current.result;
       provider = current.provider;
       creditsUsed = current.result.found ? current.action.creditCost : 0;
+    } else if (column.kind === 'agent') {
+      const agent = await runAgent(
+        resolveBindings(String(config.prompt ?? ''), values),
+        {
+          credentials: {},
+          fetch,
+          logger: { info: () => undefined, error: () => undefined },
+        },
+        config.provider === 'anthropic' ? 'anthropic' : 'openai',
+        typeof config.model === 'string' ? config.model : undefined,
+      );
+      result = { found: true, data: agent };
+      provider = String(config.provider ?? 'llm');
+    } else if (column.kind === 'http') {
+      const current = await runAction(
+        'http',
+        'http.request',
+        {
+          method: config.method ?? 'GET',
+          url: resolveBindings(String(config.url ?? ''), values),
+          headers: config.headers ?? {},
+          body: config.body ? resolveBindings(String(config.body), values) : undefined,
+        },
+        workspaceId,
+      );
+      result = current.result;
+      provider = current.provider;
+      creditsUsed = current.result.found ? current.action.creditCost : 0;
     } else {
       result = { found: true, data: config.value ?? null };
     }
@@ -177,7 +205,14 @@ async function execute(job: Job<CellData>): Promise<void> {
         provider,
         creditsUsed,
         durationMs: Date.now() - started,
-        provenance: { provider },
+        provenance:
+          result.found && result.data && typeof result.data === 'object'
+            ? {
+                provider,
+                sources: (result.data as Values).sources ?? [],
+                reasoning: (result.data as Values).reasoning ?? undefined,
+              }
+            : { provider },
       },
     });
     if (creditsUsed > 0) {
