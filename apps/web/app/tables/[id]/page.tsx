@@ -28,7 +28,7 @@ type Column = {
 };
 type Row = { id: string; cells: Cell[] };
 type Table = { id: string; name: string; columns: Column[]; rows: Row[] };
-type ColumnKind = 'input' | 'enrichment' | 'waterfall' | 'agent' | 'formula' | 'http';
+type ColumnKind = 'input' | 'enrichment' | 'waterfall' | 'agent' | 'formula' | 'http' | 'function';
 type RunOptions = {
   rowIds?: string[];
   onlyEmpty?: boolean;
@@ -137,9 +137,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   body: httpBody || undefined,
                   outputPath: httpOutputPath || undefined,
                 }
-              : kind === 'input'
-                ? { value: '' }
-                : { provider, action, input: defaultInput };
+              : kind === 'function'
+                ? { functionId: '', input: {} }
+                : kind === 'input'
+                  ? { value: '' }
+                  : { provider, action, input: defaultInput };
     await fetch(
       editing
         ? `${api}/tables/${tableId}/columns/${selectedColumn?.id}`
@@ -615,7 +617,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             {step === 0 && (
               <div className="picker-grid">
                 {(
-                  ['input', 'enrichment', 'waterfall', 'agent', 'formula', 'http'] as ColumnKind[]
+                  [
+                    'input',
+                    'enrichment',
+                    'waterfall',
+                    'agent',
+                    'formula',
+                    'http',
+                    'function',
+                  ] as ColumnKind[]
                 ).map((value) => (
                   <button
                     key={value}
@@ -772,6 +782,24 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                       Test on first 3 rows
                     </button>
                     {agentPreview && <pre className="preview-value">{agentPreview}</pre>}
+                  </>
+                )}
+                {kind === 'function' && (
+                  <>
+                    <label className="field-label">
+                      Function ID
+                      <input
+                        value={String(
+                          (selectedColumn?.config as Record<string, unknown> | undefined)
+                            ?.functionId ?? '',
+                        )}
+                        readOnly={Boolean(selectedColumn)}
+                      />
+                    </label>
+                    <label className="field-label">
+                      Input bindings JSON
+                      <textarea defaultValue="{}" />
+                    </label>
                   </>
                 )}
                 {kind === 'http' && (

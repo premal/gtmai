@@ -842,6 +842,79 @@ h3 {
   padding: 10px;
   font-size: 12px;
 }
+.workflow-node.selected {
+  border-color: var(--accent, #6f7cff);
+  box-shadow: 0 0 0 2px rgba(111, 124, 255, 0.25);
+}
+.workflow-node .status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #8b93a8;
+}
+.workflow-node .status-dot.done {
+  background: #25c281;
+}
+.workflow-node .status-dot.error {
+  background: #ef6874;
+}
+.workflow-node .status-dot.skipped {
+  background: #f0b44d;
+}
+.node-delete,
+.node-handle,
+.node-target {
+  position: absolute;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.node-delete {
+  top: 3px;
+  right: 5px;
+}
+.node-handle {
+  right: -12px;
+  top: 27px;
+  color: #6f7cff;
+}
+.node-target {
+  left: -12px;
+  top: 27px;
+  color: #25c281;
+}
+.selected-edge {
+  stroke: #6f7cff;
+}
+.validation-panel {
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.error-text {
+  color: #d95363;
+}
+.warning-text {
+  color: #bb7b1b;
+}
+.success-text {
+  color: #168b60;
+}
+.binding-helper {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.binding-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
 .editor-layout {
   display: grid;
   grid-template-columns: 170px minmax(0, 1fr) 280px;
