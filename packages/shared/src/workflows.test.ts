@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { topologicalOrder, validateWorkflowGraph, type WorkflowGraph } from './workflows';
+import {
+  topologicalOrder,
+  validateWorkflowGraph,
+  validateWorkflowGraphDetailed,
+  type WorkflowGraph,
+} from './workflows';
 
 const node = (id: string) => ({
   id,
@@ -24,5 +29,21 @@ describe('workflow graph validation', () => {
       ],
     };
     expect(validateWorkflowGraph(graph)).toContain('Workflow graph contains a cycle');
+  });
+
+  it('reports unresolved bindings and condition branch warnings', () => {
+    const result = validateWorkflowGraphDetailed({
+      nodes: [
+        {
+          id: 'condition',
+          type: 'condition',
+          config: { expression: '{{missing.output}}' },
+          position: { x: 0, y: 0 },
+        },
+      ],
+      edges: [],
+    });
+    expect(result.errors).toContain('Unresolvable binding in condition: {{missing.output}}');
+    expect(result.warnings).toContain('Condition node condition should have true and false edges');
   });
 });

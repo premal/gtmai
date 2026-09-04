@@ -288,6 +288,7 @@ model WorkflowRun {
   status StepStatus @default(queued)
   input Json?
   output Json?
+  credits Float @default(0)
   startedAt DateTime?
   completedAt DateTime?
   workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
@@ -301,6 +302,8 @@ model StepRun {
   credits Float @default(0)
   input Json?
   output Json?
+  error String?
+  durationMs Int?
   workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
 }
 model Function {

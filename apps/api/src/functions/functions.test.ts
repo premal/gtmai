@@ -14,4 +14,22 @@ describe('function runner', () => {
       ),
     ).toBe('Ada Lovelace');
   });
+
+  it('resolves declared inputs inside program nodes', () => {
+    expect(
+      runProgram(
+        {
+          nodes: [
+            {
+              id: 'trim',
+              type: 'formula',
+              config: { expression: 'trim({{inputs.name}})' },
+            },
+          ],
+          output: '{{trim.output}}',
+        },
+        { name: '  Acme  ' },
+      ),
+    ).toBe('Acme');
+  });
 });

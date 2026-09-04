@@ -12,10 +12,16 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
+import Redis from 'ioredis';
+import { JwtService } from '@nestjs/jwt';
 import { Prisma } from '@gtmai/db';
 import type { Queue } from 'bullmq';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { workflowGraphSchema, validateWorkflowGraph } from '@gtmai/shared';
+import {
+  validateWorkflowGraph,
+  validateWorkflowGraphDetailed,
+  workflowGraphSchema,
+} from '@gtmai/shared';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
@@ -31,6 +37,7 @@ export class WorkflowsController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @InjectQueue('workflows') private readonly queue: Queue,
+    @Inject(JwtService) private readonly jwt: JwtService,
   ) {}
 
   @Get()
@@ -80,13 +87,23 @@ export class WorkflowsController {
       where: { id, workspaceId: request.user.workspaceId },
     });
     if (!workflow) throw new Error('Workflow not found');
-    const graph = body
-      ? workflowGraphSchema.parse((body as { graph?: unknown }).graph ?? body)
-      : workflowGraphSchema.parse(workflow.graph);
-    return {
-      valid: validateWorkflowGraph(graph).length === 0,
-      errors: validateWorkflowGraph(graph),
-    };
+    const candidate = body ? ((body as { graph?: unknown }).graph ?? body) : workflow.graph;
+    const parsed = workflowGraphSchema.safeParse(candidate);
+    if (!parsed.success) {
+      const unknownType = parsed.error.issues.find((issue) => issue.path.includes('type'));
+      return {
+        valid: false,
+        errors: [
+          unknownType
+            ? `Unknown node type: ${String((candidate as { nodes?: Array<{ type?: unknown }> }).nodes?.[Number(unknownType.path[1]) ?? 0]?.type)}`
+            : parsed.error.message,
+        ],
+        warnings: [],
+      };
+    }
+    const graph = parsed.data;
+    const validation = validateWorkflowGraphDetailed(graph);
+    return { valid: validation.errors.length === 0, ...validation };
   }
 
   @Post(':id/run')
@@ -129,6 +146,15 @@ export class WorkflowsController {
     @Param('runId') runId: string,
     @Res() reply: FastifyReply,
   ) {
+    const query = request.query as { token?: string };
+    if (query.token) {
+      try {
+        request.user = this.jwt.verify<AuthUser>(query.token);
+      } catch {
+        reply.code(401).send({ message: 'Unauthorized' });
+        return;
+      }
+    }
     const run = await this.prisma.workflowRun.findFirst({
       where: { id: runId, workflow: { workspaceId: request.user.workspaceId } },
     });
@@ -144,15 +170,17 @@ export class WorkflowsController {
       'access-control-allow-origin': 'http://localhost:3000',
     });
     reply.raw.write(': ok\n\n');
-    const timer = setInterval(async () => {
-      const current = await this.prisma.workflowRun.findUnique({ where: { id: runId } });
-      reply.raw.write(`data: ${JSON.stringify(current)}\n\n`);
-      if (current?.status === 'done' || current?.status === 'error') {
-        clearInterval(timer);
+    const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+    await subscriber.subscribe(`workflow:${runId}`);
+    subscriber.on('message', (_channel, message) => {
+      reply.raw.write(`data: ${message}\n\n`);
+      const payload = JSON.parse(message) as { status?: string };
+      if (payload.status === 'done' || payload.status === 'error') {
+        void subscriber.quit();
         reply.raw.end();
       }
-    }, 1000);
-    reply.raw.on('close', () => clearInterval(timer));
+    });
+    request.raw.socket?.on('close', () => void subscriber.quit());
   }
 }
 

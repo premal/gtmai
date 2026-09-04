@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { findBindings } from './bindings';
 
 export const workflowNodeTypes = [
   'trigger.manual',
@@ -38,6 +39,7 @@ export const workflowGraphSchema = z.object({
 });
 
 export type WorkflowGraph = z.infer<typeof workflowGraphSchema>;
+export type WorkflowValidation = { errors: string[]; warnings: string[] };
 
 export function topologicalOrder(graph: WorkflowGraph): string[] {
   const incoming = new Map(graph.nodes.map((node) => [node.id, 0]));
@@ -66,16 +68,44 @@ export function topologicalOrder(graph: WorkflowGraph): string[] {
 }
 
 export function validateWorkflowGraph(graph: WorkflowGraph): string[] {
+  return validateWorkflowGraphDetailed(graph).errors;
+}
+
+export function validateWorkflowGraphDetailed(graph: WorkflowGraph): WorkflowValidation {
   const errors: string[] = [];
+  const warnings: string[] = [];
   const ids = new Set<string>();
   for (const node of graph.nodes) {
     if (ids.has(node.id)) errors.push(`Duplicate node id: ${node.id}`);
     ids.add(node.id);
+  }
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  for (const edge of graph.edges) {
+    if (!nodeById.has(edge.from) || !nodeById.has(edge.to)) {
+      errors.push(`Edge references unknown node: ${edge.from}->${edge.to}`);
+    }
   }
   try {
     topologicalOrder(graph);
   } catch (error) {
     errors.push(error instanceof Error ? error.message : 'Invalid workflow graph');
   }
-  return errors;
+  for (const node of graph.nodes) {
+    const text = JSON.stringify(node.config);
+    for (const binding of findBindings(text)) {
+      const root = binding.split('.')[0] ?? '';
+      if (root !== 'trigger' && root !== 'inputs' && !ids.has(root)) {
+        errors.push(`Unresolvable binding in ${node.id}: {{${binding}}}`);
+      }
+    }
+    if (node.type === 'condition') {
+      const conditions = new Set(
+        graph.edges.filter((edge) => edge.from === node.id).map((edge) => edge.condition),
+      );
+      if (!conditions.has('true') || !conditions.has('false')) {
+        warnings.push(`Condition node ${node.id} should have true and false edges`);
+      }
+    }
+  }
+  return { errors, warnings };
 }

@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Prisma } from '@gtmai/db';
-import { evaluateFormula, getPath, resolveBindings } from '@gtmai/shared';
+import { evaluateFormula, resolveBindings } from '@gtmai/shared';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
@@ -111,7 +111,13 @@ export class FunctionsController {
       input.testCases ??
       ((version.testCases as Array<{ input: Record<string, unknown>; expected: unknown }>) || []);
     const results = cases.map((testCase) => {
-      const output = runProgram(version.program as { output: string }, testCase.input);
+      const output = runProgram(
+        version.program as {
+          output: string;
+          nodes?: Array<{ id: string; type: string; config: Record<string, unknown> }>;
+        },
+        testCase.input,
+      );
       return {
         input: testCase.input,
         expected: testCase.expected,
@@ -123,17 +129,30 @@ export class FunctionsController {
   }
 }
 
-export function runProgram(program: { output: string }, input: Record<string, unknown>): unknown {
-  const expression = program.output.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, path: string) => {
-    const value = getPath(input, path.trim());
-    return value === undefined ? '' : String(value);
-  });
-  if (expression.includes('(') || expression.includes('"')) {
-    try {
-      return evaluateFormula(program.output, input);
-    } catch {
-      return resolveBindings(program.output, input);
-    }
+export function runProgram(
+  program: {
+    output: string;
+    nodes?: Array<{ id: string; type: string; config: Record<string, unknown> }>;
+  },
+  input: Record<string, unknown>,
+): unknown {
+  const values: Record<string, unknown> = { inputs: input, ...input };
+  for (const [key, value] of Object.entries(input)) {
+    values[`inputs.${key}`] = value;
   }
-  return expression;
+  for (const node of program.nodes ?? []) {
+    if (node.type !== 'formula') continue;
+    const expression = String(node.config.expression ?? '');
+    const output = evaluateFormula(expression, values);
+    values[node.id] = { output };
+    values[`${node.id}.output`] = output;
+  }
+  if (!/[()+\-*/<>=]/.test(program.output)) {
+    return resolveBindings(program.output, values);
+  }
+  try {
+    return evaluateFormula(program.output, values);
+  } catch {
+    return resolveBindings(program.output, values);
+  }
 }
