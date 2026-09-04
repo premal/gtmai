@@ -39,11 +39,16 @@ export class EventsController {
       response.code(404).send({ error: 'Table not found' });
       return;
     }
+    response.hijack();
     response.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': request.headers.origin ?? '*',
+      'Access-Control-Allow-Credentials': 'true',
+      Vary: 'Origin',
     });
+    response.raw.write(': ok\n\n');
     const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
     await subscriber.subscribe(`table:${tableId}`);
     subscriber.on('message', (_channel, message) => response.raw.write(`data: ${message}\n\n`));

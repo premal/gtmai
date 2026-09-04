@@ -29,15 +29,17 @@ export function evaluateWorkerFormula(expression: string, values: Values): unkno
   return evaluateFormula(expression, values);
 }
 
-function decrypt(value: string): Record<string, string> {
+function encryptionKey(): Buffer {
   const secret = process.env.ENCRYPTION_KEY;
   if (!secret) throw new Error('ENCRYPTION_KEY is required');
+  const key = Buffer.from(secret, 'hex');
+  if (key.length !== 32) throw new Error('ENCRYPTION_KEY must be 32 bytes in hex');
+  return key;
+}
+
+function decrypt(value: string): Record<string, string> {
   const data = Buffer.from(value, 'base64');
-  const decipher = createDecipheriv(
-    'aes-256-gcm',
-    Buffer.from(secret, 'hex'),
-    data.subarray(0, 12),
-  );
+  const decipher = createDecipheriv('aes-256-gcm', encryptionKey(), data.subarray(0, 12));
   decipher.setAuthTag(data.subarray(12, 28));
   return JSON.parse(
     Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString(),
@@ -271,6 +273,7 @@ async function execute(job: Job<CellData>): Promise<void> {
 }
 
 export function startWorker(): Worker<CellData> {
+  encryptionKey();
   return new Worker<CellData>('cells', execute, {
     connection: redis,
     concurrency: Number(process.env.CELL_CONCURRENCY ?? 20),
