@@ -150,7 +150,11 @@ async function main(): Promise<void> {
         return db.cell.create({
           data:
             value === undefined
-              ? { rowId: row.id, columnId: column.id, status: 'skipped' }
+              ? {
+                  rowId: row.id,
+                  columnId: column.id,
+                  status: column.kind === 'input' ? 'done' : 'queued',
+                }
               : { rowId: row.id, columnId: column.id, value, status: 'done' },
         });
       }),
