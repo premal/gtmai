@@ -59,10 +59,7 @@ export default function CampaignsPage() {
     if (token) void load();
   }, [token]);
   useEffect(() => {
-    if (
-      !items.some((item) => item.enrollments?.some((enrollment) => enrollment.status === 'active'))
-    )
-      return;
+    if (!items.length) return;
     const timer = window.setInterval(() => void load(), 5000);
     return () => window.clearInterval(timer);
   }, [items]);
