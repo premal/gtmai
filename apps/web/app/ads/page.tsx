@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Phase2Nav } from '../phase2-nav';
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Segment = { id: string; name: string };
@@ -25,6 +25,7 @@ export default function AdsPage() {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: '', segmentId: '', platforms: ['mock'] });
+  const polling = useRef(new Set<string>());
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   const headers = { authorization: `Bearer ${token}` };
   async function load() {
@@ -48,8 +49,29 @@ export default function AdsPage() {
     await load();
   }
   async function sync(id: string) {
-    await fetch(`${api}/ads/audiences/${id}/sync`, { method: 'POST', headers });
+    const response = await fetch(`${api}/ads/audiences/${id}/sync`, { method: 'POST', headers });
+    if (!response.ok) return;
     await load();
+    if (polling.current.has(id)) return;
+    polling.current.add(id);
+    const deadline = Date.now() + 60_000;
+    try {
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+        const audienceResponse = await fetch(`${api}/ads/audiences`, { headers });
+        if (!audienceResponse.ok) break;
+        const nextItems = (await audienceResponse.json()) as Audience[];
+        setItems(nextItems);
+        const audience = nextItems.find((item) => item.id === id);
+        if (
+          !audience?.syncs.some((item) => item.status === 'queued' || item.status === 'running')
+        ) {
+          break;
+        }
+      }
+    } finally {
+      polling.current.delete(id);
+    }
   }
   return (
     <main className="app-shell">
@@ -135,7 +157,7 @@ export default function AdsPage() {
               <fieldset>
                 <legend>Platforms</legend>
                 {platformOptions.map((platform) => (
-                  <label key={platform}>
+                  <label className="check" key={platform}>
                     <input
                       type="checkbox"
                       checked={form.platforms.includes(platform)}

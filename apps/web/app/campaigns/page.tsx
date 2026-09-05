@@ -115,7 +115,13 @@ export default function CampaignsPage() {
       return;
     }
     if (selected?.id === id) setSelected(null);
-    setMessage(verb === 'delete' ? 'Campaign deleted' : `Campaign ${verb}d`);
+    setMessage(
+      verb === 'delete'
+        ? 'Campaign deleted'
+        : verb === 'start'
+          ? 'Campaign started'
+          : 'Campaign paused',
+    );
     await load();
   }
 

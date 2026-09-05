@@ -43,12 +43,14 @@ export default function CrmPage() {
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   const headers = { authorization: `Bearer ${token}` };
 
-  async function loadRuns(id: string) {
+  async function loadRuns(id: string): Promise<Run[]> {
     const response = await fetch(`${api}/crm/jobs/${id}/runs`, { headers });
     if (response.ok) {
       const data = (await response.json()) as Run[];
       setRuns((current) => ({ ...current, [id]: data }));
+      return data;
     }
+    return [];
   }
 
   async function load() {
@@ -66,7 +68,7 @@ export default function CrmPage() {
     setJobs(nextJobs);
     setSegments((await segmentResponse.json()) as Option[]);
     setTables((await tableResponse.json()) as Option[]);
-    await Promise.all(nextJobs.filter((job) => expanded[job.id]).map((job) => loadRuns(job.id)));
+    await Promise.all(nextJobs.map((job) => loadRuns(job.id)));
   }
 
   useEffect(() => {
@@ -111,6 +113,8 @@ export default function CrmPage() {
   }
 
   async function run(id: string) {
+    const previousRuns = await loadRuns(id);
+    const previousIds = new Set(previousRuns.map((item) => item.id));
     const response = await fetch(`${api}/crm/jobs/${id}/run`, { method: 'POST', headers });
     if (!response.ok) {
       setMessage((await response.text()) || 'Unable to run CRM job');
@@ -118,7 +122,17 @@ export default function CrmPage() {
     }
     setMessage('CRM run queued');
     setExpanded((current) => ({ ...current, [id]: true }));
-    await loadRuns(id);
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2_000));
+      const nextRuns = await loadRuns(id);
+      const completedRun = nextRuns.find(
+        (item) =>
+          !previousIds.has(item.id) && (item.status === 'completed' || item.status === 'failed'),
+      );
+      if (completedRun) break;
+    }
+    await load();
   }
 
   function fields(job: Job) {
@@ -171,7 +185,13 @@ export default function CrmPage() {
                   </button>
                 </div>
               </div>
-              <p className="muted">{statsLabel(job.lastStats)}</p>
+              <p className="muted">
+                {statsLabel(
+                  job.lastStats && Object.keys(job.lastStats).length
+                    ? job.lastStats
+                    : runs[job.id]?.[0]?.stats,
+                )}
+              </p>
               <button className="button" onClick={() => void toggleRuns(job.id)}>
                 {expanded[job.id] ? 'Hide run history' : 'Show run history'}
               </button>
@@ -336,18 +356,21 @@ export default function CrmPage() {
                   <h4>Field mapping</h4>
                   <button
                     className="button"
-                    onClick={() =>
+                    onClick={() => {
+                      const existing = new Set(Object.keys(editing.destination.fieldMapping));
+                      let index = 1;
+                      while (existing.has(`field${index}`)) index += 1;
                       setEditing({
                         ...editing,
                         destination: {
                           ...editing.destination,
                           fieldMapping: {
                             ...editing.destination.fieldMapping,
-                            email: 'email',
+                            [`field${index}`]: '',
                           },
                         },
-                      })
-                    }
+                      });
+                    }}
                   >
                     + Mapping
                   </button>
@@ -367,6 +390,9 @@ export default function CrmPage() {
                         });
                       }}
                     >
+                      {!fields(editing).includes(source) && (
+                        <option value={source}>{source}</option>
+                      )}
                       {fields(editing).map((field) => (
                         <option key={field}>{field}</option>
                       ))}

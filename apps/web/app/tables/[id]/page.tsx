@@ -973,8 +973,10 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             ×
           </button>
           <div className="eyebrow">CELL DETAIL</div>
-          <h3>{selected.value === undefined ? selected.status : 'Cell value'}</h3>
-          <pre className="json-value">{JSON.stringify(selected.value, null, 2)}</pre>
+          <h3>{selected.status === 'skipped' ? 'Cell skipped' : 'Cell value'}</h3>
+          <pre className="json-value">
+            {selected.status === 'skipped' ? '—' : JSON.stringify(selected.value, null, 2)}
+          </pre>
           <div className="detail-row">
             <span>Status</span>
             <strong>{selected.status}</strong>

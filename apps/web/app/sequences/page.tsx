@@ -160,7 +160,10 @@ export default function SequencesPage() {
                 />
                 <div className="step-list">
                   {selected.steps.map((step, index) => (
-                    <div className="card" key={step.id ?? `${step.position}-${index}`}>
+                    <div
+                      className="card sequence-step-card"
+                      key={step.id ?? `${step.position}-${index}`}
+                    >
                       <div className="list-row">
                         <strong>Step {index + 1}</strong>
                         <span className="chip">Position {step.position}</span>
