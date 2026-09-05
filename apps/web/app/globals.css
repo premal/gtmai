@@ -113,6 +113,354 @@ a {
 .content.wide {
   max-width: none;
 }
+.embedded-table {
+  min-height: 0;
+}
+.embedded-table > .sidebar {
+  display: none;
+}
+.embedded-table > .content {
+  width: 100%;
+  padding: 24px 0 0;
+}
+.view-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.view-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.view-select select,
+.view-popover select,
+.view-popover input {
+  min-width: 130px;
+  border: 1px solid #dce2ed;
+  border-radius: 6px;
+  background: white;
+  padding: 8px 9px;
+  color: #455169;
+  font-size: 12px;
+}
+.view-popover {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 12;
+  display: grid;
+  gap: 8px;
+  min-width: 240px;
+  padding: 12px;
+  border: 1px solid #dce2ed;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 28px #16203d26;
+}
+.view-popover.hide-popover {
+  max-height: 280px;
+  overflow: auto;
+}
+.view-popover .choice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.view-popover .choice-row input {
+  min-width: auto;
+}
+.filter-rule {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.filter-rule input {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.view-join {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #65718a;
+  font-size: 11px;
+}
+.workbook-layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+.folder-tree {
+  min-height: 500px;
+  padding: 12px;
+  border: 1px solid #e5e9f2;
+  border-radius: 10px;
+  background: #fff;
+}
+.folder-node {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 5px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #65718a;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+.folder-node.selected,
+.folder-node:hover {
+  background: #eef0ff;
+  color: #4338ca;
+}
+.folder-node.root {
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+.folder-branch .folder-branch {
+  margin-left: 17px;
+}
+.folder-toggle,
+.folder-name,
+.folder-more {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.folder-name {
+  flex: 1;
+  padding: 4px 0;
+  text-align: left;
+}
+.folder-more {
+  opacity: 0;
+}
+.folder-node:hover .folder-more {
+  opacity: 1;
+}
+.workbook-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.workbook-card {
+  min-height: 190px;
+  border: 1px solid #e5e9f2;
+  border-radius: 10px;
+  background: #fff;
+  padding: 17px;
+}
+.workbook-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.workbook-card-header > a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.workbook-card-header h3 {
+  margin: 0 0 3px;
+}
+.workbook-card-header p,
+.workbook-card-tables small {
+  margin: 0;
+  color: #8a95a8;
+  font-size: 11px;
+}
+.card-menu,
+.table-tab-menu {
+  position: relative;
+}
+.card-menu-items {
+  position: absolute;
+  top: calc(100% + 3px);
+  right: 0;
+  z-index: 8;
+  display: none;
+  min-width: 130px;
+  padding: 5px;
+  border: 1px solid #dce2ed;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 10px 24px #16203d26;
+}
+.card-menu:hover .card-menu-items,
+.table-tab-menu:hover .card-menu-items {
+  display: grid;
+}
+.card-menu-items button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 7px 8px;
+  color: #455169;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+.card-menu-items button:hover {
+  background: #f1f0ff;
+  color: #4338ca;
+}
+.workbook-card-tables {
+  display: grid;
+  gap: 6px;
+  margin: 20px 0 15px;
+}
+.workbook-card-tables a {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #eef1f6;
+  padding-top: 7px;
+  color: #536078;
+  font-size: 12px;
+}
+.tag-filter-row,
+.tag-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 16px;
+}
+.chip,
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #dce2ed;
+  border-radius: 999px;
+  background: #fff;
+  padding: 6px 9px;
+  color: #65718a;
+  cursor: pointer;
+  font-size: 11px;
+}
+.chip.selected {
+  border-color: #a7a2f7;
+  background: #eef0ff;
+  color: #4338ca;
+}
+.tag-dot,
+.tag-options span,
+.tag-chip-list span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.tag-picker {
+  position: relative;
+}
+.tag-chip {
+  border: 0;
+  background: #f4f5fa;
+  padding: 4px 7px;
+}
+.tag-picker-popover {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 10;
+  display: grid;
+  gap: 8px;
+  width: 240px;
+  padding: 10px;
+  border: 1px solid #dce2ed;
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 12px 28px #16203d26;
+}
+.tag-picker-popover > input,
+.tag-create input {
+  width: 100%;
+  border: 1px solid #dce2ed;
+  border-radius: 5px;
+  padding: 7px;
+  font-size: 11px;
+}
+.tag-options {
+  display: grid;
+  gap: 2px;
+  max-height: 130px;
+  overflow: auto;
+}
+.tag-options button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  padding: 6px;
+  color: #455169;
+  cursor: pointer;
+  text-align: left;
+  font-size: 11px;
+}
+.tag-create {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid #eef1f6;
+  padding-top: 8px;
+}
+.compact {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+.table-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid #e1e6ef;
+  margin-bottom: 8px;
+}
+.table-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: #65718a;
+  white-space: nowrap;
+}
+.table-tab.active {
+  border-color: #e1e6ef;
+  background: #fff;
+  color: #4338ca;
+}
+.table-tab > button:first-child {
+  border: 0;
+  background: transparent;
+  padding: 10px 8px;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+.table-tab small {
+  margin-left: 5px;
+  color: #9ba5b6;
+}
+.table-tab.add {
+  border: 1px dashed #cdd5e3;
+  border-radius: 6px 6px 0 0;
+  padding: 0 8px;
+}
 .topbar {
   display: flex;
   justify-content: space-between;

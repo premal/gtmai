@@ -1,7 +1,7 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AppNav } from '../../app-nav';
@@ -32,7 +32,22 @@ type Column = {
   colorLabel?: string;
 };
 type Row = { id: string; cells: Cell[] };
-type Table = { id: string; name: string; columns: Column[]; rows: Row[] };
+type Table = {
+  id: string;
+  name: string;
+  workbookId?: string;
+  columns: Column[];
+  rows: Row[];
+  tags?: { id: string; name: string; color?: string | null }[];
+};
+type SavedView = {
+  id: string;
+  name: string;
+  filter: unknown;
+  sort: { columnId: string; direction: 'asc' | 'desc' }[];
+  hiddenColumnIds: string[];
+};
+type FilterDraft = { field: string; op: string; value: string };
 type ColumnKind = 'input' | 'enrichment' | 'waterfall' | 'agent' | 'formula' | 'http' | 'function';
 type RunOptions = {
   rowIds?: string[];
@@ -104,8 +119,14 @@ function ModalShell({
   );
 }
 
-export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
-  const [tableId, setTableId] = useState('');
+export function TableWorkspace({
+  tableId: initialTableId,
+  embedded = false,
+}: {
+  tableId: string;
+  embedded?: boolean;
+}) {
+  const [tableId] = useState(initialTableId);
   const [table, setTable] = useState<Table | null>(null);
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [selectedColumn, setSelectedColumn] = useState<Column | null>(null);
@@ -148,16 +169,29 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [agentPreview, setAgentPreview] = useState('');
   const [menuColumnId, setMenuColumnId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [views, setViews] = useState<SavedView[]>([]);
+  const [activeViewId, setActiveViewId] = useState('');
+  const [totalRows, setTotalRows] = useState(0);
+  const [viewMenu, setViewMenu] = useState<'filter' | 'sort' | 'hide' | null>(null);
+  const [draftFilters, setDraftFilters] = useState<FilterDraft[]>([
+    { field: '', op: 'contains', value: '' },
+  ]);
+  const [draftFilterJoin, setDraftFilterJoin] = useState<'and' | 'or'>('and');
+  const [draftSort, setDraftSort] = useState<{ columnId: string; direction: 'asc' | 'desc' }>({
+    columnId: '',
+    direction: 'asc',
+  });
   const dialog = useDialog();
   const { toast } = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const gridRef = useRef<HTMLDivElement>(null);
   const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    void params.then(({ id }) => setTableId(id));
-  }, [params]);
+    setActiveViewId(searchParams.get('view') ?? '');
+  }, [searchParams]);
 
   useEffect(() => {
     if (!menuColumnId) return;
@@ -192,11 +226,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     if (!tableId) return;
     const token = localStorage.getItem('gtmai-token') ?? '';
     const load = (): void => {
-      void fetch(`${api}/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })
+      const suffix = activeViewId ? `?viewId=${encodeURIComponent(activeViewId)}` : '';
+      void fetch(`${api}/tables/${tableId}${suffix}`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
         .then((response) => response.json() as Promise<Table>)
         .then(setTable);
     };
     load();
+    void fetch(`${api}/tables/${tableId}/views`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((response) => response.json() as Promise<SavedView[]>)
+      .then(setViews);
+    void fetch(`${api}/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })
+      .then((response) => response.json() as Promise<Table>)
+      .then((value) => setTotalRows(value.rows.length));
     void fetch(`${api}/providers/catalog`)
       .then((response) => response.json() as Promise<CatalogAction[]>)
       .then(setCatalog);
@@ -205,7 +250,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     );
     stream.onmessage = () => load();
     return () => stream.close();
-  }, [tableId]);
+  }, [activeViewId, tableId]);
 
   async function run(columnId: string, options: RunOptions = {}): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
@@ -213,7 +258,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     await fetch(`${api}/tables/${tableId}/columns/${columnId}/run`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ ...options, rowIds }),
+      body: JSON.stringify({ ...options, rowIds, viewId: activeViewId || undefined }),
     });
   }
 
@@ -270,12 +315,109 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     await reload();
   }
 
-  async function reload(): Promise<void> {
+  async function reload(viewId = activeViewId): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
-    const response = await fetch(`${api}/tables/${tableId}`, {
+    const suffix = viewId ? `?viewId=${encodeURIComponent(viewId)}` : '';
+    const response = await fetch(`${api}/tables/${tableId}${suffix}`, {
       headers: { authorization: `Bearer ${token}` },
     });
     setTable((await response.json()) as Table);
+  }
+
+  async function saveView(view: Partial<SavedView> & { name: string }): Promise<void> {
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    const response = await fetch(`${api}/tables/${tableId}/views${view.id ? `/${view.id}` : ''}`, {
+      method: view.id ? 'PATCH' : 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: view.name,
+        filter: view.filter,
+        sort: view.sort ?? [],
+        hiddenColumnIds: view.hiddenColumnIds ?? [],
+      }),
+    });
+    if (!response.ok) return;
+    const saved = (await response.json()) as SavedView;
+    setViews((current) =>
+      view.id ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved],
+    );
+    setActiveViewId(saved.id);
+    router.replace(`/tables/${tableId}?view=${saved.id}`);
+  }
+
+  async function editActiveView(patch: Partial<SavedView>): Promise<void> {
+    const view = views.find((item) => item.id === activeViewId);
+    if (!view) {
+      const values = await dialog.prompt({
+        title: 'Save as view',
+        fields: [{ name: 'name', label: 'View name', defaultValue: 'New view' }],
+        confirmLabel: 'Save view',
+      });
+      if (!values?.name) return;
+      await saveView({
+        name: values.name,
+        filter: patch.filter ?? null,
+        sort: patch.sort ?? [],
+        hiddenColumnIds: patch.hiddenColumnIds ?? [],
+      });
+      return;
+    }
+    await saveView({ ...view, ...patch });
+  }
+
+  async function selectView(id: string): Promise<void> {
+    setActiveViewId(id);
+    router.replace(id ? `/tables/${tableId}?view=${id}` : `/tables/${tableId}`);
+  }
+
+  async function createView(): Promise<void> {
+    const values = await dialog.prompt({
+      title: 'New view',
+      fields: [{ name: 'name', label: 'View name', defaultValue: 'New view' }],
+      confirmLabel: 'Create view',
+    });
+    if (!values?.name) return;
+    await saveView({ name: values.name, filter: null, sort: [], hiddenColumnIds: [] });
+  }
+
+  async function viewAction(action: 'rename' | 'duplicate' | 'delete', view: SavedView) {
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    if (action === 'delete') {
+      if (
+        !(await dialog.confirm({
+          title: 'Delete view',
+          description: `Delete ${view.name}?`,
+          confirmLabel: 'Delete view',
+          danger: true,
+        }))
+      )
+        return;
+      await fetch(`${api}/tables/${tableId}/views/${view.id}`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      setViews((current) => current.filter((item) => item.id !== view.id));
+      if (activeViewId === view.id) await selectView('');
+      return;
+    }
+    if (action === 'rename') {
+      const values = await dialog.prompt({
+        title: 'Rename view',
+        fields: [{ name: 'name', label: 'View name', defaultValue: view.name }],
+        confirmLabel: 'Rename',
+      });
+      if (values?.name) await saveView({ ...view, name: values.name });
+      return;
+    }
+    await fetch(`${api}/tables/${tableId}/views/${view.id}/duplicate`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({}),
+    });
+    const refreshed = await fetch(`${api}/tables/${tableId}/views`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    setViews((await refreshed.json()) as SavedView[]);
   }
 
   async function addRow(): Promise<void> {
@@ -398,7 +540,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     const response = await fetch(`${api}/tables/${tableId}/source`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ provider: 'theirstack', action: sourceActionId, input }),
+      body: JSON.stringify({
+        provider: 'theirstack',
+        action: sourceActionId,
+        input,
+        viewId: activeViewId || undefined,
+      }),
     });
     const body = (await response.json()) as { imported?: number; message?: string };
     if (!response.ok) {
@@ -450,6 +597,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         action: selectedAction.id,
         input: { domain: peopleDomain, ...actionInput },
         rowIds: peopleScope === 'selected' ? selectedRows : undefined,
+        viewId: activeViewId || undefined,
         carry: peopleCarry,
         target: { name: peopleTableName || `${table.name} — people` },
       }),
@@ -504,7 +652,8 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
 
   async function exportCsv(): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
-    const response = await fetch(`${api}/tables/${tableId}/export`, {
+    const suffix = activeViewId ? `?viewId=${encodeURIComponent(activeViewId)}` : '';
+    const response = await fetch(`${api}/tables/${tableId}/export${suffix}`, {
       headers: { authorization: `Bearer ${token}` },
     });
     const body = (await response.json()) as { csv: string };
@@ -553,10 +702,42 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       .filter((item) => item.category === 'search' && item.sourceKind === 'people')
       .sort((left, right) => order.indexOf(left.provider) - order.indexOf(right.provider));
   }, [catalog]);
+  const activeView = views.find((view) => view.id === activeViewId);
+  const hiddenColumnIds = activeView?.hiddenColumnIds ?? [];
+  const visibleColumns =
+    table?.columns.filter((column) => !hiddenColumnIds.includes(column.id)) ?? [];
+  const rowCountLabel =
+    activeViewId && totalRows > (table?.rows.length ?? 0)
+      ? `${table?.rows.length ?? 0} of ${totalRows} rows`
+      : `${table?.rows.length ?? 0} rows`;
+
+  async function applyFilterDraft(): Promise<void> {
+    const rules = draftFilters
+      .filter((rule) => rule.field)
+      .map((rule) => ({ field: rule.field, op: rule.op, value: rule.value }));
+    if (!rules.length) return;
+    await editActiveView({
+      filter: rules.length === 1 ? rules[0] : { [draftFilterJoin]: rules },
+    });
+    setViewMenu(null);
+  }
+
+  async function applySortDraft(): Promise<void> {
+    if (!draftSort.columnId) return;
+    await editActiveView({ sort: [draftSort] });
+    setViewMenu(null);
+  }
+
+  async function toggleHiddenColumn(columnId: string): Promise<void> {
+    const next = hiddenColumnIds.includes(columnId)
+      ? hiddenColumnIds.filter((id) => id !== columnId)
+      : [...hiddenColumnIds, columnId];
+    await editActiveView({ hiddenColumnIds: next });
+  }
 
   if (!table) return <main className="loading">Loading table…</main>;
   return (
-    <main className="app-shell">
+    <main className={`app-shell${embedded ? ' embedded-table' : ''}`}>
       <AppNav>
         <a className="back-link" href="/">
           ← All tables
@@ -606,26 +787,218 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             </button>
           </div>
         </header>
+        <div className="view-toolbar">
+          <label className="view-select">
+            <span className="muted">View</span>
+            <select value={activeViewId} onChange={(event) => void selectView(event.target.value)}>
+              <option value="">Default view</option>
+              {views.map((view) => (
+                <option key={view.id} value={view.id}>
+                  {view.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="button" onClick={() => void createView()}>
+            ＋ New view
+          </button>
+          <button
+            className="button"
+            onClick={() => setViewMenu(viewMenu === 'filter' ? null : 'filter')}
+          >
+            Filter
+          </button>
+          <button
+            className="button"
+            onClick={() => setViewMenu(viewMenu === 'sort' ? null : 'sort')}
+          >
+            Sort
+          </button>
+          <button
+            className="button"
+            onClick={() => setViewMenu(viewMenu === 'hide' ? null : 'hide')}
+          >
+            Hide columns
+          </button>
+          {activeView && (
+            <>
+              <button
+                className="icon-button"
+                title="Rename view"
+                onClick={() => void viewAction('rename', activeView)}
+              >
+                Rename
+              </button>
+              <button
+                className="icon-button"
+                title="Duplicate view"
+                onClick={() => void viewAction('duplicate', activeView)}
+              >
+                Duplicate
+              </button>
+              <button
+                className="icon-button danger"
+                title="Delete view"
+                onClick={() => void viewAction('delete', activeView)}
+              >
+                Delete
+              </button>
+            </>
+          )}
+          {!activeView && (
+            <span className="muted">
+              Edit filters, sorts, and hidden columns after saving a view.
+            </span>
+          )}
+          {viewMenu === 'filter' && (
+            <div className="view-popover">
+              <strong>Filter rows</strong>
+              {draftFilters.map((draftFilter, index) => (
+                <div className="filter-rule" key={index}>
+                  <select
+                    value={draftFilter.field}
+                    onChange={(event) =>
+                      setDraftFilters((current) =>
+                        current.map((rule, item) =>
+                          item === index ? { ...rule, field: event.target.value } : rule,
+                        ),
+                      )
+                    }
+                  >
+                    <option value="">Choose a column</option>
+                    {table.columns.map((column) => (
+                      <option key={column.id} value={column.id}>
+                        {column.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={draftFilter.op}
+                    onChange={(event) =>
+                      setDraftFilters((current) =>
+                        current.map((rule, item) =>
+                          item === index ? { ...rule, op: event.target.value } : rule,
+                        ),
+                      )
+                    }
+                  >
+                    {['eq', 'neq', 'contains', 'in', 'gte', 'lte', 'exists', 'has'].map((op) => (
+                      <option key={op}>{op}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={draftFilter.value}
+                    placeholder="Value"
+                    onChange={(event) =>
+                      setDraftFilters((current) =>
+                        current.map((rule, item) =>
+                          item === index ? { ...rule, value: event.target.value } : rule,
+                        ),
+                      )
+                    }
+                  />
+                  {draftFilters.length > 1 && (
+                    <button
+                      className="icon-button danger"
+                      onClick={() =>
+                        setDraftFilters((current) => current.filter((_, item) => item !== index))
+                      }
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+              <label className="view-join">
+                Match
+                <select
+                  value={draftFilterJoin}
+                  onChange={(event) => setDraftFilterJoin(event.target.value as 'and' | 'or')}
+                >
+                  <option value="and">All (and)</option>
+                  <option value="or">Any (or)</option>
+                </select>
+              </label>
+              <button
+                className="button"
+                onClick={() =>
+                  setDraftFilters((current) => [
+                    ...current,
+                    { field: '', op: 'contains', value: '' },
+                  ])
+                }
+              >
+                ＋ Add filter
+              </button>
+              <button className="button primary" onClick={() => void applyFilterDraft()}>
+                Apply
+              </button>
+            </div>
+          )}
+          {viewMenu === 'sort' && (
+            <div className="view-popover">
+              <strong>Sort rows</strong>
+              <select
+                value={draftSort.columnId}
+                onChange={(event) => setDraftSort({ ...draftSort, columnId: event.target.value })}
+              >
+                <option value="">Choose a column</option>
+                {table.columns.map((column) => (
+                  <option key={column.id} value={column.id}>
+                    {column.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={draftSort.direction}
+                onChange={(event) =>
+                  setDraftSort({ ...draftSort, direction: event.target.value as 'asc' | 'desc' })
+                }
+              >
+                <option value="asc">Ascending</option>
+                <option value="desc">Descending</option>
+              </select>
+              <button className="button primary" onClick={() => void applySortDraft()}>
+                Apply
+              </button>
+            </div>
+          )}
+          {viewMenu === 'hide' && (
+            <div className="view-popover hide-popover">
+              <strong>Visible columns</strong>
+              {table.columns.map((column) => (
+                <label className="choice-row" key={column.id}>
+                  <input
+                    type="checkbox"
+                    checked={!hiddenColumnIds.includes(column.id)}
+                    onChange={() => void toggleHiddenColumn(column.id)}
+                  />
+                  {column.name}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="builder-strip">
           <span className="strip-active">Grid</span>
           <span>Waterfall</span>
           <span>Claygent</span>
           <span>Formula</span>
           <span className="strip-spacer" />
-          <span className="muted">{table.rows.length} rows · Live updates on</span>
+          <span className="muted">{rowCountLabel} · Live updates on</span>
         </div>
         <div className="grid-wrap" ref={gridRef}>
           <table className="data-grid">
             <colgroup>
               <col className="row-num-col" />
-              {table.columns.map((column) => (
+              {visibleColumns.map((column) => (
                 <col key={column.id} style={{ width: `${column.width ?? 220}px` }} />
               ))}
             </colgroup>
             <thead>
               <tr>
                 <th className="row-num">✓</th>
-                {table.columns.map((column) => (
+                {visibleColumns.map((column) => (
                   <th key={column.id}>
                     <div className="column-title">
                       <span className={`kind-dot kind-${column.kind}`} />
@@ -776,7 +1149,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   <>
                     {paddingTop > 0 && (
                       <tr aria-hidden="true">
-                        <td colSpan={table.columns.length + 1} style={{ height: paddingTop }} />
+                        <td colSpan={visibleColumns.length + 1} style={{ height: paddingTop }} />
                       </tr>
                     )}
                     {virtualRows.map((virtualRow) => {
@@ -796,7 +1169,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                               }
                             />
                           </td>
-                          {table.columns.map((column) => {
+                          {visibleColumns.map((column) => {
                             const cell = row.cells.find((item) => item.columnId === column.id);
                             const editable = column.kind === 'input';
                             return (
@@ -849,7 +1222,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                     })}
                     {paddingBottom > 0 && (
                       <tr aria-hidden="true">
-                        <td colSpan={table.columns.length + 1} style={{ height: paddingBottom }} />
+                        <td colSpan={visibleColumns.length + 1} style={{ height: paddingBottom }} />
                       </tr>
                     )}
                   </>
@@ -1295,6 +1668,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         >
           <h3>Find people</h3>
           <p className="muted">Turn company rows into a People table.</p>
+          <p className="muted">
+            Runs on{' '}
+            {activeView
+              ? `${table.rows.length} rows visible in view ${activeView.name}`
+              : `${table.rows.length} rows in this table`}
+            .
+          </p>
           <label>
             Search action
             <select
@@ -1423,5 +1803,17 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </aside>
       )}
     </main>
+  );
+}
+
+export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
+  const [tableId, setTableId] = useState('');
+  useEffect(() => {
+    void params.then(({ id }) => setTableId(id));
+  }, [params]);
+  return tableId ? (
+    <TableWorkspace tableId={tableId} />
+  ) : (
+    <main className="loading">Loading table…</main>
   );
 }
