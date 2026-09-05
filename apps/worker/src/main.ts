@@ -82,7 +82,7 @@ async function execute(job: Job<CellData>): Promise<void> {
   if (!column || !row) throw new Error('Cell target not found');
   const values = rowValues(row);
   const claimed = await db.cell.updateMany({
-    where: { rowId, columnId, status: { in: ['queued', 'running'] } },
+    where: { rowId, columnId, status: 'queued' },
     data: { status: 'running', error: null },
   });
   if (claimed.count === 0) return;
@@ -253,6 +253,11 @@ async function execute(job: Job<CellData>): Promise<void> {
         `table:${column.tableId}`,
         JSON.stringify({ rowId, columnId, status: 'error', error: message }),
       );
+    } else {
+      await db.cell.update({
+        where: { id: cell.id },
+        data: { status: 'queued', error: null },
+      });
     }
     throw error;
   }
