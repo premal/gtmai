@@ -286,21 +286,12 @@ a {
   position: relative;
 }
 .card-menu-items {
-  position: absolute;
-  top: calc(100% + 3px);
-  right: 0;
   z-index: 8;
-  display: none;
-  min-width: 130px;
   padding: 5px;
   border: 1px solid #dce2ed;
   border-radius: 7px;
   background: #fff;
   box-shadow: 0 10px 24px #16203d26;
-}
-.card-menu:hover .card-menu-items,
-.table-tab-menu:hover .card-menu-items {
-  display: grid;
 }
 .card-menu-items button {
   border: 0;
@@ -320,6 +311,9 @@ a {
   position: fixed;
   display: grid;
   z-index: 30;
+  width: max-content;
+  min-width: 160px;
+  max-width: 260px;
 }
 .workbook-card-tables {
   display: grid;

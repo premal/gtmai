@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from './toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -32,12 +32,29 @@ export function TagPicker({
   const [available, setAvailable] = useState<Tag[]>([]);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(colors[0]);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   const { toast } = useToast();
   const matches = useMemo(
     () => available.filter((tag) => tag.name.toLowerCase().includes(query.toLowerCase())),
     [available, query],
   );
+
+  useEffect(() => {
+    if (!open) return;
+    function close(event: MouseEvent) {
+      if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
 
   async function openPicker() {
     setOpen((value) => !value);
@@ -96,7 +113,7 @@ export function TagPicker({
   }
 
   return (
-    <div className="tag-picker">
+    <div className="tag-picker" ref={pickerRef}>
       <div className="tag-chip-list">
         {selected.map((tag) => (
           <button className="tag-chip" key={tag.id} onClick={() => void remove(tag)}>

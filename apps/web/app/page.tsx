@@ -426,16 +426,6 @@ export default function Home() {
               >
                 Move
               </button>
-              <TagPicker
-                target={{ type: 'workbookId', id: menu.item.id }}
-                selected={menu.item.tags}
-                onChange={(tags) => {
-                  setWorkbooks((current) =>
-                    current.map((item) => (item.id === menu.item.id ? { ...item, tags } : item)),
-                  );
-                }}
-                onTagCreated={() => void load()}
-              />
               <button
                 onClick={() => {
                   setMenu(null);
