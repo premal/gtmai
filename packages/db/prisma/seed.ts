@@ -179,6 +179,213 @@ async function main(): Promise<void> {
   }
   await queue.close();
   await redis.quit();
+
+  const importedContacts = [];
+  for (const person of people) {
+    const company = await db.company.upsert({
+      where: {
+        workspaceId_domainKey: { workspaceId: workspace.id, domainKey: person[2].toLowerCase() },
+      },
+      update: {
+        name: person[3],
+        domain: person[2],
+        data: { industry: person[2].includes('ai') ? 'AI' : 'Technology' },
+      },
+      create: {
+        workspaceId: workspace.id,
+        name: person[3],
+        domain: person[2],
+        domainKey: person[2].toLowerCase(),
+        data: { industry: person[2].includes('ai') ? 'AI' : 'Technology', employees: 250 },
+      },
+    });
+    const contact = await db.contact.upsert({
+      where: {
+        workspaceId_emailKey: {
+          workspaceId: workspace.id,
+          emailKey: `${person[0]}.${person[1]}@${person[2]}`.toLowerCase(),
+        },
+      },
+      update: {
+        firstName: person[0],
+        lastName: person[1],
+        companyId: company.id,
+        data: { title: 'VP Engineering' },
+      },
+      create: {
+        workspaceId: workspace.id,
+        email: `${person[0]}.${person[1]}@${person[2]}`.toLowerCase(),
+        emailKey: `${person[0]}.${person[1]}@${person[2]}`.toLowerCase(),
+        firstName: person[0],
+        lastName: person[1],
+        companyId: company.id,
+        data: { title: 'VP Engineering' },
+      },
+    });
+    importedContacts.push(contact);
+  }
+  const segment = await db.segment.upsert({
+    where: { id: `${workspace.id}-ai-companies` },
+    update: {
+      name: 'AI companies',
+      filter: { field: 'company.domain', op: 'contains', value: 'ai' },
+    },
+    create: {
+      id: `${workspace.id}-ai-companies`,
+      workspaceId: workspace.id,
+      name: 'AI companies',
+      filter: { field: 'company.domain', op: 'contains', value: 'ai' },
+    },
+  });
+  await db.segmentMembership.deleteMany({ where: { segmentId: segment.id } });
+  const aiContacts = importedContacts.filter((contact) => {
+    const company = people.find(
+      (person) => `${person[0]}.${person[1]}@${person[2]}`.toLowerCase() === contact.email,
+    );
+    return company?.[2].includes('ai');
+  });
+  await db.segmentMembership.createMany({
+    data: aiContacts.map((contact) => ({ segmentId: segment.id, contactId: contact.id })),
+  });
+
+  await db.signalEvent.deleteMany({ where: { definition: { workspaceId: workspace.id } } });
+  await db.signalDefinition.deleteMany({
+    where: { workspaceId: workspace.id, name: 'Mock job changes' },
+  });
+  const signal = await db.signalDefinition.create({
+    data: {
+      workspaceId: workspace.id,
+      name: 'Mock job changes',
+      type: 'job_change',
+      config: { provider: 'mock', action: 'mock.jobChanges', schedule: 'daily' },
+      secret: randomBytes(24).toString('hex'),
+    },
+  });
+  await db.signalEvent.createMany({
+    data: importedContacts.slice(0, 5).map((contact, index) => ({
+      definitionId: signal.id,
+      dedupeKey: `seed:contact:${contact.id}`,
+      contactId: contact.id,
+      payload: { type: 'job_change', title: `VP Engineering ${index + 1}`, source: 'mock' },
+      occurredAt: new Date(Date.now() - index * 86_400_000),
+    })),
+  });
+  const oldWorkflow = await db.workflow.findFirst({
+    where: { workspaceId: workspace.id, name: 'Job-change → enrich → append to table' },
+  });
+  if (oldWorkflow) await db.workflow.delete({ where: { id: oldWorkflow.id } });
+  const workflow = await db.workflow.create({
+    data: {
+      workspaceId: workspace.id,
+      name: 'Job-change → enrich → append to table',
+      graph: {
+        nodes: [
+          {
+            id: 'trigger',
+            type: 'trigger.signal',
+            config: { definitionId: signal.id },
+            position: { x: 40, y: 80 },
+          },
+          {
+            id: 'enrich',
+            type: 'enrich',
+            config: {
+              provider: 'mock',
+              action: 'mock.enrichPerson',
+              input: {
+                firstName: '{{trigger.firstName}}',
+                lastName: '{{trigger.lastName}}',
+                domain: '{{trigger.domain}}',
+              },
+            },
+            position: { x: 260, y: 80 },
+          },
+          {
+            id: 'condition',
+            type: 'condition',
+            config: { expression: '{{enrich.output.title}} contains "Engineer"' },
+            position: { x: 480, y: 80 },
+          },
+          {
+            id: 'append',
+            type: 'table.appendRow',
+            config: {
+              tableId: table.id,
+              values: {
+                'Work email': '{{enrich.output.email}}',
+                'Display name': '{{enrich.output.fullName}}',
+              },
+            },
+            position: { x: 700, y: 20 },
+          },
+          {
+            id: 'webhook',
+            type: 'webhook.out',
+            config: {
+              url: 'http://localhost:4000/health',
+              body: { title: '{{enrich.output.title}}' },
+            },
+            position: { x: 700, y: 180 },
+          },
+        ],
+        edges: [
+          { from: 'trigger', to: 'enrich' },
+          { from: 'enrich', to: 'condition' },
+          { from: 'condition', to: 'append', condition: 'true' },
+          { from: 'condition', to: 'webhook', condition: 'false' },
+        ],
+      },
+    },
+  });
+  const run = await db.workflowRun.create({
+    data: {
+      workflowId: workflow.id,
+      input: {
+        signalId: signal.id,
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        domain: 'analytical.engine',
+      },
+    },
+  });
+  const workflowRunner = await import('../../../apps/worker/src/workflows');
+  await workflowRunner.executeWorkflowRun(run.id, workspace.id);
+  await workflowRunner.closeWorkflowResources();
+  const oldFunction = await db.function.findFirst({
+    where: { workspaceId: workspace.id, name: 'Normalize company name' },
+  });
+  if (oldFunction) await db.function.delete({ where: { id: oldFunction.id } });
+  const fn = await db.function.create({
+    data: { workspaceId: workspace.id, name: 'Normalize company name' },
+  });
+  await db.functionVersion.create({
+    data: {
+      functionId: fn.id,
+      version: 1,
+      program: {
+        inputs: [{ name: 'name', type: 'text' }],
+        nodes: [
+          {
+            id: 'trim',
+            type: 'formula',
+            config: { expression: 'trim({{inputs.name}})' },
+            position: { x: 100, y: 80 },
+          },
+          {
+            id: 'lower',
+            type: 'formula',
+            config: { expression: 'lower({{trim.output}})' },
+            position: { x: 360, y: 80 },
+          },
+        ],
+        output: '{{lower.output}}',
+      },
+      testCases: [
+        { input: { name: '  Acme  ' }, expected: 'acme' },
+        { input: { name: '  Globex  ' }, expected: 'globex' },
+      ],
+    },
+  });
 }
 
 main().finally(() => db.$disconnect());

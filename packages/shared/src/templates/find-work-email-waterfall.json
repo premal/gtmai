@@ -1,0 +1,28 @@
+{
+  "id": "builtin-email-waterfall",
+  "name": "Find work email waterfall",
+  "kind": "table",
+  "definition": {
+    "columns": [
+      {
+        "name": "Work email",
+        "type": "email",
+        "kind": "waterfall",
+        "config": {
+          "providers": [
+            {
+              "provider": "mock",
+              "action": "mock.findEmail",
+              "input": {
+                "firstName": "{{First name}}",
+                "lastName": "{{Last name}}",
+                "domain": "{{Domain}}"
+              }
+            }
+          ],
+          "accept": "any"
+        }
+      }
+    ]
+  }
+}

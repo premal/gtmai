@@ -280,6 +280,45 @@ function setupSwagger(app: NestFastifyApplication): void {
       responses: { '201': { description: 'Formula preview result' } },
     },
   };
+  const phase2Paths: Record<string, object> = {
+    '/audiences/companies': {
+      get: { summary: 'List audience companies' },
+      post: { summary: 'Create an audience company' },
+    },
+    '/audiences/contacts': {
+      get: { summary: 'List audience contacts' },
+      post: { summary: 'Create an audience contact' },
+    },
+    '/audiences/import/table/{tableId}': { post: { summary: 'Import a table into audiences' } },
+    '/audiences/export/table': { post: { summary: 'Export an audience to a table' } },
+    '/audiences/segments': {
+      get: { summary: 'List segments' },
+      post: { summary: 'Create a segment' },
+    },
+    '/audiences/segments/{id}/refresh': { post: { summary: 'Refresh a segment' } },
+    '/signals/definitions': {
+      get: { summary: 'List signal definitions' },
+      post: { summary: 'Create a signal definition' },
+    },
+    '/signals/definitions/{id}/poll': { post: { summary: 'Poll a signal definition' } },
+    '/signals/events': { get: { summary: 'List signal events' } },
+    '/signals/ingest/{definitionId}': { post: { summary: 'Ingest a signal webhook' } },
+    '/workflows': { get: { summary: 'List workflows' }, post: { summary: 'Create a workflow' } },
+    '/workflows/{id}/run': { post: { summary: 'Run a workflow' } },
+    '/workflows/{id}/validate': { post: { summary: 'Validate a workflow graph' } },
+    '/workflows/{id}/runs': { get: { summary: 'List workflow runs' } },
+    '/workflows/runs/{runId}': { get: { summary: 'Get workflow run details' } },
+    '/workflows/runs/{runId}/events': { get: { summary: 'Stream workflow run events' } },
+    '/workflows/hooks/{id}/{secret}': { post: { summary: 'Trigger a workflow webhook' } },
+    '/functions': { get: { summary: 'List functions' }, post: { summary: 'Create a function' } },
+    '/functions/{id}/versions': { post: { summary: 'Publish a function version' } },
+    '/functions/{id}/test': { post: { summary: 'Run function test cases' } },
+    '/templates': { get: { summary: 'List templates' }, post: { summary: 'Save a template' } },
+    '/templates/{id}/instantiate': { post: { summary: 'Instantiate a template' } },
+  };
+  for (const [path, operations] of Object.entries(phase2Paths)) {
+    openApi.paths[path] = operations as OpenAPIObject['paths'][string];
+  }
   SwaggerModule.setup('docs', app, document, { useGlobalPrefix: false, explorer: true });
 }
 

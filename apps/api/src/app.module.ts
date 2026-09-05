@@ -9,6 +9,11 @@ import { PrismaModule } from './prisma/prisma.module';
 import { ProvidersModule } from './providers/providers.module';
 import { TablesModule } from './tables/tables.module';
 import { WorkspacesModule } from './workspaces/workspaces.module';
+import { AudiencesModule } from './audiences/audiences.module';
+import { SignalsModule } from './signals/signals.module';
+import { WorkflowsModule } from './workflows/workflows.module';
+import { FunctionsModule } from './functions/functions.module';
+import { TemplatesModule } from './templates/templates.module';
 import { FormulaController } from './formula.controller';
 import { DocsModule } from './docs.module';
 
@@ -38,6 +43,7 @@ function required(name: string): string {
         },
       }),
     }),
+    BullModule.registerQueue({ name: 'signals' }, { name: 'workflows' }),
     PrismaModule,
     AuthModule,
     WorkspacesModule,
@@ -47,6 +53,11 @@ function required(name: string): string {
     CreditsModule,
     EventsModule,
     DocsModule,
+    AudiencesModule,
+    SignalsModule,
+    WorkflowsModule,
+    FunctionsModule,
+    TemplatesModule,
   ],
   controllers: [FormulaController],
 })

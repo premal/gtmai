@@ -28,7 +28,7 @@ type Column = {
 };
 type Row = { id: string; cells: Cell[] };
 type Table = { id: string; name: string; columns: Column[]; rows: Row[] };
-type ColumnKind = 'input' | 'enrichment' | 'waterfall' | 'agent' | 'formula' | 'http';
+type ColumnKind = 'input' | 'enrichment' | 'waterfall' | 'agent' | 'formula' | 'http' | 'function';
 type RunOptions = {
   rowIds?: string[];
   onlyEmpty?: boolean;
@@ -137,9 +137,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   body: httpBody || undefined,
                   outputPath: httpOutputPath || undefined,
                 }
-              : kind === 'input'
-                ? { value: '' }
-                : { provider, action, input: defaultInput };
+              : kind === 'function'
+                ? { functionId: '', input: {} }
+                : kind === 'input'
+                  ? { value: '' }
+                  : { provider, action, input: defaultInput };
     await fetch(
       editing
         ? `${api}/tables/${tableId}/columns/${selectedColumn?.id}`
@@ -380,7 +382,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       <section className="content wide">
         <header className="topbar">
           <div>
-            <div className="eyebrow">TABLE / PROSPECTS</div>
+            <div className="eyebrow">TABLE / {table.name.toUpperCase()}</div>
             <h2>{table.name}</h2>
           </div>
           <div className="toolbar">
@@ -569,7 +571,11 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                                 scheduleCellUpdate(row.id, column, event.target.value)
                               }
                             />
-                          ) : !cell || cell.status === 'skipped' ? null : cell.status === 'done' ? (
+                          ) : !cell ? null : cell.status === 'skipped' ? (
+                            <span className="status skipped" title={cell.error ?? 'Skipped'}>
+                              skipped
+                            </span>
+                          ) : cell.status === 'done' ? (
                             <span title={JSON.stringify(cell.value)}>
                               {displayValue(cell.value, column)}
                             </span>
@@ -611,7 +617,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             {step === 0 && (
               <div className="picker-grid">
                 {(
-                  ['input', 'enrichment', 'waterfall', 'agent', 'formula', 'http'] as ColumnKind[]
+                  [
+                    'input',
+                    'enrichment',
+                    'waterfall',
+                    'agent',
+                    'formula',
+                    'http',
+                    'function',
+                  ] as ColumnKind[]
                 ).map((value) => (
                   <button
                     key={value}
@@ -768,6 +782,24 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                       Test on first 3 rows
                     </button>
                     {agentPreview && <pre className="preview-value">{agentPreview}</pre>}
+                  </>
+                )}
+                {kind === 'function' && (
+                  <>
+                    <label className="field-label">
+                      Function ID
+                      <input
+                        value={String(
+                          (selectedColumn?.config as Record<string, unknown> | undefined)
+                            ?.functionId ?? '',
+                        )}
+                        readOnly={Boolean(selectedColumn)}
+                      />
+                    </label>
+                    <label className="field-label">
+                      Input bindings JSON
+                      <textarea defaultValue="{}" />
+                    </label>
                   </>
                 )}
                 {kind === 'http' && (
