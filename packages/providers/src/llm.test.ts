@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parseBing, parseDuckDuckGo, runAgentWithClient, webSearch } from './llm';
+import { fetchPage, parseBing, parseDuckDuckGo, runAgentWithClient, webSearch } from './llm';
 
 describe('agent loop', () => {
   it('uses search, fetch, and finish tools within the step limit', async () => {
@@ -181,5 +181,47 @@ describe('agent loop', () => {
       client,
     );
     expect(result.reasoning).toContain('search_unavailable: Search unavailable:');
+  });
+
+  it('forces a finish response after exhausting tool calls', async () => {
+    const responses = Array.from({ length: 12 }, () =>
+      JSON.stringify({ tool: 'web_search', arguments: { query: 'Clay' } }),
+    );
+    responses.push(
+      JSON.stringify({
+        tool: 'finish',
+        result: {
+          answer: 'Evidence was inconclusive.',
+          fields: { uses_clay: 'unknown' },
+          reasoning: '',
+        },
+      }),
+    );
+    const client = { complete: vi.fn(async () => responses.shift() ?? '{}') };
+    const result = await runAgentWithClient(
+      'Research whether the company uses Clay. Finish with fields: uses_clay.',
+      {
+        credentials: {},
+        fetch: vi.fn(
+          async () =>
+            new Response(
+              '<a class="result__a" href="https://example.com">Example</a><div class="result__snippet">Evidence</div>',
+            ),
+        ) as unknown as typeof fetch,
+        logger: { info: () => undefined, error: () => undefined },
+      },
+      client,
+    );
+    expect(result.fields).toEqual({ uses_clay: 'unknown' });
+    expect(result.reasoning).toBe('max_steps');
+    expect(client.complete).toHaveBeenCalledTimes(13);
+  });
+
+  it('returns an HTTP error from fetchPage for non-success responses', async () => {
+    const result = await fetchPage(
+      'https://example.com/missing',
+      vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch,
+    );
+    expect(result).toBe('{"error":"HTTP 404"}');
   });
 });

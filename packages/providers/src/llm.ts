@@ -92,6 +92,9 @@ export const llmProvider: Provider = {
 
 export async function fetchPage(url: string, fetcher: typeof fetch): Promise<string> {
   const response = await fetcher(url);
+  if (!response.ok) {
+    return JSON.stringify({ error: `HTTP ${response.status}` });
+  }
   const html = await response.text();
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -302,67 +305,61 @@ export async function runAgentWithClient(
   const sources: string[] = [];
   const searchFailures: string[] = [];
   let successfulSearches = 0;
-  for (let step = 0; step < 8; step += 1) {
-    const message = parseToolMessage(await client.complete(messages));
-    if (message.tool === 'finish') {
-      if (message.raw !== undefined) {
-        return { answer: message.raw, fields: {}, sources, reasoning: 'unparsed' };
-      }
-      const topLevelPayload =
-        'answer' in message ||
-        'fields' in message ||
-        'sources' in message ||
-        'reasoning' in message;
-      const result = message.result ?? (topLevelPayload ? message : {});
-      const resultSources = Array.isArray(result.sources)
-        ? result.sources.filter((source): source is string => typeof source === 'string')
-        : [];
-      try {
-        const parsed = output.parse({
-          ...result,
-          sources: [...new Set([...resultSources, ...sources])],
-        });
-        if (searchFailures.length > 0 && successfulSearches === 0) {
-          parsed.reasoning = [parsed.reasoning, `search_unavailable: ${searchFailures.join('; ')}`]
-            .filter(Boolean)
-            .join(' ');
-        }
-        if (Object.keys(parsed.fields).length === 0 && /\bfields\b/i.test(prompt)) {
-          try {
-            const repair = JSON.parse(
-              await client.complete([
-                {
-                  role: 'system',
-                  content:
-                    'Extract the structured fields requested by the user prompt from the research answer. Respond only as JSON: {"fields": {...}}. Use "unknown"/""/0 when not determined.',
-                },
-                {
-                  role: 'user',
-                  content: `Prompt:\n${prompt}\n\nAnswer:\n${parsed.answer}\n\nSources:\n${sources.join('\n')}`,
-                },
-              ]),
-            ) as { fields?: unknown };
-            if (
-              repair.fields &&
-              typeof repair.fields === 'object' &&
-              !Array.isArray(repair.fields)
-            ) {
-              parsed.fields = repair.fields as Record<string, unknown>;
-            }
-          } catch {
-            // Keep the original finish result when field repair fails.
-          }
-        }
-        return parsed;
-      } catch {
-        return {
-          answer: message.raw ?? '',
-          fields: {},
-          sources,
-          reasoning: 'unparsed',
-        };
-      }
+  const parseFinish = async (message: ReturnType<typeof parseToolMessage>) => {
+    if (message.raw !== undefined) {
+      return { answer: message.raw, fields: {}, sources, reasoning: 'unparsed' };
     }
+    const topLevelPayload =
+      'answer' in message || 'fields' in message || 'sources' in message || 'reasoning' in message;
+    const result = message.result ?? (topLevelPayload ? message : {});
+    const resultSources = Array.isArray(result.sources)
+      ? result.sources.filter((source): source is string => typeof source === 'string')
+      : [];
+    try {
+      const parsed = output.parse({
+        ...result,
+        sources: [...new Set([...resultSources, ...sources])],
+      });
+      if (searchFailures.length > 0 && successfulSearches === 0) {
+        parsed.reasoning = [parsed.reasoning, `search_unavailable: ${searchFailures.join('; ')}`]
+          .filter(Boolean)
+          .join(' ');
+      }
+      if (Object.keys(parsed.fields).length === 0 && /\bfields\b/i.test(prompt)) {
+        try {
+          const repair = JSON.parse(
+            await client.complete([
+              {
+                role: 'system',
+                content:
+                  'Extract the structured fields requested by the user prompt from the research answer. Respond only as JSON: {"fields": {...}}. Use "unknown"/""/0 when not determined.',
+              },
+              {
+                role: 'user',
+                content: `Prompt:\n${prompt}\n\nAnswer:\n${parsed.answer}\n\nSources:\n${sources.join('\n')}`,
+              },
+            ]),
+          ) as { fields?: unknown };
+          if (repair.fields && typeof repair.fields === 'object' && !Array.isArray(repair.fields)) {
+            parsed.fields = repair.fields as Record<string, unknown>;
+          }
+        } catch {
+          // Keep the original finish result when field repair fails.
+        }
+      }
+      return parsed;
+    } catch {
+      return {
+        answer: message.raw ?? '',
+        fields: {},
+        sources,
+        reasoning: 'unparsed',
+      };
+    }
+  };
+  for (let step = 0; step < 12; step += 1) {
+    const message = parseToolMessage(await client.complete(messages));
+    if (message.tool === 'finish') return parseFinish(message);
     if (message.tool === 'web_search') {
       try {
         const result = await webSearch(message.arguments?.query ?? prompt, context);
@@ -407,6 +404,21 @@ export async function runAgentWithClient(
       continue;
     }
     messages.push({ role: 'tool', content: JSON.stringify({ error: 'Unknown tool' }) });
+  }
+  messages.push({
+    role: 'user',
+    content:
+      'You have no tool calls left. Respond now with {"tool":"finish","result":{answer,fields,sources,reasoning}} using the evidence gathered so far; use "unknown" where undetermined.',
+  });
+  try {
+    const forced = parseToolMessage(await client.complete(messages));
+    if (forced.tool === 'finish') {
+      const result = await parseFinish(forced);
+      if (!result.reasoning) result.reasoning = 'max_steps';
+      return result;
+    }
+  } catch {
+    // Return the step-limit fallback when forced finish fails.
   }
   return { answer: 'Agent reached its step limit.', fields: {}, sources, reasoning: 'max_steps' };
 }
