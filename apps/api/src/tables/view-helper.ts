@@ -1,4 +1,6 @@
-import { compileFilterPredicate, type Filter } from '@gtmai/shared';
+import { compileFilterPredicate, filterSchema, type Filter } from '@gtmai/shared';
+import { z } from 'zod';
+import type { PrismaService } from '../prisma/prisma.service';
 
 type Column = { id: string };
 type Cell = { columnId: string; value: unknown };
@@ -9,6 +11,29 @@ export type ViewDefinition = {
   sort: ViewSort[];
   hiddenColumnIds: string[];
 };
+
+const sortSchema = z.array(
+  z.object({
+    columnId: z.string().min(1),
+    direction: z.enum(['asc', 'desc']),
+  }),
+);
+const hiddenColumnIdsSchema = z.array(z.string());
+
+export async function loadView(
+  prisma: PrismaService,
+  { tableId, workspaceId, viewId }: { tableId: string; workspaceId: string; viewId: string },
+) {
+  const view = await prisma.view.findFirst({
+    where: { id: viewId, tableId, table: { workspaceId } },
+  });
+  if (!view) throw new Error('View not found');
+  const filter = filterSchema.nullable().parse(view.filter);
+  const sort = sortSchema.parse(view.sort);
+  const hiddenColumnIds = hiddenColumnIdsSchema.parse(view.hiddenColumnIds);
+  const definition: ViewDefinition = { filter, sort, hiddenColumnIds };
+  return { view, definition };
+}
 
 function compareValues(left: unknown, right: unknown): number {
   if (left === null || left === undefined || left === '')
@@ -33,8 +58,9 @@ export function applyView<T extends Row>(view: ViewDefinition, columns: Column[]
       ),
     ]),
   );
-  let visible = view.filter
-    ? rows.filter((row) => compileFilterPredicate(view.filter!)(records.get(row)))
+  const filter = view.filter;
+  let visible = filter
+    ? rows.filter((row) => compileFilterPredicate(filter)(records.get(row)))
     : [...rows];
   if (view.sort.length) {
     visible.sort((left, right) => {

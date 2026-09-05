@@ -12,9 +12,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Prisma } from '@gtmai/db';
-import { z } from 'zod';
-import { applyView } from '../tables/view-helper';
 import { compileFilterPredicate, filterSchema, type Filter } from '@gtmai/shared';
+import { z } from 'zod';
+import { applyView, loadView } from '../tables/view-helper';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
@@ -260,19 +260,12 @@ export class AudiencesController {
     if (!table) throw new Error('Table not found');
     let rows = table.rows;
     if (input.viewId) {
-      const view = await this.prisma.view.findFirst({
-        where: { id: input.viewId, tableId, table: { workspaceId: request.user.workspaceId } },
+      const { definition } = await loadView(this.prisma, {
+        viewId: input.viewId,
+        tableId,
+        workspaceId: request.user.workspaceId,
       });
-      if (!view) throw new Error('View not found');
-      rows = applyView(
-        {
-          filter: view.filter as never,
-          sort: view.sort as never,
-          hiddenColumnIds: [],
-        },
-        table.columns,
-        table.rows,
-      );
+      rows = applyView(definition, table.columns, table.rows);
     }
     const resolveColumn = (key: string): string | undefined =>
       input.mapping[key] ||

@@ -26,7 +26,7 @@ import { debitCredits } from '../common/credits';
 import { PrismaService } from '../prisma/prisma.service';
 import { instantiateTableTemplate, type TableTemplateDefinition } from '../templates/instantiate';
 import { createRowWithValues } from './row-helper';
-import { applyView } from './view-helper';
+import { applyView, loadView } from './view-helper';
 import { getOrCreateDefaultWorkbook } from '../common/workbooks';
 
 const tableBody = z.object({
@@ -108,29 +108,22 @@ export class TablesController {
       },
     });
     if (!table) throw new Error('Table not found');
-    const view = viewId
-      ? await this.prisma.view.findFirst({
-          where: { id: viewId, tableId: id, table: { workspaceId: request.user.workspaceId } },
+    const loadedView = viewId
+      ? await loadView(this.prisma, {
+          viewId,
+          tableId: id,
+          workspaceId: request.user.workspaceId,
         })
       : null;
-    if (viewId && !view) throw new Error('View not found');
-    const rows = view
-      ? applyView(
-          {
-            filter: view.filter as never,
-            sort: view.sort as never,
-            hiddenColumnIds: view.hiddenColumnIds as never,
-          },
-          table.columns,
-          table.rows,
-        )
+    const rows = loadedView
+      ? applyView(loadedView.definition, table.columns, table.rows)
       : table.rows;
     const { tagAssignments, ...result } = table;
     return {
       ...result,
       rows,
       tags: tagAssignments.map(({ tag }) => tag),
-      ...(view ? { view } : {}),
+      ...(loadedView ? { view: loadedView.view } : {}),
     };
   }
 
@@ -365,18 +358,15 @@ export class TablesController {
       });
       targetColumns = [...targetColumns, created];
     }
-    const view = input.viewId
-      ? await this.prisma.view.findFirst({
-          where: { id: input.viewId, tableId, table: { workspaceId: request.user.workspaceId } },
+    const loadedView = input.viewId
+      ? await loadView(this.prisma, {
+          viewId: input.viewId,
+          tableId,
+          workspaceId: request.user.workspaceId,
         })
       : null;
-    if (input.viewId && !view) throw new Error('View not found');
-    const selectedRows = view
-      ? applyView(
-          { filter: view.filter as never, sort: view.sort as never, hiddenColumnIds: [] },
-          source.columns,
-          source.rows,
-        )
+    const selectedRows = loadedView
+      ? applyView(loadedView.definition, source.columns, source.rows)
       : source.rows;
     const rows = input.rowIds
       ? selectedRows.filter((row) => input.rowIds?.includes(row.id))
@@ -536,18 +526,11 @@ export class TablesController {
         typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '');
       return `"${text.replace(/"/g, '""')}"`;
     };
-    const view = viewId
-      ? await this.prisma.view.findFirst({
-          where: { id: viewId, tableId, table: { workspaceId: request.user.workspaceId } },
-        })
+    const loadedView = viewId
+      ? await loadView(this.prisma, { viewId, tableId, workspaceId: request.user.workspaceId })
       : null;
-    if (viewId && !view) throw new Error('View not found');
-    const rows = view
-      ? applyView(
-          { filter: view.filter as never, sort: view.sort as never, hiddenColumnIds: [] },
-          table.columns,
-          table.rows,
-        )
+    const rows = loadedView
+      ? applyView(loadedView.definition, table.columns, table.rows)
       : table.rows;
     const lines = [
       table.columns.map((column) => escape(column.name)).join(','),
@@ -632,10 +615,11 @@ export class TablesController {
       where: input.rowIds ? { tableId, id: { in: input.rowIds } } : { tableId },
     });
     if (input.viewId) {
-      const view = await this.prisma.view.findFirst({
-        where: { id: input.viewId, tableId, table: { workspaceId: request.user.workspaceId } },
+      const { definition } = await loadView(this.prisma, {
+        viewId: input.viewId,
+        tableId,
+        workspaceId: request.user.workspaceId,
       });
-      if (!view) throw new Error('View not found');
       const allRows = await this.prisma.row.findMany({
         where: { tableId },
         include: { cells: true },
@@ -643,7 +627,7 @@ export class TablesController {
       });
       const visible = new Set(
         applyView(
-          { filter: view.filter as never, sort: view.sort as never, hiddenColumnIds: [] },
+          definition,
           await this.prisma.column.findMany({ where: { tableId } }),
           allRows,
         ).map((row) => row.id),
