@@ -10,8 +10,13 @@ datasource db {
 enum MembershipRole {
   owner
   admin
-  member
+  editor
   viewer
+}
+
+enum WorkbookAccess {
+  workspace
+  restricted
 }
 
 enum ColumnType {
@@ -97,6 +102,7 @@ model Workspace {
   folders          Folder[]
   workbooks        Workbook[]
   tags             Tag[]
+  invites           Invite[]
 }
 
 model User {
@@ -108,13 +114,16 @@ model User {
   updatedAt          DateTime     @updatedAt
   memberships        Membership[]
   createdConnections Connection[]
+  invites            Invite[]
+  workbookCollaborators WorkbookCollaborator[]
 }
 
 model Membership {
   id          String         @id @default(cuid())
   workspaceId String
   userId      String
-  role        MembershipRole @default(member)
+  role        MembershipRole @default(editor)
+  createdAt   DateTime       @default(now())
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -197,6 +206,8 @@ model Workbook {
   folder         Folder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
   tables         Table[]
   tagAssignments TagAssignment[]
+  access         WorkbookAccess @default(workspace)
+  collaborators  WorkbookCollaborator[]
 
   @@index([workspaceId, folderId, position])
 }
@@ -218,6 +229,32 @@ model Column {
 
   @@unique([tableId, name])
   @@index([tableId, position])
+}
+
+model WorkbookCollaborator {
+  workbookId String
+  userId     String
+  workbook   Workbook @relation(fields: [workbookId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workbookId, userId])
+  @@index([userId])
+}
+
+model Invite {
+  id          String         @id @default(cuid())
+  workspaceId String
+  email       String
+  role        MembershipRole
+  token       String         @unique
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy   User           @relation(fields: [invitedById], references: [id])
+
+  @@index([workspaceId, email])
 }
 
 model Row {

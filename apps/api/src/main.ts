@@ -53,27 +53,9 @@ function setupSwagger(app: NestFastifyApplication): void {
       responses: { '201': { description: 'Authenticated' } },
     },
   };
-  openApi.paths['/auth/register'] = {
-    post: {
-      summary: 'Register a user and workspace',
-      requestBody: {
-        required: true,
-        content: {
-          'application/json': {
-            schema: {
-              type: 'object',
-              required: ['email', 'password', 'name'],
-              properties: {
-                email: { type: 'string' },
-                password: { type: 'string' },
-                name: { type: 'string' },
-              },
-            },
-          },
-        },
-      },
-      responses: { '201': { description: 'Created' } },
-    },
+  openApi.paths['/auth/invites/{token}'] = {
+    get: { summary: 'Inspect an invite', responses: { '200': { description: 'Invite' } } },
+    post: { summary: 'Accept an invite', responses: { '201': { description: 'Authenticated' } } },
   };
   openApi.paths['/providers/catalog'] = {
     get: { summary: 'List provider actions', responses: { '200': { description: 'Catalog' } } },

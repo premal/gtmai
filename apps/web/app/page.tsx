@@ -5,6 +5,7 @@ import { AppNav } from './app-nav';
 import { TagPicker } from './components/tag-picker';
 import { useDialog } from './components/prompt-dialog';
 import { useToast } from './components/toast';
+import { useMe } from './auth';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Tag = { id: string; name: string; color?: string | null };
@@ -14,6 +15,7 @@ type Workbook = {
   name: string;
   folderId?: string | null;
   tags: Tag[];
+  access?: 'workspace' | 'restricted';
   _count: { tables: number };
   tables: { id: string; name: string; _count: { rows: number; columns: number } }[];
 };
@@ -53,6 +55,8 @@ export default function Home() {
   const menuRef = useRef<HTMLDivElement>(null);
   const dialog = useDialog();
   const { toast } = useToast();
+  const me = useMe();
+  const canEdit = me?.role !== 'viewer';
 
   async function load() {
     const headers = { authorization: `Bearer ${token}` };
@@ -335,12 +339,16 @@ export default function Home() {
                 </button>
               )}
             </label>
-            <button className="button" onClick={() => void createFolder(selectedFolder)}>
-              ＋ Folder
-            </button>
-            <button className="button primary" onClick={() => void createWorkbook()}>
-              ＋ Workbook
-            </button>
+            {canEdit && (
+              <button className="button" onClick={() => void createFolder(selectedFolder)}>
+                ＋ Folder
+              </button>
+            )}
+            {canEdit && (
+              <button className="button primary" onClick={() => void createWorkbook()}>
+                ＋ Workbook
+              </button>
+            )}
           </div>
         </header>
         <div className="tag-filter-row">
@@ -387,19 +395,23 @@ export default function Home() {
                     current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
                   )
                 }
-                onMenu={(event, folder) => {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setMenu((current) =>
-                    current?.kind === 'folder' && current.item.id === folder.id
-                      ? null
-                      : {
-                          kind: 'folder',
-                          item: folder,
-                          top: rect.bottom + 4,
-                          left: rect.right - 130,
-                        },
-                  );
-                }}
+                onMenu={
+                  canEdit
+                    ? (event, folder) => {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setMenu((current) =>
+                          current?.kind === 'folder' && current.item.id === folder.id
+                            ? null
+                            : {
+                                kind: 'folder',
+                                item: folder,
+                                top: rect.bottom + 4,
+                                left: rect.right - 130,
+                              },
+                        );
+                      }
+                    : undefined
+                }
               />
             </aside>
             <div className="workbook-grid">
@@ -409,28 +421,35 @@ export default function Home() {
                     <a href={`/workbooks/${workbook.id}`}>
                       <span className="table-icon">▤</span>
                       <div>
-                        <h3>{workbook.name}</h3>
+                        <h3>
+                          {workbook.name}{' '}
+                          {workbook.access === 'restricted' && (
+                            <span className="badge">🔒 Restricted</span>
+                          )}
+                        </h3>
                         <p>{workbook._count.tables} tables</p>
                       </div>
                     </a>
-                    <button
-                      className="icon-button"
-                      onClick={(event) => {
-                        const rect = event.currentTarget.getBoundingClientRect();
-                        setMenu((current) =>
-                          current?.kind === 'workbook' && current.item.id === workbook.id
-                            ? null
-                            : {
-                                kind: 'workbook',
-                                item: workbook,
-                                top: rect.bottom + 4,
-                                left: rect.right - 130,
-                              },
-                        );
-                      }}
-                    >
-                      ⋮
-                    </button>
+                    {canEdit && (
+                      <button
+                        className="icon-button"
+                        onClick={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setMenu((current) =>
+                            current?.kind === 'workbook' && current.item.id === workbook.id
+                              ? null
+                              : {
+                                  kind: 'workbook',
+                                  item: workbook,
+                                  top: rect.bottom + 4,
+                                  left: rect.right - 130,
+                                },
+                          );
+                        }}
+                      >
+                        ⋮
+                      </button>
+                    )}
                   </div>
                   <div className="workbook-card-tables">
                     {workbook.tables.slice(0, 4).map((table) => (
@@ -440,18 +459,20 @@ export default function Home() {
                       </a>
                     ))}
                   </div>
-                  <TagPicker
-                    target={{ type: 'workbookId', id: workbook.id }}
-                    selected={workbook.tags}
-                    onChange={(next) =>
-                      setWorkbooks((current) =>
-                        current.map((item) =>
-                          item.id === workbook.id ? { ...item, tags: next } : item,
-                        ),
-                      )
-                    }
-                    onTagCreated={() => void load()}
-                  />
+                  {canEdit && (
+                    <TagPicker
+                      target={{ type: 'workbookId', id: workbook.id }}
+                      selected={workbook.tags}
+                      onChange={(next) =>
+                        setWorkbooks((current) =>
+                          current.map((item) =>
+                            item.id === workbook.id ? { ...item, tags: next } : item,
+                          ),
+                        )
+                      }
+                      onTagCreated={() => void load()}
+                    />
+                  )}
                 </article>
               ))}
               {!visibleWorkbooks.length && (
@@ -650,7 +671,7 @@ function FolderTree({
   collapsed: string[];
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
-  onMenu: (event: ReactMouseEvent<HTMLButtonElement>, folder: Folder) => void;
+  onMenu?: ((event: ReactMouseEvent<HTMLButtonElement>, folder: Folder) => void) | undefined;
 }) {
   return (
     <>
@@ -669,9 +690,11 @@ function FolderTree({
                 <button className="folder-name" onClick={() => onSelect(folder.id)}>
                   ▰ {folder.name}
                 </button>
-                <button className="folder-more" onClick={(event) => onMenu(event, folder)}>
-                  ⋮
-                </button>
+                {onMenu && (
+                  <button className="folder-more" onClick={(event) => onMenu(event, folder)}>
+                    ⋮
+                  </button>
+                )}
               </div>
               {!collapsed.includes(folder.id) && (
                 <FolderTree

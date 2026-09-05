@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../main';
+import { AuthService } from '../auth/auth.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { createWorkspaceWithAdmin } from '../test-helpers';
 
 if (process.env.CI !== 'true') {
   const testEnv = readFileSync(resolve(process.cwd(), '../../.env.test'), 'utf8');
@@ -22,12 +25,12 @@ describe('people fanout', () => {
     await app.init();
     const instance = app.getHttpAdapter().getInstance();
     const email = `fanout-${Date.now()}@gtmai.dev`;
-    const register = await instance.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: { email, password: 'password123', name: 'Fanout User' },
-    });
-    const auth = register.json() as { token: string; workspaceId: string };
+    const auth = await createWorkspaceWithAdmin(
+      app.get(PrismaService),
+      app.get(AuthService),
+      email,
+      'Fanout User',
+    );
     const headers = { authorization: `Bearer ${auth.token}` };
     await instance.inject({
       method: 'POST',

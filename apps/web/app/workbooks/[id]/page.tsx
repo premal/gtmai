@@ -7,6 +7,7 @@ import { TagPicker } from '../../components/tag-picker';
 import { useDialog } from '../../components/prompt-dialog';
 import { TableWorkspace } from '../../components/table-workspace';
 import { useToast } from '../../components/toast';
+import { isAdminRole, useMe } from '../../auth';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Tag = { id: string; name: string; color?: string | null };
@@ -22,20 +23,32 @@ type Workbook = {
   folderId?: string | null;
   folder?: { id: string; name: string } | null;
   tags: Tag[];
+  access?: 'workspace' | 'restricted';
+  collaborators?: { userId: string; email: string; name: string }[];
   tables: TableSummary[];
 };
 type Template = { id: string; name: string; kind: string };
+type Member = { userId: string; email: string; name: string; role: string };
+type Budget = { id: string; scope: string; limit: number; period: string; label: string };
 
 export default function WorkbookPage({ params }: { params: Promise<{ id: string }> }) {
   const [workbookId, setWorkbookId] = useState('');
   const [workbook, setWorkbook] = useState<Workbook | null>(null);
   const [workbooks, setWorkbooks] = useState<Workbook[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [accessMode, setAccessMode] = useState<'workspace' | 'restricted'>('workspace');
+  const [collaboratorIds, setCollaboratorIds] = useState<string[]>([]);
   const [activeTableId, setActiveTableId] = useState('');
   const [menu, setMenu] = useState<{ tableId: string; top: number; left: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const dialog = useDialog();
   const { toast } = useToast();
+  const me = useMe();
+  const canEdit = me?.role !== 'viewer';
+  const admin = isAdminRole(me?.role);
   const router = useRouter();
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
 
@@ -52,6 +65,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     if (!response.ok || !allResponse.ok) {
       const failed = !response.ok ? response : allResponse;
       toast(await responseMessage(failed, 'Unable to load workbook'), { kind: 'error' });
+      if (failed.status === 403) router.replace('/');
       return;
     }
     const next = (await response.json()) as Workbook;
@@ -59,6 +73,8 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     setWorkbooks((await allResponse.json()) as Workbook[]);
     if (!activeTableId || !next.tables.some((table) => table.id === activeTableId))
       setActiveTableId(next.tables[0]?.id ?? '');
+    setAccessMode(next.access ?? 'workspace');
+    setCollaboratorIds((next.collaborators ?? []).map((item) => item.userId));
   }
   useEffect(() => {
     if (workbookId && token) void load();
@@ -75,6 +91,16 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
       })
       .then((items) => setTemplates(items.filter((item) => item.kind === 'table')));
   }, [token]);
+  useEffect(() => {
+    if (!admin || !token) return;
+    void Promise.all([
+      fetch(`${api}/team/members`, { headers: { authorization: `Bearer ${token}` } }),
+      fetch(`${api}/usage/budgets`, { headers: { authorization: `Bearer ${token}` } }),
+    ]).then(async ([membersResponse, budgetsResponse]) => {
+      if (membersResponse.ok) setMembers((await membersResponse.json()) as Member[]);
+      if (budgetsResponse.ok) setBudgets((await budgetsResponse.json()) as Budget[]);
+    });
+  }, [admin, token]);
   useEffect(() => {
     if (!menu) return;
     function close(event: MouseEvent) {
@@ -243,6 +269,86 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     await load();
   }
 
+  async function saveAccess() {
+    if (!workbook) return;
+    const response = await fetch(`${api}/workbooks/${workbook.id}/access`, {
+      method: 'PATCH',
+      headers: jsonHeaders(token),
+      body: JSON.stringify({
+        access: accessMode,
+        collaboratorUserIds: accessMode === 'restricted' ? collaboratorIds : [],
+      }),
+    });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to update access'), { kind: 'error' });
+      return;
+    }
+    setAccessOpen(false);
+    await load();
+  }
+
+  async function editBudget(scope: string, label: string) {
+    const current = budgets.find((item) => item.scope === scope);
+    if (current) {
+      const remove = await dialog.confirm({
+        title: `Remove credit limit · ${label}`,
+        description: `Current limit: ${current.limit} credits / ${current.period}. Remove this limit?`,
+        confirmLabel: 'Remove limit',
+        danger: true,
+      });
+      if (remove) {
+        const response = await fetch(`${api}/usage/budgets/${current.id}`, {
+          method: 'DELETE',
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          toast(await responseMessage(response, 'Unable to remove credit limit'), {
+            kind: 'error',
+          });
+          return;
+        }
+        setBudgets((items) => items.filter((item) => item.id !== current.id));
+        return;
+      }
+    }
+    const values = await dialog.prompt({
+      title: `Credit limit · ${label}`,
+      fields: [
+        { name: 'limit', label: 'Limit', defaultValue: current ? String(current.limit) : '100' },
+        {
+          name: 'period',
+          label: 'Period',
+          type: 'select',
+          defaultValue: current?.period ?? 'monthly',
+          options: [
+            { value: 'daily', label: 'Daily' },
+            { value: 'monthly', label: 'Monthly' },
+          ],
+        },
+      ],
+      confirmLabel: 'Save limit',
+    });
+    if (!values?.limit || !values.period) return;
+    const response = await fetch(`${api}/usage/budgets`, {
+      method: 'POST',
+      headers: jsonHeaders(token),
+      body: JSON.stringify({ scope, limit: Number(values.limit), period: values.period }),
+    });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to save credit limit'), { kind: 'error' });
+      return;
+    }
+    const budgetsResponse = await fetch(`${api}/usage/budgets`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (budgetsResponse.ok) setBudgets((await budgetsResponse.json()) as Budget[]);
+  }
+
+  function budgetBadge(scope: string) {
+    const budget = budgets.find((item) => item.scope === scope);
+    return budget ? `limit: ${budget.limit}/${budget.period}` : null;
+  }
+
   if (!workbook) return <main className="loading">Loading workbook…</main>;
   return (
     <main className="app-shell">
@@ -261,15 +367,36 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
             </div>
             <h2>
               {workbook.name}{' '}
-              <button className="icon-button" onClick={() => void renameWorkbook()}>
-                ✎
-              </button>
+              {workbook.access === 'restricted' && <span className="badge">🔒 Restricted</span>}
+              {canEdit && (
+                <button className="icon-button" onClick={() => void renameWorkbook()}>
+                  ✎
+                </button>
+              )}
             </h2>
-            <TagPicker
-              target={{ type: 'workbookId', id: workbook.id }}
-              selected={workbook.tags}
-              onChange={(tags) => setWorkbook({ ...workbook, tags })}
-            />
+            {canEdit && (
+              <TagPicker
+                target={{ type: 'workbookId', id: workbook.id }}
+                selected={workbook.tags}
+                onChange={(tags) => setWorkbook({ ...workbook, tags })}
+              />
+            )}
+            {admin && (
+              <div className="toolbar">
+                <button className="button" onClick={() => setAccessOpen(true)}>
+                  Access…
+                </button>
+                <button
+                  className="button"
+                  onClick={() => void editBudget(`workbook:${workbook.id}`, workbook.name)}
+                >
+                  Credit limit…
+                </button>
+                {budgetBadge(`workbook:${workbook.id}`) && (
+                  <span className="badge">{budgetBadge(`workbook:${workbook.id}`)}</span>
+                )}
+              </div>
+            )}
           </div>
           <button className="button" onClick={() => router.push('/')}>
             Browse workbooks
@@ -285,24 +412,31 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                 ▦ {table.name}
                 <small>{table._count.rows}</small>
               </button>
-              <button
-                className="icon-button"
-                onClick={(event) => {
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setMenu((current) =>
-                    current?.tableId === table.id
-                      ? null
-                      : { tableId: table.id, top: rect.bottom + 4, left: rect.right - 130 },
-                  );
-                }}
-              >
-                ⋮
-              </button>
+              {canEdit && (
+                <button
+                  className="icon-button"
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setMenu((current) =>
+                      current?.tableId === table.id
+                        ? null
+                        : { tableId: table.id, top: rect.bottom + 4, left: rect.right - 130 },
+                    );
+                  }}
+                >
+                  ⋮
+                </button>
+              )}
+              {admin && budgetBadge(`table:${table.id}`) && (
+                <span className="badge">{budgetBadge(`table:${table.id}`)}</span>
+              )}
             </div>
           ))}
-          <button className="table-tab add" onClick={() => void addTable()}>
-            ＋ Add table
-          </button>
+          {canEdit && (
+            <button className="table-tab add" onClick={() => void addTable()}>
+              ＋ Add table
+            </button>
+          )}
         </div>
         {activeTableId ? (
           <TableWorkspace key={activeTableId} tableId={activeTableId} embedded />
@@ -364,9 +498,80 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                 >
                   Delete
                 </button>
+                {admin && (
+                  <button
+                    onClick={() => {
+                      setMenu(null);
+                      void editBudget(`table:${table.id}`, table.name);
+                    }}
+                  >
+                    Credit limit…
+                  </button>
+                )}
               </>
             );
           })()}
+        </div>
+      )}
+      {accessOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setAccessOpen(false)}>
+          <section className="modal" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="card-header">
+              <div>
+                <div className="eyebrow">WORKBOOK ACCESS</div>
+                <h3>Edit access</h3>
+              </div>
+              <button className="icon-button" onClick={() => setAccessOpen(false)}>
+                ×
+              </button>
+            </div>
+            <label className="choice-row">
+              <input
+                type="radio"
+                checked={accessMode === 'workspace'}
+                onChange={() => setAccessMode('workspace')}
+              />
+              Whole workspace
+            </label>
+            <label className="choice-row">
+              <input
+                type="radio"
+                checked={accessMode === 'restricted'}
+                onChange={() => setAccessMode('restricted')}
+              />
+              Admins and specific collaborators
+            </label>
+            {accessMode === 'restricted' && (
+              <div className="page-stack">
+                {members
+                  .filter((member) => member.role !== 'owner' && member.role !== 'admin')
+                  .map((member) => (
+                    <label className="choice-row" key={member.userId}>
+                      <input
+                        type="checkbox"
+                        checked={collaboratorIds.includes(member.userId)}
+                        onChange={() =>
+                          setCollaboratorIds((current) =>
+                            current.includes(member.userId)
+                              ? current.filter((id) => id !== member.userId)
+                              : [...current, member.userId],
+                          )
+                        }
+                      />
+                      {member.name} <span className="muted">({member.email})</span>
+                    </label>
+                  ))}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button className="button" onClick={() => setAccessOpen(false)}>
+                Cancel
+              </button>
+              <button className="button primary" onClick={() => void saveAccess()}>
+                Save access
+              </button>
+            </div>
+          </section>
         </div>
       )}
     </main>
