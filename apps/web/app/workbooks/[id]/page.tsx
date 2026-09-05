@@ -65,6 +65,7 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     if (!response.ok || !allResponse.ok) {
       const failed = !response.ok ? response : allResponse;
       toast(await responseMessage(failed, 'Unable to load workbook'), { kind: 'error' });
+      if (failed.status === 403) router.replace('/');
       return;
     }
     const next = (await response.json()) as Workbook;
@@ -288,6 +289,28 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
 
   async function editBudget(scope: string, label: string) {
     const current = budgets.find((item) => item.scope === scope);
+    if (current) {
+      const remove = await dialog.confirm({
+        title: `Remove credit limit · ${label}`,
+        description: `Current limit: ${current.limit} credits / ${current.period}. Remove this limit?`,
+        confirmLabel: 'Remove limit',
+        danger: true,
+      });
+      if (remove) {
+        const response = await fetch(`${api}/usage/budgets/${current.id}`, {
+          method: 'DELETE',
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          toast(await responseMessage(response, 'Unable to remove credit limit'), {
+            kind: 'error',
+          });
+          return;
+        }
+        setBudgets((items) => items.filter((item) => item.id !== current.id));
+        return;
+      }
+    }
     const values = await dialog.prompt({
       title: `Credit limit · ${label}`,
       fields: [

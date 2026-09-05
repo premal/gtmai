@@ -12,7 +12,7 @@ import {
   executeWaterfall,
   validateEncryptionKey,
 } from './executors';
-import { budgetExceeded } from './budgets';
+import { budgetErrorMessage, budgetExceeded } from './budgets';
 
 const db = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
@@ -108,21 +108,26 @@ async function execute(job: Job<CellData>): Promise<void> {
       config.creditCost ??
         (column.kind === 'agent' ? 5 : ['formula', 'input'].includes(column.kind) ? 0 : 1),
     );
-    if (
-      await budgetExceeded(
-        workspaceId,
-        estimatedCredits,
-        column.tableId,
-        String(config.provider ?? ''),
-      )
-    ) {
-      const workbook = await db.table.findUnique({
+    const exceededBudget = await budgetExceeded(
+      workspaceId,
+      estimatedCredits,
+      column.tableId,
+      String(config.provider ?? ''),
+    );
+    if (exceededBudget) {
+      const table = await db.table.findUnique({
         where: { id: column.tableId },
-        select: { workbook: { select: { name: true } } },
+        select: { name: true, workbook: { select: { name: true } } },
       });
-      const budgetError = workbook?.workbook.name
-        ? `Credit limit reached for workbook ${workbook.workbook.name}`
-        : 'Credit limit reached';
+      const budgetError = budgetErrorMessage(
+        exceededBudget.scope,
+        table
+          ? {
+              ...(table.workbook?.name ? { workbook: table.workbook.name } : {}),
+              ...(table.name ? { table: table.name } : {}),
+            }
+          : {},
+      );
       await db.cell.update({
         where: { id: cell.id },
         data: {

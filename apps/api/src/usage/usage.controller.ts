@@ -17,12 +17,12 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
-import { Roles, RolesGuard } from '../common/roles';
+import { Roles } from '../common/roles';
 import { PrismaService } from '../prisma/prisma.service';
 type Request = FastifyRequest & { user: AuthUser };
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 @Controller('usage')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class UsageController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,

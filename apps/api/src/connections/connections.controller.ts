@@ -16,13 +16,13 @@ import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
 import { decryptCredentials, encryptCredentials } from '../common/crypto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
-import { Roles, RolesGuard } from '../common/roles';
+import { Roles } from '../common/roles';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Request = FastifyRequest & { user: AuthUser };
 
 @Controller('connections')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class ConnectionsController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 

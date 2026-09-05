@@ -15,7 +15,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
-import { Roles, RolesGuard } from '../common/roles';
+import { Roles } from '../common/roles';
 import { accessibleWorkbookWhere, assertWorkbookAccess } from '../common/workbook-access';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -63,7 +63,7 @@ function flattenWorkbook<
 }
 
 @Controller('workbooks')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class WorkbooksController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 

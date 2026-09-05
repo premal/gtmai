@@ -1,6 +1,23 @@
 import { Prisma, PrismaClient } from '@gtmai/db';
 const db = new PrismaClient();
 
+export function budgetErrorMessage(
+  scope: string,
+  names: { workbook?: string; table?: string } = {},
+): string {
+  if (scope.startsWith('workbook:'))
+    return names.workbook
+      ? `Credit limit reached for workbook ${names.workbook}`
+      : 'Credit limit reached for workbook';
+  if (scope.startsWith('table:'))
+    return names.table
+      ? `Credit limit reached for table ${names.table}`
+      : 'Credit limit reached for table';
+  if (scope.startsWith('provider:'))
+    return `Credit limit reached for provider ${scope.slice('provider:'.length)}`;
+  return 'Workspace credit limit reached';
+}
+
 export function budgetMatches(
   scope: string,
   tableId?: string,
@@ -79,7 +96,7 @@ export async function budgetExceeded(
   tableId?: string,
   provider?: string,
 ) {
-  if (estimated <= 0) return false;
+  if (estimated <= 0) return null;
   const workbookId = tableId
     ? (await db.table.findUnique({ where: { id: tableId }, select: { workbookId: true } }))
         ?.workbookId
@@ -112,8 +129,8 @@ export async function budgetExceeded(
         budget.period,
         periodStart(budget.period),
       );
-      return true;
+      return budget;
     }
   }
-  return false;
+  return null;
 }

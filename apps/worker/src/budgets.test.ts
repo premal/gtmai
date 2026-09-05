@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { budgetMatches, ledgerScopeFilter, spendExceedsBudget } from './budgets';
+import {
+  budgetErrorMessage,
+  budgetMatches,
+  ledgerScopeFilter,
+  spendExceedsBudget,
+} from './budgets';
 
 describe('budget scope filtering', () => {
   it('limits table budgets to the matching table ledger rows', () => {
@@ -27,5 +32,16 @@ describe('budget scope filtering', () => {
   it('marks work over the remaining budget as exceeded', () => {
     expect(spendExceedsBudget(-9, 2, 10)).toBe(true);
     expect(spendExceedsBudget(-9, 1, 10)).toBe(false);
+  });
+
+  it('formats credit-limit messages for each budget scope', () => {
+    expect(budgetErrorMessage('workbook:workbook-1', { workbook: 'Revenue' })).toBe(
+      'Credit limit reached for workbook Revenue',
+    );
+    expect(budgetErrorMessage('table:table-1', { table: 'Prospects' })).toBe(
+      'Credit limit reached for table Prospects',
+    );
+    expect(budgetErrorMessage('provider:apollo')).toBe('Credit limit reached for provider apollo');
+    expect(budgetErrorMessage('workspace')).toBe('Workspace credit limit reached');
   });
 });

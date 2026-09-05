@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { AppNav } from '../app-nav';
+import { useDialog } from '../components/prompt-dialog';
+import { useToast } from '../components/toast';
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
-type Budget = { id: string; scope: string; period: string; limit: number };
+type Budget = { id: string; scope: string; period: string; limit: number; label?: string };
 type Alert = { id: string; type: string; message: string; createdAt: string };
 type Table = { id: string; name: string };
 type Summary = {
@@ -59,6 +61,8 @@ export default function CreditsPage() {
   const [limit, setLimit] = useState(500);
   const [scopeId, setScopeId] = useState('');
   const [message, setMessage] = useState('');
+  const dialog = useDialog();
+  const { toast } = useToast();
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   const headers = { authorization: `Bearer ${token}` };
   async function load() {
@@ -103,8 +107,21 @@ export default function CreditsPage() {
     await load();
     setMessage(existing ? 'Budget updated' : 'Budget created');
   }
-  async function remove(id: string) {
-    await fetch(`${api}/usage/budgets/${id}`, { method: 'DELETE', headers });
+  async function remove(id: string, label: string) {
+    if (
+      !(await dialog.confirm({
+        title: 'Delete budget',
+        description: `Delete the credit limit for ${label}?`,
+        confirmLabel: 'Delete',
+        danger: true,
+      }))
+    )
+      return;
+    const response = await fetch(`${api}/usage/budgets/${id}`, { method: 'DELETE', headers });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to delete budget'), { kind: 'error' });
+      return;
+    }
     await load();
   }
   const dailyItems = Object.entries(summary?.daily ?? {})
@@ -273,12 +290,15 @@ export default function CreditsPage() {
                 budgets.map((budget) => (
                   <div className="list-row" key={budget.id}>
                     <span>
-                      <strong>{budget.scope}</strong>
+                      <strong>{budget.label ?? budget.scope}</strong>
                       <small className="muted">
                         {budget.limit} credits / {budget.period}
                       </small>
                     </span>
-                    <button className="button" onClick={() => void remove(budget.id)}>
+                    <button
+                      className="button"
+                      onClick={() => void remove(budget.id, budget.label ?? budget.scope)}
+                    >
                       Delete
                     </button>
                   </div>
@@ -351,4 +371,13 @@ export default function CreditsPage() {
       </section>
     </main>
   );
+}
+
+async function responseMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string };
+    return body.message ?? fallback;
+  } catch {
+    return fallback;
+  }
 }

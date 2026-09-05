@@ -57,7 +57,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(pathname === '/login');
 
   useEffect(() => {
-    if (pathname === '/login') {
+    if (pathname === '/login' || pathname.startsWith('/invite/')) {
       setReady(true);
       return;
     }
@@ -75,7 +75,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     };
   }, [pathname, router]);
 
-  if (!ready && pathname !== '/login') {
+  if (!ready && pathname !== '/login' && !pathname.startsWith('/invite/')) {
     return <main className="loading">Checking session…</main>;
   }
   return children;

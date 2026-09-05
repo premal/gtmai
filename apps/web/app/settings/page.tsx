@@ -200,9 +200,9 @@ export default function SettingsPage() {
           </div>
           {members.map((member) => (
             <div className="list-row" key={member.id ?? member.user?.email ?? member.email}>
-              <span>
-                {member.user?.name ?? member.name}
-                <small>{member.user?.email ?? member.email}</small>
+              <span className="page-stack">
+                <strong>{member.user?.name ?? member.name}</strong>
+                <small className="muted">{member.user?.email ?? member.email}</small>
               </span>
               <span className="toolbar">
                 {admin && member.id ? (
@@ -217,20 +217,25 @@ export default function SettingsPage() {
                         },
                         body: JSON.stringify({ role: event.target.value }),
                       });
-                      if (response.ok)
-                        setMembers(
-                          members.map((item) =>
-                            item.id === member.id ? { ...item, role: event.target.value } : item,
-                          ),
-                        );
-                      else
+                      if (response.ok) {
+                        const refreshed = await fetch(`${api}/team/members`, {
+                          headers: { authorization: `Bearer ${token}` },
+                        });
+                        if (refreshed.ok) setMembers((await refreshed.json()) as Member[]);
+                        else
+                          toast(
+                            await responseMessage(refreshed, 'Unable to refresh team members'),
+                            { kind: 'error' },
+                          );
+                      } else {
                         toast(await responseMessage(response, 'Unable to update member role'), {
                           kind: 'error',
                         });
+                      }
                     }}
                     disabled={isAdminMember(member.role) && adminCount <= 1}
                   >
-                    <option value="owner">Owner</option>
+                    {member.role === 'owner' && <option value="owner">Owner (admin)</option>}
                     <option value="admin">Admin</option>
                     <option value="editor">Editor</option>
                     <option value="viewer">Viewer</option>
@@ -256,7 +261,12 @@ export default function SettingsPage() {
                         method: 'DELETE',
                         headers: { authorization: `Bearer ${token}` },
                       });
-                      if (response.ok) setMembers(members.filter((item) => item.id !== member.id));
+                      if (response.ok)
+                        setMembers((current) => current.filter((item) => item.id !== member.id));
+                      else
+                        toast(await responseMessage(response, 'Unable to remove team member'), {
+                          kind: 'error',
+                        });
                     }}
                   >
                     Remove
@@ -277,18 +287,26 @@ export default function SettingsPage() {
                   <span className="toolbar">
                     <button
                       className="button"
-                      onClick={() => void navigator.clipboard.writeText(invite.url)}
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(invite.url);
+                        toast('Link copied');
+                      }}
                     >
                       Copy link
                     </button>
                     <button
                       className="button"
                       onClick={async () => {
-                        await fetch(`${api}/team/invites/${invite.id}`, {
+                        const response = await fetch(`${api}/team/invites/${invite.id}`, {
                           method: 'DELETE',
                           headers: { authorization: `Bearer ${token}` },
                         });
-                        setInvites(invites.filter((item) => item.id !== invite.id));
+                        if (response.ok)
+                          setInvites((current) => current.filter((item) => item.id !== invite.id));
+                        else
+                          toast(await responseMessage(response, 'Unable to revoke invite'), {
+                            kind: 'error',
+                          });
                       }}
                     >
                       Revoke

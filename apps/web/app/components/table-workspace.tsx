@@ -277,11 +277,13 @@ export function TableWorkspace({
   async function run(columnId: string, options: RunOptions = {}): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
     const rowIds = options.rowIds ?? (selectedRows.length ? selectedRows : undefined);
-    await fetch(`${api}/tables/${tableId}/columns/${columnId}/run`, {
+    const response = await fetch(`${api}/tables/${tableId}/columns/${columnId}/run`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ ...options, rowIds, viewId: activeViewId || undefined }),
     });
+    if (!response.ok)
+      toast(await responseMessage(response, 'Unable to run column'), { kind: 'error' });
   }
 
   async function saveColumn(): Promise<void> {
@@ -455,11 +457,13 @@ export function TableWorkspace({
 
   async function updateCell(rowId: string, column: Column, value: string): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
-    await fetch(`${api}/tables/${tableId}/rows/${rowId}`, {
+    const response = await fetch(`${api}/tables/${tableId}/rows/${rowId}`, {
       method: 'PATCH',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ values: { [column.name]: value } }),
     });
+    if (!response.ok)
+      toast(await responseMessage(response, 'Unable to update cell'), { kind: 'error' });
   }
 
   function scheduleCellUpdate(rowId: string, column: Column, value: string): void {
@@ -1214,7 +1218,7 @@ export function TableWorkspace({
                           </td>
                           {visibleColumns.map((column) => {
                             const cell = row.cells.find((item) => item.columnId === column.id);
-                            const editable = column.kind === 'input';
+                            const editable = canEdit && column.kind === 'input';
                             return (
                               <td
                                 key={column.id}
@@ -1834,17 +1838,28 @@ export function TableWorkspace({
             <strong>{selected.provenance ? 'Available' : '—'}</strong>
           </div>
           {selected.error && <p className="error">{selected.error}</p>}
-          <button
-            className="button primary"
-            onClick={() => {
-              void run(selected.columnId, { rowIds: [selected.rowId] });
-              setSelected(null);
-            }}
-          >
-            ↻ Re-run cell
-          </button>
+          {canEdit && (
+            <button
+              className="button primary"
+              onClick={() => {
+                void run(selected.columnId, { rowIds: [selected.rowId] });
+                setSelected(null);
+              }}
+            >
+              ↻ Re-run cell
+            </button>
+          )}
         </aside>
       )}
     </main>
   );
+}
+
+async function responseMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string };
+    return body.message ?? fallback;
+  } catch {
+    return fallback;
+  }
 }

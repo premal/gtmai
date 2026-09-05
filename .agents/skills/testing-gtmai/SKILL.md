@@ -30,6 +30,9 @@ description: How to run and E2E-test the gtmai monorepo (Next.js web :3000, Nest
 - Job status: Redis keys `bull:cells:<n>`; cell status/value in table `"Cell"`.
 - To rerun one cell, use the cell detail drawer's rerun action; agent cells can take about two minutes. When a run fails, inspect the API response body for the underlying error message rather than relying only on the UI status.
 - The table page includes a Find people at company fan-out modal. After changing `packages/shared`, rebuild its runtime artifact with `npx pnpm@9 --filter @gtmai/shared build` and restart the API and worker (`pkill -f tsx` kills both) so template changes are loaded.
+- Check that the worker is alive before running columns; `tsx watch` can kill a child process without respawning it, leaving cells queued. Restart the worker if needed.
+- `editor@gtmai.dev` and `viewer@gtmai.dev` are created by `db:seed`.
+- Workbook credit budgets use `CreditBudget` scope `workbook:<id>`.
 - Credits ledger row count: `select count(*) from "CreditLedger"`.
 - Swagger: http://localhost:4000/docs.
 
