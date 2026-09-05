@@ -108,7 +108,12 @@ async function execute(job: Job<CellData>): Promise<void> {
     ) {
       await db.cell.update({
         where: { id: cell.id },
-        data: { status: 'skipped', error: 'budget exceeded', durationMs: Date.now() - started },
+        data: {
+          status: 'skipped',
+          error: 'budget exceeded',
+          creditsUsed: 0,
+          durationMs: Date.now() - started,
+        },
       });
       return;
     }
@@ -209,6 +214,7 @@ async function execute(job: Job<CellData>): Promise<void> {
         data: {
           workspaceId,
           tableId: column.tableId,
+          provider,
           delta: -creditsUsed,
           reason: 'cell execution',
           refType: 'cell',

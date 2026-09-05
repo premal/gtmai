@@ -442,6 +442,7 @@ model CreditLedger {
   id String @id @default(cuid())
   workspaceId String
   tableId String?
+  provider String?
   delta Float
   reason String
   refType String?
@@ -450,6 +451,7 @@ model CreditLedger {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   table Table? @relation(fields: [tableId], references: [id])
   @@index([workspaceId, createdAt])
+  @@index([workspaceId, provider, createdAt])
 }
 model CreditBudget {
   id String @id @default(cuid())

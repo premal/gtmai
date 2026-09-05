@@ -311,7 +311,12 @@ export async function executeWorkflowRun(
         (['formula', 'condition', 'delay', 'sequence.enroll'].includes(node.type) ? 0 : 1),
     );
     if (
-      await budgetExceeded(workspaceId, estimatedCredits, undefined, String(input.provider ?? ''))
+      await budgetExceeded(
+        workspaceId,
+        estimatedCredits,
+        input.tableId ? String(input.tableId) : undefined,
+        input.provider ? String(input.provider) : undefined,
+      )
     ) {
       states.set(nodeId, 'skipped');
       await executorDb.stepRun.create({
@@ -321,6 +326,7 @@ export async function executeWorkflowRun(
           status: 'skipped',
           input: json(input),
           error: 'budget exceeded',
+          credits: 0,
         },
       });
       await publishWorkflowEvent(run.workflow.id, run.id, {
@@ -364,6 +370,7 @@ export async function executeWorkflowRun(
         await executorDb.creditLedger.create({
           data: {
             workspaceId,
+            provider: input.provider ? String(input.provider) : null,
             delta: -result.credits,
             reason: 'workflow step',
             refType: 'workflowRun',
