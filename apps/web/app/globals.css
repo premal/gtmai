@@ -579,10 +579,23 @@ h3 {
 }
 .modal {
   width: 500px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-radius: 12px;
   background: #fff;
   padding: 28px;
   box-shadow: 0 16px 50px #16203d33;
+}
+.modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.modal-actions {
+  flex-shrink: 0;
+  background: #fff;
 }
 .mapping-grid {
   display: grid;
@@ -634,6 +647,29 @@ h3 {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 25px;
+}
+.choice-row {
+  display: inline-flex !important;
+  width: fit-content;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px !important;
+}
+.choice-row input {
+  width: auto;
+  margin: 0;
+}
+.radio-list,
+.carry-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+.carry-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.carry-list > strong {
+  grid-column: 1 / -1;
 }
 .detail-drawer {
   position: fixed;

@@ -3,6 +3,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { AppNav } from '../../app-nav';
 import { useDialog } from '../../components/prompt-dialog';
 import { useToast } from '../../components/toast';
@@ -84,6 +85,25 @@ const peopleFields: Record<string, PeopleField[]> = {
   'mock.findPeople': [{ name: 'limit', label: 'Limit', type: 'number' }],
 };
 
+function ModalShell({
+  children,
+  footer,
+  onClose,
+}: {
+  children: ReactNode;
+  footer: ReactNode;
+  onClose?: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <section className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-body">{children}</div>
+        <div className="modal-actions">{footer}</div>
+      </section>
+    </div>
+  );
+}
+
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const [tableId, setTableId] = useState('');
   const [table, setTable] = useState<Table | null>(null);
@@ -154,6 +174,19 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [menuColumnId]);
+
+  useEffect(() => {
+    if (!adding && !importOpen && !sourceOpen && !peopleOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      if (adding) setAdding(false);
+      if (importOpen) setImportOpen(false);
+      if (sourceOpen) setSourceOpen(false);
+      if (peopleOpen) setPeopleOpen(false);
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [adding, importOpen, sourceOpen, peopleOpen]);
 
   useEffect(() => {
     if (!tableId) return;
@@ -380,13 +413,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   function openPeople(): void {
     if (!table) return;
     const defaults = table.columns
-      .filter((column) => ['Company', 'Domain', 'Uses Clay?', 'Evidence URL'].includes(column.name))
+      .filter(
+        (column) =>
+          ['input', 'formula'].includes(column.kind) &&
+          !['Company', 'Domain'].includes(column.name),
+      )
       .map((column) => column.name);
     setPeopleCarry(defaults);
     setPeopleTableName(`${table.name} — people`);
-    setPeopleActionId(
-      catalog.find((item) => item.sourceKind === 'people')?.id ?? 'mock.findPeople',
-    );
+    setPeopleActionId(peopleActions[0]?.id ?? 'mock.findPeople');
     setPeopleInput({ limit: '10' });
     setPeopleDomain('{{Domain}}');
     setPeopleScope(selectedRows.length ? 'selected' : 'all');
@@ -512,6 +547,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     () => catalog.filter((item) => item.provider === provider),
     [catalog, provider],
   );
+  const peopleActions = useMemo(() => {
+    const order = ['apollo', 'hunter', 'mock'];
+    return catalog
+      .filter((item) => item.category === 'search' && item.sourceKind === 'people')
+      .sort((left, right) => order.indexOf(left.provider) - order.indexOf(right.provider));
+  }, [catalog]);
 
   if (!table) return <main className="loading">Loading table…</main>;
   return (
@@ -830,281 +871,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         )}
       </section>
       {adding && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h3>{selectedColumn ? 'Edit column' : 'Add a column'}</h3>
-            <p className="muted">Step {step + 1} of 3 · configure a live column.</p>
-            <label>
-              Column name
-              <input value={columnName} onChange={(event) => setColumnName(event.target.value)} />
-            </label>
-            {step === 0 && (
-              <div className="picker-grid">
-                {(
-                  [
-                    'input',
-                    'enrichment',
-                    'waterfall',
-                    'agent',
-                    'formula',
-                    'http',
-                    'function',
-                  ] as ColumnKind[]
-                ).map((value) => (
-                  <button
-                    key={value}
-                    className={`picker ${kind === value ? 'selected' : ''}`}
-                    onClick={() => setKind(value)}
-                  >
-                    {value}
-                    <strong>{value === 'input' ? 'Manual values' : 'Configure action'}</strong>
-                  </button>
-                ))}
-              </div>
-            )}
-            {step === 1 && (
-              <>
-                <label>
-                  Type
-                  <select
-                    value={columnType}
-                    onChange={(event) => setColumnType(event.target.value)}
-                  >
-                    <option>text</option>
-                    <option>email</option>
-                    <option>json</option>
-                    <option>url</option>
-                  </select>
-                </label>
-                <label>
-                  Provider
-                  <select
-                    value={provider}
-                    onChange={(event) => {
-                      setProvider(event.target.value);
-                      setAction('');
-                    }}
-                  >
-                    <option value="mock">Mock</option>
-                    {[...new Set(catalog.map((item) => item.provider))]
-                      .filter((item) => item !== 'mock')
-                      .map((item) => (
-                        <option key={item}>{item}</option>
-                      ))}
-                  </select>
-                </label>
-                {kind !== 'formula' && kind !== 'input' && (
-                  <label>
-                    Action
-                    <select value={action} onChange={(event) => setAction(event.target.value)}>
-                      {actions.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} · {item.category}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {kind === 'waterfall' && (
-                  <>
-                    <label>
-                      Accept rule
-                      <select value={accept} onChange={(event) => setAccept(event.target.value)}>
-                        <option value="any">Any result</option>
-                        <option value="verified-email-only">Verified email only</option>
-                      </select>
-                    </label>
-                    <div className="waterfall-list">
-                      {waterfallSteps.map((item, index) => (
-                        <div
-                          className="waterfall-step"
-                          key={`${item.provider}-${item.action}-${index}`}
-                        >
-                          <strong>
-                            {index + 1}. {item.provider} / {item.action}
-                          </strong>
-                          <button
-                            className="icon-button"
-                            disabled={index === 0}
-                            onClick={() =>
-                              setWaterfallSteps((steps) => {
-                                const next = [...steps];
-                                [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
-                                return next;
-                              })
-                            }
-                          >
-                            ↑
-                          </button>
-                          <button
-                            className="icon-button"
-                            disabled={index === waterfallSteps.length - 1}
-                            onClick={() =>
-                              setWaterfallSteps((steps) => {
-                                const next = [...steps];
-                                [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
-                                return next;
-                              })
-                            }
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        className="button"
-                        onClick={() =>
-                          setWaterfallSteps((steps) => [
-                            ...steps,
-                            { provider, action, input: fuzzyInputMapping() },
-                          ])
-                        }
-                      >
-                        + Add provider step
-                      </button>
-                    </div>
-                  </>
-                )}
-                {kind === 'formula' && (
-                  <>
-                    <label>
-                      Formula
-                      <textarea
-                        value={expression}
-                        onChange={(event) => setExpression(event.target.value)}
-                      />
-                    </label>
-                    <button className="button" onClick={() => void previewFormula()}>
-                      Preview against row 1
-                    </button>
-                    <p className="muted">
-                      Functions: if, lower, upper, trim, concat, contains, len, coalesce
-                    </p>
-                  </>
-                )}
-                {kind === 'agent' && (
-                  <>
-                    <label>
-                      Prompt
-                      <textarea
-                        value={prompt}
-                        onChange={(event) => setPrompt(event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Output fields
-                      <textarea defaultValue={'answer: string\nsummary: string'} />
-                    </label>
-                    <label>
-                      Model
-                      <select>
-                        <option>gpt-4o-mini</option>
-                        <option>claude-3-5-haiku-latest</option>
-                      </select>
-                    </label>
-                    <button className="button" onClick={() => void previewAgent()}>
-                      Test on first 3 rows
-                    </button>
-                    {agentPreview && <pre className="preview-value">{agentPreview}</pre>}
-                  </>
-                )}
-                {kind === 'function' && (
-                  <>
-                    <label className="field-label">
-                      Function ID
-                      <input
-                        value={String(
-                          (selectedColumn?.config as Record<string, unknown> | undefined)
-                            ?.functionId ?? '',
-                        )}
-                        readOnly={Boolean(selectedColumn)}
-                      />
-                    </label>
-                    <label className="field-label">
-                      Input bindings JSON
-                      <textarea defaultValue="{}" />
-                    </label>
-                  </>
-                )}
-                {kind === 'http' && (
-                  <>
-                    <label>
-                      URL
-                      <input value={httpUrl} onChange={(event) => setHttpUrl(event.target.value)} />
-                    </label>
-                    <label>
-                      Headers
-                      <textarea
-                        value={httpHeaders}
-                        onChange={(event) => setHttpHeaders(event.target.value)}
-                        placeholder='{"Authorization":"Bearer {{API key}}"}'
-                      />
-                    </label>
-                    <label>
-                      Body
-                      <textarea
-                        value={httpBody}
-                        onChange={(event) => setHttpBody(event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      JSON path
-                      <input
-                        value={httpOutputPath}
-                        onChange={(event) => setHttpOutputPath(event.target.value)}
-                        placeholder="data.email"
-                      />
-                    </label>
-                  </>
-                )}
-                {kind !== 'input' && (
-                  <div className="binding-menu">
-                    <span className="muted">Insert binding:</span>
-                    {table?.columns.slice(0, 6).map((column) => (
-                      <button
-                        className="icon-button"
-                        key={column.id}
-                        onClick={() =>
-                          kind === 'formula'
-                            ? setExpression((value) => `${value}{{${column.name}}}`)
-                            : setPrompt((value) => `${value}{{${column.name}}}`)
-                        }
-                      >
-                        {column.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-            {step === 2 && (
-              <>
-                <label>
-                  Color label
-                  <select
-                    value={colorLabel}
-                    onChange={(event) => setColorLabel(event.target.value)}
-                  >
-                    <option>indigo</option>
-                    <option>green</option>
-                    <option>orange</option>
-                    <option>pink</option>
-                  </select>
-                </label>
-                <label>
-                  Run condition
-                  <input
-                    value={runCondition}
-                    onChange={(event) => setRunCondition(event.target.value)}
-                    placeholder="optional condition"
-                  />
-                </label>
-                <p className="muted">
-                  Bindings are supported with {'{{Column name}}'} in action inputs and prompts.
-                </p>
-              </>
-            )}
-            <div className="modal-actions">
+        <ModalShell
+          footer={
+            <>
               <button className="button" onClick={() => setAdding(false)}>
                 Cancel
               </button>
@@ -1122,190 +891,470 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   {selectedColumn ? 'Save column' : 'Create column'}
                 </button>
               )}
+            </>
+          }
+        >
+          <h3>{selectedColumn ? 'Edit column' : 'Add a column'}</h3>
+          <p className="muted">Step {step + 1} of 3 · configure a live column.</p>
+          <label>
+            Column name
+            <input value={columnName} onChange={(event) => setColumnName(event.target.value)} />
+          </label>
+          {step === 0 && (
+            <div className="picker-grid">
+              {(
+                [
+                  'input',
+                  'enrichment',
+                  'waterfall',
+                  'agent',
+                  'formula',
+                  'http',
+                  'function',
+                ] as ColumnKind[]
+              ).map((value) => (
+                <button
+                  key={value}
+                  className={`picker ${kind === value ? 'selected' : ''}`}
+                  onClick={() => setKind(value)}
+                >
+                  {value}
+                  <strong>{value === 'input' ? 'Manual values' : 'Configure action'}</strong>
+                </button>
+              ))}
             </div>
-          </div>
-        </div>
-      )}
-      {importOpen && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h3>Import CSV</h3>
-            <p className="muted">Paste CSV or upload a file, then map headers to columns.</p>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setCsvFile(file);
-                if (!file) return;
-                void file.text().then((text) => {
-                  setCsv(text);
-                  setCsvHeaders(
-                    text
-                      .split(/\r?\n/)[0]
-                      ?.split(',')
-                      .map((value) => value.trim()) ?? [],
-                  );
-                });
-              }}
-            />
-            <textarea
-              className="csv-input"
-              value={csv}
-              onChange={(event) => setCsv(event.target.value)}
-              placeholder="First name,Last name\nAda,Lovelace"
-            />
-            {csvHeaders.length > 0 && (
-              <div className="mapping-list">
-                {csvHeaders.map((header) => (
-                  <label key={header}>
-                    {header}
-                    <select
-                      value={mapping[header] ?? header}
-                      onChange={(event) =>
-                        setMapping((current) => ({ ...current, [header]: event.target.value }))
-                      }
-                    >
-                      <option value={header}>{header} (new/input)</option>
-                      {table.columns
-                        .filter((column) => column.kind === 'input')
-                        .map((column) => (
-                          <option key={column.id} value={column.name}>
-                            {column.name}
-                          </option>
-                        ))}
+          )}
+          {step === 1 && (
+            <>
+              <label>
+                Type
+                <select value={columnType} onChange={(event) => setColumnType(event.target.value)}>
+                  <option>text</option>
+                  <option>email</option>
+                  <option>json</option>
+                  <option>url</option>
+                </select>
+              </label>
+              <label>
+                Provider
+                <select
+                  value={provider}
+                  onChange={(event) => {
+                    setProvider(event.target.value);
+                    setAction('');
+                  }}
+                >
+                  <option value="mock">Mock</option>
+                  {[...new Set(catalog.map((item) => item.provider))]
+                    .filter((item) => item !== 'mock')
+                    .map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                </select>
+              </label>
+              {kind !== 'formula' && kind !== 'input' && (
+                <label>
+                  Action
+                  <select value={action} onChange={(event) => setAction(event.target.value)}>
+                    {actions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {item.category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {kind === 'waterfall' && (
+                <>
+                  <label>
+                    Accept rule
+                    <select value={accept} onChange={(event) => setAccept(event.target.value)}>
+                      <option value="any">Any result</option>
+                      <option value="verified-email-only">Verified email only</option>
                     </select>
                   </label>
-                ))}
-              </div>
-            )}
-            <div className="modal-actions">
+                  <div className="waterfall-list">
+                    {waterfallSteps.map((item, index) => (
+                      <div
+                        className="waterfall-step"
+                        key={`${item.provider}-${item.action}-${index}`}
+                      >
+                        <strong>
+                          {index + 1}. {item.provider} / {item.action}
+                        </strong>
+                        <button
+                          className="icon-button"
+                          disabled={index === 0}
+                          onClick={() =>
+                            setWaterfallSteps((steps) => {
+                              const next = [...steps];
+                              [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
+                              return next;
+                            })
+                          }
+                        >
+                          ↑
+                        </button>
+                        <button
+                          className="icon-button"
+                          disabled={index === waterfallSteps.length - 1}
+                          onClick={() =>
+                            setWaterfallSteps((steps) => {
+                              const next = [...steps];
+                              [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
+                              return next;
+                            })
+                          }
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="button"
+                      onClick={() =>
+                        setWaterfallSteps((steps) => [
+                          ...steps,
+                          { provider, action, input: fuzzyInputMapping() },
+                        ])
+                      }
+                    >
+                      + Add provider step
+                    </button>
+                  </div>
+                </>
+              )}
+              {kind === 'formula' && (
+                <>
+                  <label>
+                    Formula
+                    <textarea
+                      value={expression}
+                      onChange={(event) => setExpression(event.target.value)}
+                    />
+                  </label>
+                  <button className="button" onClick={() => void previewFormula()}>
+                    Preview against row 1
+                  </button>
+                  <p className="muted">
+                    Functions: if, lower, upper, trim, concat, contains, len, coalesce
+                  </p>
+                </>
+              )}
+              {kind === 'agent' && (
+                <>
+                  <label>
+                    Prompt
+                    <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+                  </label>
+                  <label>
+                    Output fields
+                    <textarea defaultValue={'answer: string\nsummary: string'} />
+                  </label>
+                  <label>
+                    Model
+                    <select>
+                      <option>gpt-4o-mini</option>
+                      <option>claude-3-5-haiku-latest</option>
+                    </select>
+                  </label>
+                  <button className="button" onClick={() => void previewAgent()}>
+                    Test on first 3 rows
+                  </button>
+                  {agentPreview && <pre className="preview-value">{agentPreview}</pre>}
+                </>
+              )}
+              {kind === 'function' && (
+                <>
+                  <label className="field-label">
+                    Function ID
+                    <input
+                      value={String(
+                        (selectedColumn?.config as Record<string, unknown> | undefined)
+                          ?.functionId ?? '',
+                      )}
+                      readOnly={Boolean(selectedColumn)}
+                    />
+                  </label>
+                  <label className="field-label">
+                    Input bindings JSON
+                    <textarea defaultValue="{}" />
+                  </label>
+                </>
+              )}
+              {kind === 'http' && (
+                <>
+                  <label>
+                    URL
+                    <input value={httpUrl} onChange={(event) => setHttpUrl(event.target.value)} />
+                  </label>
+                  <label>
+                    Headers
+                    <textarea
+                      value={httpHeaders}
+                      onChange={(event) => setHttpHeaders(event.target.value)}
+                      placeholder='{"Authorization":"Bearer {{API key}}"}'
+                    />
+                  </label>
+                  <label>
+                    Body
+                    <textarea
+                      value={httpBody}
+                      onChange={(event) => setHttpBody(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    JSON path
+                    <input
+                      value={httpOutputPath}
+                      onChange={(event) => setHttpOutputPath(event.target.value)}
+                      placeholder="data.email"
+                    />
+                  </label>
+                </>
+              )}
+              {kind !== 'input' && (
+                <div className="binding-menu">
+                  <span className="muted">Insert binding:</span>
+                  {table?.columns.slice(0, 6).map((column) => (
+                    <button
+                      className="icon-button"
+                      key={column.id}
+                      onClick={() =>
+                        kind === 'formula'
+                          ? setExpression((value) => `${value}{{${column.name}}}`)
+                          : setPrompt((value) => `${value}{{${column.name}}}`)
+                      }
+                    >
+                      {column.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <label>
+                Color label
+                <select value={colorLabel} onChange={(event) => setColorLabel(event.target.value)}>
+                  <option>indigo</option>
+                  <option>green</option>
+                  <option>orange</option>
+                  <option>pink</option>
+                </select>
+              </label>
+              <label>
+                Run condition
+                <input
+                  value={runCondition}
+                  onChange={(event) => setRunCondition(event.target.value)}
+                  placeholder="optional condition"
+                />
+              </label>
+              <p className="muted">
+                Bindings are supported with {'{{Column name}}'} in action inputs and prompts.
+              </p>
+            </>
+          )}
+        </ModalShell>
+      )}
+      {importOpen && (
+        <ModalShell
+          onClose={() => setImportOpen(false)}
+          footer={
+            <>
               <button className="button" onClick={() => setImportOpen(false)}>
                 Cancel
               </button>
               <button className="button primary" onClick={() => void importCsv()}>
                 Import
               </button>
+            </>
+          }
+        >
+          <h3>Import CSV</h3>
+          <p className="muted">Paste CSV or upload a file, then map headers to columns.</p>
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              setCsvFile(file);
+              if (!file) return;
+              void file.text().then((text) => {
+                setCsv(text);
+                setCsvHeaders(
+                  text
+                    .split(/\r?\n/)[0]
+                    ?.split(',')
+                    .map((value) => value.trim()) ?? [],
+                );
+              });
+            }}
+          />
+          <textarea
+            className="csv-input"
+            value={csv}
+            onChange={(event) => setCsv(event.target.value)}
+            placeholder="First name,Last name\nAda,Lovelace"
+          />
+          {csvHeaders.length > 0 && (
+            <div className="mapping-list">
+              {csvHeaders.map((header) => (
+                <label key={header}>
+                  {header}
+                  <select
+                    value={mapping[header] ?? header}
+                    onChange={(event) =>
+                      setMapping((current) => ({ ...current, [header]: event.target.value }))
+                    }
+                  >
+                    <option value={header}>{header} (new/input)</option>
+                    {table.columns
+                      .filter((column) => column.kind === 'input')
+                      .map((column) => (
+                        <option key={column.id} value={column.name}>
+                          {column.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              ))}
             </div>
-          </div>
-        </div>
+          )}
+        </ModalShell>
       )}
       {sourceOpen && (
-        <div className="modal-backdrop" onClick={() => setSourceOpen(false)}>
-          <section className="modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Import from source</h3>
-            <p className="muted">Search a provider and append matching companies as new rows.</p>
-            <label>
-              Search action
-              <select
-                value={sourceActionId}
-                onChange={(event) => {
-                  setSourceActionId(event.target.value);
-                  setSourceInput({ limit: '25' });
-                }}
-              >
-                {catalog
-                  .filter((item) => item.category === 'search' && sourceActionIds.has(item.id))
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.provider} · {item.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {(sourceFields[sourceActionId] ?? []).map((field) => (
-              <label key={field.name}>
-                {field.label}
-                {field.required && ' *'}
-                <input
-                  type={field.type ?? 'text'}
-                  value={sourceInput[field.name] ?? ''}
-                  required={field.required}
-                  onChange={(event) =>
-                    setSourceInput((current) => ({
-                      ...current,
-                      [field.name]: event.target.value,
-                    }))
-                  }
-                />
-                {field.hint && <span className="muted">{field.hint}</span>}
-              </label>
-            ))}
-            <div className="modal-actions">
+        <ModalShell
+          onClose={() => setSourceOpen(false)}
+          footer={
+            <>
               <button className="button" onClick={() => setSourceOpen(false)}>
                 Cancel
               </button>
               <button className="button primary" onClick={() => void importSource()}>
                 Import companies
               </button>
-            </div>
-          </section>
-        </div>
+            </>
+          }
+        >
+          <h3>Import from source</h3>
+          <p className="muted">Search a provider and append matching companies as new rows.</p>
+          <label>
+            Search action
+            <select
+              value={sourceActionId}
+              onChange={(event) => {
+                setSourceActionId(event.target.value);
+                setSourceInput({ limit: '25' });
+              }}
+            >
+              {catalog
+                .filter((item) => item.category === 'search' && sourceActionIds.has(item.id))
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.provider} · {item.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {(sourceFields[sourceActionId] ?? []).map((field) => (
+            <label key={field.name}>
+              {field.label}
+              {field.required && ' *'}
+              <input
+                type={field.type ?? 'text'}
+                value={sourceInput[field.name] ?? ''}
+                required={field.required}
+                onChange={(event) =>
+                  setSourceInput((current) => ({
+                    ...current,
+                    [field.name]: event.target.value,
+                  }))
+                }
+              />
+              {field.hint && <span className="muted">{field.hint}</span>}
+            </label>
+          ))}
+        </ModalShell>
       )}
       {peopleOpen && (
-        <div className="modal-backdrop" onClick={() => setPeopleOpen(false)}>
-          <section className="modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Find people</h3>
-            <p className="muted">Turn company rows into a People table.</p>
-            <label>
-              Search action
-              <select
-                value={peopleActionId}
-                onChange={(event) => {
-                  setPeopleActionId(event.target.value);
-                  setPeopleInput({ limit: '10' });
-                }}
-              >
-                {catalog
-                  .filter((item) => item.category === 'search' && item.sourceKind === 'people')
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.provider} · {item.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              Domain binding
+        <ModalShell
+          onClose={() => setPeopleOpen(false)}
+          footer={
+            <>
+              <button className="button" onClick={() => setPeopleOpen(false)}>
+                Cancel
+              </button>
+              <button className="button primary" onClick={() => void fanoutPeople()}>
+                Find people
+              </button>
+            </>
+          }
+        >
+          <h3>Find people</h3>
+          <p className="muted">Turn company rows into a People table.</p>
+          <label>
+            Search action
+            <select
+              value={peopleActionId}
+              onChange={(event) => {
+                setPeopleActionId(event.target.value);
+                setPeopleInput({ limit: '10' });
+              }}
+            >
+              {peopleActions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.provider} · {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Domain binding
+            <input value={peopleDomain} onChange={(event) => setPeopleDomain(event.target.value)} />
+          </label>
+          {(peopleFields[peopleActionId] ?? []).map((field) => (
+            <label key={field.name}>
+              {field.label}
               <input
-                value={peopleDomain}
-                onChange={(event) => setPeopleDomain(event.target.value)}
+                type={field.type ?? 'text'}
+                value={peopleInput[field.name] ?? ''}
+                onChange={(event) =>
+                  setPeopleInput((current) => ({ ...current, [field.name]: event.target.value }))
+                }
               />
             </label>
-            {(peopleFields[peopleActionId] ?? []).map((field) => (
-              <label key={field.name}>
-                {field.label}
-                <input
-                  type={field.type ?? 'text'}
-                  value={peopleInput[field.name] ?? ''}
-                  onChange={(event) =>
-                    setPeopleInput((current) => ({ ...current, [field.name]: event.target.value }))
-                  }
-                />
-              </label>
-            ))}
-            <div className="radio-list">
-              <label>
-                <input
-                  type="radio"
-                  checked={peopleScope === 'selected'}
-                  onChange={() => setPeopleScope('selected')}
-                />
-                Selected rows ({selectedRows.length})
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  checked={peopleScope === 'all'}
-                  onChange={() => setPeopleScope('all')}
-                />
-                All rows
-              </label>
-            </div>
-            <div className="mapping-list">
-              <strong>Carry columns</strong>
-              {table.columns.map((column) => (
-                <label key={column.id}>
+          ))}
+          <div className="radio-list">
+            <label className="choice-row">
+              <input
+                type="radio"
+                checked={peopleScope === 'selected'}
+                onChange={() => setPeopleScope('selected')}
+              />
+              Selected rows ({selectedRows.length})
+            </label>
+            <label className="choice-row">
+              <input
+                type="radio"
+                checked={peopleScope === 'all'}
+                onChange={() => setPeopleScope('all')}
+              />
+              All rows
+            </label>
+          </div>
+          <div className="carry-list">
+            <strong>Carry columns</strong>
+            {table.columns
+              .filter(
+                (column) =>
+                  ['input', 'formula'].includes(column.kind) &&
+                  !['Company', 'Domain'].includes(column.name),
+              )
+              .map((column) => (
+                <label className="choice-row" key={column.id}>
                   <input
                     type="checkbox"
                     checked={peopleCarry.includes(column.name)}
@@ -1320,24 +1369,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   {column.name}
                 </label>
               ))}
-            </div>
-            <label>
-              New table name
-              <input
-                value={peopleTableName}
-                onChange={(event) => setPeopleTableName(event.target.value)}
-              />
-            </label>
-            <div className="modal-actions">
-              <button className="button" onClick={() => setPeopleOpen(false)}>
-                Cancel
-              </button>
-              <button className="button primary" onClick={() => void fanoutPeople()}>
-                Find people
-              </button>
-            </div>
-          </section>
-        </div>
+          </div>
+          <label>
+            New table name
+            <input
+              value={peopleTableName}
+              onChange={(event) => setPeopleTableName(event.target.value)}
+            />
+          </label>
+        </ModalShell>
       )}
       {message && <div className="toast">{message}</div>}
       {selected && (
