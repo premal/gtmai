@@ -27,7 +27,11 @@ function required(name: string): string {
   if (!value && process.env.NODE_ENV !== 'test') {
     throw new Error(`${name} is required`);
   }
-  return value ?? `test-${name.toLowerCase()}`;
+  if (value) return value;
+  if (name === 'ENCRYPTION_KEY') {
+    return '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  }
+  return 'test-jwt-secret';
 }
 
 @Module({

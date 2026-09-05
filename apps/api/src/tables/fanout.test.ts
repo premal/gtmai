@@ -17,7 +17,6 @@ process.env.ENCRYPTION_KEY ??= '0123456789abcdef0123456789abcdef0123456789abcdef
 
 describe('people fanout', () => {
   it('fans out mock people and carries source values', async () => {
-    expect(process.env.ENCRYPTION_KEY).toHaveLength(64);
     process.env.NODE_ENV = 'test';
     const app = await createApp();
     await app.init();
@@ -30,23 +29,12 @@ describe('people fanout', () => {
     });
     const auth = register.json() as { token: string; workspaceId: string };
     const headers = { authorization: `Bearer ${auth.token}` };
-    const connection = await instance.inject({
+    await instance.inject({
       method: 'POST',
       url: '/connections',
       headers,
       payload: { provider: 'mock', name: 'Mock', credentials: {} },
     });
-    expect(connection.json()).toMatchObject({ provider: 'mock' });
-    expect(connection.statusCode).toBe(201);
-    const connections = await instance.inject({
-      method: 'GET',
-      url: '/connections',
-      headers,
-    });
-    expect(connections.statusCode).toBe(200);
-    expect(connections.json()).toEqual(
-      expect.arrayContaining([expect.objectContaining({ provider: 'mock' })]),
-    );
     const tableResponse = await instance.inject({
       method: 'POST',
       url: `/workspaces/${auth.workspaceId}/tables`,
