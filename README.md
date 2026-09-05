@@ -2,7 +2,8 @@
 
 Clay-style GTM data platform with a NestJS/Fastify API, BullMQ workers, Prisma
 domain model, provider SDKs, a live SSE grid, CSV workflows, connections,
-credits, Audiences, Signals, Workflows, Functions, and Templates.
+credits, Audiences, Signals, Workflows, Functions, Templates, outbound
+sequencing, ad audiences, CRM write-back, API keys, CLI, and MCP.
 
 ## Setup
 
@@ -32,6 +33,20 @@ NEXT_PUBLIC_API_URL=http://localhost:4000
 After signing in, the Phase 2 sidebar exposes Audiences, Signals, Workflows,
 Functions, and Templates. Signal definitions can poll the deterministic mock
 provider, and workflow runs are processed by the shared Redis-backed worker.
+Phase 3 adds Sequences, Campaigns, Ads, CRM, and usage dashboards. Create an API
+key under Settings and configure the CLI:
+
+```bash
+npx gtmai login --api-key gtm_...
+npx gtmai tables list
+npx gtmai sequences list
+```
+
+The MCP stdio server reads the same `~/.gtmai/config.json`:
+
+```json
+{ "mcpServers": { "gtmai": { "command": "npx", "args": ["gtmai-mcp"] } } }
+```
 
 For a larger local grid, seed 1,000 rows with:
 
