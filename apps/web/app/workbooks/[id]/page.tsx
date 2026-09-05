@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AppNav } from '../../app-nav';
 import { TagPicker } from '../../components/tag-picker';
 import { useDialog } from '../../components/prompt-dialog';
-import { TableWorkspace } from '../../tables/[id]/page';
+import { TableWorkspace } from '../../components/table-workspace';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Tag = { id: string; name: string; color?: string | null };
