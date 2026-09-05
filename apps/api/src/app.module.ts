@@ -21,6 +21,9 @@ import { AdsModule } from './ads/ads.module';
 import { CrmModule } from './crm/crm.module';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { UsageModule } from './usage/usage.module';
+import { FoldersModule } from './folders/folders.module';
+import { WorkbooksModule } from './workbooks/workbooks.module';
+import { TagsModule } from './tags/tags.module';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -79,6 +82,9 @@ function required(name: string): string {
     CrmModule,
     ApiKeysModule,
     UsageModule,
+    FoldersModule,
+    WorkbooksModule,
+    TagsModule,
   ],
   controllers: [FormulaController],
 })

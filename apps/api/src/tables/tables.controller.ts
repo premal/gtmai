@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -25,8 +26,14 @@ import { debitCredits } from '../common/credits';
 import { PrismaService } from '../prisma/prisma.service';
 import { instantiateTableTemplate, type TableTemplateDefinition } from '../templates/instantiate';
 import { createRowWithValues } from './row-helper';
+import { applyView } from './view-helper';
+import { getOrCreateDefaultWorkbook } from '../common/workbooks';
 
-const tableBody = z.object({ name: z.string().min(1) });
+const tableBody = z.object({
+  name: z.string().min(1).optional(),
+  workbookId: z.string().optional(),
+  position: z.number().int().min(0).optional(),
+});
 const columnBody = z.object({
   name: z.string().min(1),
   type: z.enum(['text', 'number', 'boolean', 'date', 'url', 'email', 'json']),
@@ -49,40 +56,104 @@ export class TablesController {
     @InjectQueue('cells') private readonly queue: Queue,
   ) {}
 
+  @Post()
+  async create(@Req() request: Request, @Body() body: unknown) {
+    const input = tableBody.required({ name: true }).parse(body);
+    const workbook = input.workbookId
+      ? await this.prisma.workbook.findFirst({
+          where: { id: input.workbookId, workspaceId: request.user.workspaceId },
+        })
+      : await getOrCreateDefaultWorkbook(this.prisma, request.user.workspaceId);
+    if (!workbook) throw new Error('Workbook not found');
+    const position =
+      input.position ?? (await this.prisma.table.count({ where: { workbookId: workbook.id } }));
+    return this.prisma.table.create({
+      data: {
+        workspaceId: request.user.workspaceId,
+        workbookId: workbook.id,
+        name: input.name,
+        position,
+      },
+    });
+  }
+
   @Get()
-  list(@Req() request: Request) {
-    return this.prisma.table.findMany({
+  async list(@Req() request: Request) {
+    const tables = await this.prisma.table.findMany({
       where: { workspaceId: request.user.workspaceId },
-      select: {
-        id: true,
-        name: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
+        tagAssignments: { include: { tag: true } },
         _count: { select: { rows: true, columns: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
+    return tables.map(({ tagAssignments, ...table }) => ({
+      ...table,
+      tags: tagAssignments.map(({ tag }) => tag),
+    }));
   }
 
   @Get(':id')
-  async get(@Param('id') id: string, @Req() request: Request) {
+  async get(
+    @Param('id') id: string,
+    @Query('viewId') viewId: string | undefined,
+    @Req() request: Request,
+  ) {
     const table = await this.prisma.table.findFirst({
       where: { id, workspaceId: request.user.workspaceId },
       include: {
         columns: { orderBy: { position: 'asc' } },
         rows: { orderBy: { position: 'asc' }, include: { cells: true } },
+        tagAssignments: { include: { tag: true } },
       },
     });
     if (!table) throw new Error('Table not found');
-    return table;
+    const view = viewId
+      ? await this.prisma.view.findFirst({
+          where: { id: viewId, tableId: id, table: { workspaceId: request.user.workspaceId } },
+        })
+      : null;
+    if (viewId && !view) throw new Error('View not found');
+    const rows = view
+      ? applyView(
+          {
+            filter: view.filter as never,
+            sort: view.sort as never,
+            hiddenColumnIds: view.hiddenColumnIds as never,
+          },
+          table.columns,
+          table.rows,
+        )
+      : table.rows;
+    const { tagAssignments, ...result } = table;
+    return {
+      ...result,
+      rows,
+      tags: tagAssignments.map(({ tag }) => tag),
+      ...(view ? { view } : {}),
+    };
   }
 
   @Patch(':id')
-  rename(@Param('id') id: string, @Body() body: unknown, @Req() request: Request) {
+  async rename(@Param('id') id: string, @Body() body: unknown, @Req() request: Request) {
     const input = tableBody.parse(body);
-    return this.prisma.table.updateMany({
+    const table = await this.prisma.table.findFirst({
       where: { id, workspaceId: request.user.workspaceId },
-      data: { name: input.name },
+    });
+    if (!table) throw new Error('Table not found');
+    if (input.workbookId) {
+      const workbook = await this.prisma.workbook.findFirst({
+        where: { id: input.workbookId, workspaceId: request.user.workspaceId },
+      });
+      if (!workbook) throw new Error('Workbook not found');
+    }
+    return this.prisma.table.update({
+      where: { id },
+      data: {
+        ...(input.name === undefined ? {} : { name: input.name }),
+        ...(input.workbookId === undefined ? {} : { workbookId: input.workbookId }),
+        ...(input.position === undefined ? {} : { position: input.position }),
+      },
     });
   }
 
@@ -172,6 +243,7 @@ export class TablesController {
         action: z.string().min(1),
         input: z.record(z.unknown()),
         mapping: z.record(z.string()).optional(),
+        viewId: z.string().optional(),
       })
       .parse(body);
     const table = await this.prisma.table.findFirst({
@@ -230,6 +302,7 @@ export class TablesController {
         action: z.string().min(1),
         input: z.record(z.unknown()),
         rowIds: z.array(z.string()).optional(),
+        viewId: z.string().optional(),
         carry: z.array(z.string()).default([]),
         target: z.object({ tableId: z.string().optional(), name: z.string().optional() }),
       })
@@ -265,6 +338,7 @@ export class TablesController {
             request.user.workspaceId,
             input.target.name ?? `${source.name} — people`,
             targetTemplate?.definition as unknown as TableTemplateDefinition,
+            source.workbookId,
           )
         ).table;
     if (!target) throw new Error('Target table not found');
@@ -291,9 +365,22 @@ export class TablesController {
       });
       targetColumns = [...targetColumns, created];
     }
-    const rows = input.rowIds
-      ? source.rows.filter((row) => input.rowIds?.includes(row.id))
+    const view = input.viewId
+      ? await this.prisma.view.findFirst({
+          where: { id: input.viewId, tableId, table: { workspaceId: request.user.workspaceId } },
+        })
+      : null;
+    if (input.viewId && !view) throw new Error('View not found');
+    const selectedRows = view
+      ? applyView(
+          { filter: view.filter as never, sort: view.sort as never, hiddenColumnIds: [] },
+          source.columns,
+          source.rows,
+        )
       : source.rows;
+    const rows = input.rowIds
+      ? selectedRows.filter((row) => input.rowIds?.includes(row.id))
+      : selectedRows;
     const credentials = decryptCredentials(connection.encryptedCredentials);
     let imported = 0;
     const errors: { rowId: string; message: string }[] = [];
@@ -434,7 +521,11 @@ export class TablesController {
   }
 
   @Get(':id/export')
-  async exportCsv(@Param('id') tableId: string, @Req() request: Request) {
+  async exportCsv(
+    @Param('id') tableId: string,
+    @Query('viewId') viewId: string | undefined,
+    @Req() request: Request,
+  ) {
     const table = await this.prisma.table.findFirst({
       where: { id: tableId, workspaceId: request.user.workspaceId },
       include: { columns: true, rows: { include: { cells: true }, orderBy: { position: 'asc' } } },
@@ -445,9 +536,22 @@ export class TablesController {
         typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value ?? '');
       return `"${text.replace(/"/g, '""')}"`;
     };
+    const view = viewId
+      ? await this.prisma.view.findFirst({
+          where: { id: viewId, tableId, table: { workspaceId: request.user.workspaceId } },
+        })
+      : null;
+    if (viewId && !view) throw new Error('View not found');
+    const rows = view
+      ? applyView(
+          { filter: view.filter as never, sort: view.sort as never, hiddenColumnIds: [] },
+          table.columns,
+          table.rows,
+        )
+      : table.rows;
     const lines = [
       table.columns.map((column) => escape(column.name)).join(','),
-      ...table.rows.map((row) =>
+      ...rows.map((row) =>
         table.columns
           .map((column) => escape(row.cells.find((cell) => cell.columnId === column.id)?.value))
           .join(','),
@@ -515,6 +619,7 @@ export class TablesController {
     const input = z
       .object({
         rowIds: z.array(z.string()).optional(),
+        viewId: z.string().optional(),
         onlyEmpty: z.boolean().default(false),
         onlyErrored: z.boolean().default(false),
       })
@@ -523,9 +628,28 @@ export class TablesController {
       where: { id: tableId, workspaceId: request.user.workspaceId },
     });
     if (!table) throw new Error('Table not found');
-    const rows = await this.prisma.row.findMany({
+    let rows = await this.prisma.row.findMany({
       where: input.rowIds ? { tableId, id: { in: input.rowIds } } : { tableId },
     });
+    if (input.viewId) {
+      const view = await this.prisma.view.findFirst({
+        where: { id: input.viewId, tableId, table: { workspaceId: request.user.workspaceId } },
+      });
+      if (!view) throw new Error('View not found');
+      const allRows = await this.prisma.row.findMany({
+        where: { tableId },
+        include: { cells: true },
+        orderBy: { position: 'asc' },
+      });
+      const visible = new Set(
+        applyView(
+          { filter: view.filter as never, sort: view.sort as never, hiddenColumnIds: [] },
+          await this.prisma.column.findMany({ where: { tableId } }),
+          allRows,
+        ).map((row) => row.id),
+      );
+      rows = rows.filter((row) => visible.has(row.id));
+    }
     let queued = 0;
     for (const row of rows) {
       if (input.onlyEmpty || input.onlyErrored) {
