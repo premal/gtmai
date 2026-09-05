@@ -23,6 +23,7 @@ type Column = {
   name: string;
   kind: string;
   type: string;
+  width?: number;
   config?: unknown;
   colorLabel?: string;
 };
@@ -425,14 +426,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
         <div className="grid-wrap" ref={gridRef}>
           <table className="data-grid">
+            <colgroup>
+              <col className="row-num-col" />
+              {table.columns.map((column) => (
+                <col key={column.id} style={{ width: `${column.width ?? 220}px` }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 <th className="row-num">✓</th>
                 {table.columns.map((column) => (
                   <th key={column.id}>
                     <div className="column-title">
-                      <span className={`kind-dot ${column.kind}`} />
-                      {column.name}
+                      <span className={`kind-dot kind-${column.kind}`} />
+                      <span className="column-name" title={column.name}>
+                        {column.name}
+                      </span>
                     </div>
                     <span className="column-meta">
                       {column.kind} · {column.type}
@@ -524,72 +533,93 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 ))}
               </tr>
             </thead>
-            <tbody style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const row = table.rows[virtualRow.index]!;
+            <tbody>
+              {(() => {
+                const virtualRows = rowVirtualizer.getVirtualItems();
+                const paddingTop = virtualRows[0]?.start ?? 0;
+                const paddingBottom =
+                  rowVirtualizer.getTotalSize() - (virtualRows.at(-1)?.end ?? 0);
                 return (
-                  <tr
-                    key={row.id}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      transform: `translateY(${virtualRow.start}px)`,
-                      width: '100%',
-                    }}
-                  >
-                    <td className="row-num">
-                      <input
-                        type="checkbox"
-                        checked={selectedRows.includes(row.id)}
-                        onChange={(event) =>
-                          setSelectedRows((current) =>
-                            event.target.checked
-                              ? [...current, row.id]
-                              : current.filter((id) => id !== row.id),
-                          )
-                        }
-                      />
-                    </td>
-                    {table.columns.map((column) => {
-                      const cell = row.cells.find((item) => item.columnId === column.id);
-                      const editable = column.kind === 'input';
+                  <>
+                    {paddingTop > 0 && (
+                      <tr aria-hidden="true">
+                        <td colSpan={table.columns.length + 1} style={{ height: paddingTop }} />
+                      </tr>
+                    )}
+                    {virtualRows.map((virtualRow) => {
+                      const row = table.rows[virtualRow.index]!;
                       return (
-                        <td
-                          key={column.id}
-                          onClick={() =>
-                            cell &&
-                            setSelected({ ...cell, rowId: row.id, provenance: cell.provenance })
-                          }
-                        >
-                          {editable ? (
+                        <tr key={row.id}>
+                          <td className="row-num">
                             <input
-                              className="cell-input"
-                              defaultValue={
-                                cell?.value == null ? '' : displayValue(cell.value, column)
-                              }
+                              type="checkbox"
+                              checked={selectedRows.includes(row.id)}
                               onChange={(event) =>
-                                scheduleCellUpdate(row.id, column, event.target.value)
+                                setSelectedRows((current) =>
+                                  event.target.checked
+                                    ? [...current, row.id]
+                                    : current.filter((id) => id !== row.id),
+                                )
                               }
                             />
-                          ) : !cell ? null : cell.status === 'skipped' ? (
-                            <span className="status skipped" title={cell.error ?? 'Skipped'}>
-                              skipped
-                            </span>
-                          ) : cell.status === 'done' ? (
-                            <span title={JSON.stringify(cell.value)}>
-                              {displayValue(cell.value, column)}
-                            </span>
-                          ) : (
-                            <span className={`status ${cell.status}`}>
-                              {cell.status === 'error' ? (cell.error ?? 'error') : cell.status}
-                            </span>
-                          )}
-                        </td>
+                          </td>
+                          {table.columns.map((column) => {
+                            const cell = row.cells.find((item) => item.columnId === column.id);
+                            const editable = column.kind === 'input';
+                            return (
+                              <td
+                                key={column.id}
+                                onClick={() =>
+                                  cell &&
+                                  setSelected({
+                                    ...cell,
+                                    rowId: row.id,
+                                    provenance: cell.provenance,
+                                  })
+                                }
+                              >
+                                {editable ? (
+                                  <input
+                                    className="cell-input"
+                                    defaultValue={
+                                      cell?.value == null ? '' : displayValue(cell.value, column)
+                                    }
+                                    onChange={(event) =>
+                                      scheduleCellUpdate(row.id, column, event.target.value)
+                                    }
+                                  />
+                                ) : !cell ? null : cell.status === 'skipped' ? (
+                                  <span className="status skipped" title={cell.error ?? 'Skipped'}>
+                                    skipped
+                                  </span>
+                                ) : cell.status === 'done' ? (
+                                  <span className="cell-value" title={JSON.stringify(cell.value)}>
+                                    {displayValue(cell.value, column)}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`status ${cell.status}`}
+                                    title={cell.error ?? cell.status}
+                                  >
+                                    {cell.status === 'error'
+                                      ? (cell.error ?? 'error')
+                                      : cell.status}
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
                       );
                     })}
-                  </tr>
+                    {paddingBottom > 0 && (
+                      <tr aria-hidden="true">
+                        <td colSpan={table.columns.length + 1} style={{ height: paddingBottom }} />
+                      </tr>
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </tbody>
           </table>
         </div>
