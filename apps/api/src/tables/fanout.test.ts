@@ -29,12 +29,22 @@ describe('people fanout', () => {
     });
     const auth = register.json() as { token: string; workspaceId: string };
     const headers = { authorization: `Bearer ${auth.token}` };
-    await instance.inject({
+    const connection = await instance.inject({
       method: 'POST',
       url: '/connections',
       headers,
       payload: { provider: 'mock', name: 'Mock', credentials: {} },
     });
+    expect(connection.statusCode).toBe(201);
+    const connections = await instance.inject({
+      method: 'GET',
+      url: '/connections',
+      headers,
+    });
+    expect(connections.statusCode).toBe(200);
+    expect(connections.json()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ provider: 'mock' })]),
+    );
     const tableResponse = await instance.inject({
       method: 'POST',
       url: `/workspaces/${auth.workspaceId}/tables`,
