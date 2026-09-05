@@ -6,7 +6,9 @@ import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
-import { createRowWithValues } from '../tables/row-helper';
+import { instantiateTableTemplate, type TableTemplateDefinition } from './instantiate';
+
+const json = (value: unknown) => value as Prisma.InputJsonValue;
 
 type Request = FastifyRequest & { user: AuthUser };
 type TemplateKind = 'table' | 'workflow' | 'function';
@@ -17,7 +19,6 @@ type BuiltIn = {
   definition: Record<string, unknown>;
 };
 const builtIns = builtInTemplates as unknown as BuiltIn[];
-const json = (value: unknown) => value as Prisma.InputJsonValue;
 
 @Controller('templates')
 @UseGuards(JwtAuthGuard)
@@ -63,39 +64,12 @@ export class TemplatesController {
     if (!saved) throw new Error('Template not found');
     const name = input.name ?? saved.name;
     if (saved.kind === 'table') {
-      const definition = saved.definition as {
-        columns?: Array<{
-          name: string;
-          kind?: string;
-          type?: string;
-          config?: Record<string, unknown>;
-        }>;
-        rows?: Array<Record<string, unknown>>;
-      };
-      const table = await this.prisma.table.create({
-        data: { workspaceId: request.user.workspaceId, name },
-      });
-      const columns = [];
-      for (const [position, column] of (definition.columns ?? []).entries()) {
-        columns.push(
-          await this.prisma.column.create({
-            data: {
-              tableId: table.id,
-              name: column.name,
-              kind: (column.kind ?? 'input') as 'input',
-              type: (column.type ?? 'text') as 'text',
-              config: json(column.config ?? {}),
-              position,
-            },
-          }),
-        );
-      }
-      for (const [position, values] of (definition.rows ?? []).entries()) {
-        const cellValues = Object.fromEntries(
-          columns.map((column) => [column.id, values[column.name]]),
-        );
-        await createRowWithValues(this.prisma, table.id, columns, cellValues, position);
-      }
+      const { table } = await instantiateTableTemplate(
+        this.prisma,
+        request.user.workspaceId,
+        name,
+        saved.definition as TableTemplateDefinition,
+      );
       return { kind: 'table', id: table.id };
     }
     if (saved.kind === 'workflow') {

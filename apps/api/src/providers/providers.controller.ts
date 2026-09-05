@@ -10,6 +10,7 @@ export class ProvidersController {
       id: item.id,
       name: item.name,
       category: item.category,
+      sourceKind: item.sourceKind,
       creditCost: item.creditCost,
       badges: item.badges,
     }));

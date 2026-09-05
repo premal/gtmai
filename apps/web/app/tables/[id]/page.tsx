@@ -1,6 +1,7 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppNav } from '../../app-nav';
 import { useDialog } from '../../components/prompt-dialog';
@@ -42,6 +43,7 @@ type CatalogAction = {
   id: string;
   name: string;
   category: string;
+  sourceKind?: 'companies' | 'people';
   creditCost: number;
 };
 type SourceField = {
@@ -66,6 +68,21 @@ const sourceFields: Record<string, SourceField[]> = {
   ],
 };
 const sourceActionIds = new Set(Object.keys(sourceFields));
+type PeopleField = { name: string; label: string; type?: 'text' | 'number' };
+const peopleFields: Record<string, PeopleField[]> = {
+  'apollo.peopleSearch': [
+    { name: 'titles', label: 'Titles (comma-separated)' },
+    { name: 'seniorities', label: 'Seniorities (comma-separated)' },
+    { name: 'departments', label: 'Departments (comma-separated)' },
+    { name: 'limit', label: 'Limit', type: 'number' },
+  ],
+  'hunter.domainSearch': [
+    { name: 'department', label: 'Department' },
+    { name: 'seniority', label: 'Seniority' },
+    { name: 'limit', label: 'Limit', type: 'number' },
+  ],
+  'mock.findPeople': [{ name: 'limit', label: 'Limit', type: 'number' }],
+};
 
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const [tableId, setTableId] = useState('');
@@ -90,6 +107,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourceActionId, setSourceActionId] = useState('theirstack.searchCompanies');
   const [sourceInput, setSourceInput] = useState<Record<string, string>>({ limit: '25' });
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [peopleActionId, setPeopleActionId] = useState('mock.findPeople');
+  const [peopleInput, setPeopleInput] = useState<Record<string, string>>({ limit: '10' });
+  const [peopleDomain, setPeopleDomain] = useState('{{Domain}}');
+  const [peopleScope, setPeopleScope] = useState<'selected' | 'all'>('all');
+  const [peopleCarry, setPeopleCarry] = useState<string[]>([]);
+  const [peopleTableName, setPeopleTableName] = useState('');
   const [csv, setCsv] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -106,6 +130,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [message, setMessage] = useState('');
   const dialog = useDialog();
   const { toast } = useToast();
+  const router = useRouter();
   const gridRef = useRef<HTMLDivElement>(null);
   const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const menuRef = useRef<HTMLDivElement>(null);
@@ -352,6 +377,64 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     toast(`Imported ${body.imported ?? 0} companies`);
   }
 
+  function openPeople(): void {
+    if (!table) return;
+    const defaults = table.columns
+      .filter((column) => ['Company', 'Domain', 'Uses Clay?', 'Evidence URL'].includes(column.name))
+      .map((column) => column.name);
+    setPeopleCarry(defaults);
+    setPeopleTableName(`${table.name} — people`);
+    setPeopleActionId(
+      catalog.find((item) => item.sourceKind === 'people')?.id ?? 'mock.findPeople',
+    );
+    setPeopleInput({ limit: '10' });
+    setPeopleDomain('{{Domain}}');
+    setPeopleScope(selectedRows.length ? 'selected' : 'all');
+    setPeopleOpen(true);
+  }
+
+  async function fanoutPeople(): Promise<void> {
+    if (!table) return;
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    const selectedAction = catalog.find((item) => item.id === peopleActionId);
+    if (!selectedAction) return;
+    const fields = peopleFields[peopleActionId] ?? [];
+    const actionInput = Object.fromEntries(
+      fields
+        .filter((field) => peopleInput[field.name] !== undefined && peopleInput[field.name] !== '')
+        .map((field) => [
+          field.name,
+          field.type === 'number' ? Number(peopleInput[field.name]) : peopleInput[field.name],
+        ]),
+    );
+    const response = await fetch(`${api}/tables/${tableId}/fanout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: selectedAction.provider,
+        action: selectedAction.id,
+        input: { domain: peopleDomain, ...actionInput },
+        rowIds: peopleScope === 'selected' ? selectedRows : undefined,
+        carry: peopleCarry,
+        target: { name: peopleTableName || `${table.name} — people` },
+      }),
+    });
+    const body = (await response.json()) as {
+      tableId?: string;
+      imported?: number;
+      sourceRows?: number;
+      errors?: { message: string }[];
+      message?: string;
+    };
+    if (!response.ok) {
+      toast(body.message ?? 'Find people failed', { kind: 'error' });
+      return;
+    }
+    setPeopleOpen(false);
+    toast(`Found ${body.imported ?? 0} people across ${body.sourceRows ?? 0} companies`);
+    if (body.tableId) router.push(`/tables/${body.tableId}`);
+  }
+
   async function previewAgent(): Promise<void> {
     if (!selectedColumn) return;
     const token = localStorage.getItem('gtmai-token') ?? '';
@@ -461,6 +544,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             </button>
             <button className="button" onClick={() => setSourceOpen(true)}>
               Import from source
+            </button>
+            <button className="button" onClick={openPeople}>
+              Find people
             </button>
             <button className="button" onClick={() => void addRow()}>
               ＋ Row
@@ -1151,6 +1237,103 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               </button>
               <button className="button primary" onClick={() => void importSource()}>
                 Import companies
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {peopleOpen && (
+        <div className="modal-backdrop" onClick={() => setPeopleOpen(false)}>
+          <section className="modal" onClick={(event) => event.stopPropagation()}>
+            <h3>Find people</h3>
+            <p className="muted">Turn company rows into a People table.</p>
+            <label>
+              Search action
+              <select
+                value={peopleActionId}
+                onChange={(event) => {
+                  setPeopleActionId(event.target.value);
+                  setPeopleInput({ limit: '10' });
+                }}
+              >
+                {catalog
+                  .filter((item) => item.category === 'search' && item.sourceKind === 'people')
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.provider} · {item.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Domain binding
+              <input
+                value={peopleDomain}
+                onChange={(event) => setPeopleDomain(event.target.value)}
+              />
+            </label>
+            {(peopleFields[peopleActionId] ?? []).map((field) => (
+              <label key={field.name}>
+                {field.label}
+                <input
+                  type={field.type ?? 'text'}
+                  value={peopleInput[field.name] ?? ''}
+                  onChange={(event) =>
+                    setPeopleInput((current) => ({ ...current, [field.name]: event.target.value }))
+                  }
+                />
+              </label>
+            ))}
+            <div className="radio-list">
+              <label>
+                <input
+                  type="radio"
+                  checked={peopleScope === 'selected'}
+                  onChange={() => setPeopleScope('selected')}
+                />
+                Selected rows ({selectedRows.length})
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  checked={peopleScope === 'all'}
+                  onChange={() => setPeopleScope('all')}
+                />
+                All rows
+              </label>
+            </div>
+            <div className="mapping-list">
+              <strong>Carry columns</strong>
+              {table.columns.map((column) => (
+                <label key={column.id}>
+                  <input
+                    type="checkbox"
+                    checked={peopleCarry.includes(column.name)}
+                    onChange={(event) =>
+                      setPeopleCarry((current) =>
+                        event.target.checked
+                          ? [...current, column.name]
+                          : current.filter((name) => name !== column.name),
+                      )
+                    }
+                  />
+                  {column.name}
+                </label>
+              ))}
+            </div>
+            <label>
+              New table name
+              <input
+                value={peopleTableName}
+                onChange={(event) => setPeopleTableName(event.target.value)}
+              />
+            </label>
+            <div className="modal-actions">
+              <button className="button" onClick={() => setPeopleOpen(false)}>
+                Cancel
+              </button>
+              <button className="button primary" onClick={() => void fanoutPeople()}>
+                Find people
               </button>
             </div>
           </section>

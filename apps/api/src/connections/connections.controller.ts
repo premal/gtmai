@@ -50,6 +50,7 @@ export class ConnectionsController {
         id: action.id,
         name: action.name,
         category: action.category,
+        sourceKind: action.sourceKind,
         creditCost: action.creditCost,
       })),
     }));

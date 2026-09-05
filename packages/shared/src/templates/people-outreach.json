@@ -1,0 +1,90 @@
+{
+  "id": "builtin-people-outreach",
+  "name": "People outreach (waterfall + personalization)",
+  "kind": "table",
+  "definition": {
+    "columns": [
+      { "name": "First name", "kind": "input", "type": "text" },
+      { "name": "Last name", "kind": "input", "type": "text" },
+      { "name": "Title", "kind": "input", "type": "text" },
+      { "name": "Seniority", "kind": "input", "type": "text" },
+      { "name": "Department", "kind": "input", "type": "text" },
+      { "name": "LinkedIn", "kind": "input", "type": "url" },
+      { "name": "Email", "kind": "input", "type": "email" },
+      { "name": "Company", "kind": "input", "type": "text" },
+      { "name": "Domain", "kind": "input", "type": "text" },
+      { "name": "Uses Clay?", "kind": "input", "type": "text" },
+      { "name": "Evidence URL", "kind": "input", "type": "url" },
+      {
+        "name": "Work email",
+        "kind": "waterfall",
+        "type": "email",
+        "config": {
+          "providers": [
+            {
+              "provider": "hunter",
+              "action": "hunter.findEmail",
+              "input": {
+                "firstName": "{{First name}}",
+                "lastName": "{{Last name}}",
+                "domain": "{{Domain}}"
+              }
+            },
+            {
+              "provider": "prospeo",
+              "action": "prospeo.findEmail",
+              "input": {
+                "firstName": "{{First name}}",
+                "lastName": "{{Last name}}",
+                "domain": "{{Domain}}"
+              }
+            },
+            {
+              "provider": "apollo",
+              "action": "apollo.peopleMatch",
+              "input": {
+                "firstName": "{{First name}}",
+                "lastName": "{{Last name}}",
+                "domain": "{{Domain}}"
+              }
+            },
+            {
+              "provider": "peopledatalabs",
+              "action": "peopledatalabs.personEnrich",
+              "input": {
+                "firstName": "{{First name}}",
+                "lastName": "{{Last name}}",
+                "domain": "{{Domain}}"
+              }
+            },
+            {
+              "provider": "mock",
+              "action": "mock.findEmail",
+              "input": {
+                "firstName": "{{First name}}",
+                "lastName": "{{Last name}}",
+                "domain": "{{Domain}}"
+              }
+            }
+          ],
+          "accept": "any"
+        }
+      },
+      {
+        "name": "Best email",
+        "kind": "formula",
+        "type": "email",
+        "config": { "expression": "coalesce({{Work email}}, {{Email}})" }
+      },
+      {
+        "name": "Personalization",
+        "kind": "agent",
+        "type": "text",
+        "config": {
+          "provider": "openai",
+          "prompt": "Write one sentence (max 30 words) I could open a cold email to {{First name}} ({{Title}} at {{Company}}) with, referencing that {{Company}} uses Clay.com — evidence: {{Evidence URL}}. Finish with fields: opener (string). No tools needed unless the evidence URL needs a fetch_page."
+        }
+      }
+    ]
+  }
+}

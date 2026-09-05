@@ -20,11 +20,34 @@ export type ProviderAction<I = unknown, O = unknown> = {
     | 'search'
     | 'ai'
     | 'other';
+  sourceKind?: 'companies' | 'people';
   input: z.ZodTypeAny;
   output: z.ZodTypeAny;
   creditCost: number;
   run(input: I, ctx: RunContext): Promise<ActionResult<O>>;
 };
+export const peopleOutput = z.object({
+  people: z.array(
+    z.object({
+      firstName: z.string().optional(),
+      lastName: z.string().optional(),
+      fullName: z.string().optional(),
+      title: z.string().optional(),
+      seniority: z.string().optional(),
+      department: z.string().optional(),
+      linkedinUrl: z.string().optional(),
+      email: z.string().optional(),
+      emailStatus: z.string().optional(),
+      company: z
+        .object({
+          name: z.string().optional(),
+          domain: z.string().optional(),
+        })
+        .optional(),
+    }),
+  ),
+  total: z.number().optional(),
+});
 export type Provider = {
   id: string;
   name: string;

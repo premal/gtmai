@@ -54,6 +54,13 @@ For a larger local grid, seed 1,000 rows with:
 pnpm --filter @gtmai/db db:seed -- --rows=1000
 ```
 
+## Clay research to outreach
+
+Start with **Find companies using Clay** to identify companies and capture evidence. Use
+**Find people** on those company rows to fan out contacts into a People table, where the
+work-email waterfall tries available providers before falling back to mock data. From there,
+send the resulting contacts into an Audience and enroll them in a Campaign.
+
 ## Provider keys
 
 Open **Connections** in the web workspace, choose a provider, and save its API key.

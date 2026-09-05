@@ -184,6 +184,7 @@ export const theirstackProvider: Provider = {
       id: 'theirstack.searchCompanies',
       name: 'Find companies by technology',
       category: 'search',
+      sourceKind: 'companies',
       input: searchInput,
       output: searchOutput,
       creditCost: 3,

@@ -16,11 +16,14 @@ import type { FastifyRequest } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
 import { Prisma } from '@gtmai/db';
 import { providers, runAgent } from '@gtmai/providers';
+import { builtInTemplates, resolveBindingsDeep } from '@gtmai/shared';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { decryptCredentials } from '../common/crypto';
+import { debitCredits } from '../common/credits';
 import { PrismaService } from '../prisma/prisma.service';
+import { instantiateTableTemplate, type TableTemplateDefinition } from '../templates/instantiate';
 import { createRowWithValues } from './row-helper';
 
 const tableBody = z.object({ name: z.string().min(1) });
@@ -217,6 +220,139 @@ export class TablesController {
       await createRowWithValues(this.prisma, tableId, columns, values, position + index);
     }
     return { imported: companies.length, total: data.total ?? companies.length };
+  }
+
+  @Post(':id/fanout')
+  async fanout(@Param('id') tableId: string, @Body() body: unknown, @Req() request: Request) {
+    const input = z
+      .object({
+        provider: z.string().min(1),
+        action: z.string().min(1),
+        input: z.record(z.unknown()),
+        rowIds: z.array(z.string()).optional(),
+        carry: z.array(z.string()).default([]),
+        target: z.object({ tableId: z.string().optional(), name: z.string().optional() }),
+      })
+      .parse(body);
+    const source = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      include: {
+        columns: true,
+        rows: { orderBy: { position: 'asc' }, include: { cells: { include: { column: true } } } },
+      },
+    });
+    if (!source) throw new Error('Table not found');
+    const provider = providers.find((item) => item.id === input.provider);
+    const action = provider?.actions.find((item) => item.id === input.action);
+    if (!provider || !action || action.category !== 'search' || action.sourceKind !== 'people') {
+      throw new Error(`Unknown people search action: ${input.provider}/${input.action}`);
+    }
+    const connection = await this.prisma.connection.findFirst({
+      where: { workspaceId: request.user.workspaceId, provider: input.provider },
+    });
+    if (!connection) {
+      throw new Error(`No connection for ${input.provider} — add one in Connections`);
+    }
+    const targetTemplate = builtInTemplates.find((item) => item.id === 'builtin-people-outreach');
+    if (!input.target.tableId && !targetTemplate) throw new Error('People template not found');
+    const target = input.target.tableId
+      ? await this.prisma.table.findFirst({
+          where: { id: input.target.tableId, workspaceId: request.user.workspaceId },
+        })
+      : (
+          await instantiateTableTemplate(
+            this.prisma,
+            request.user.workspaceId,
+            input.target.name ?? `${source.name} — people`,
+            targetTemplate?.definition as unknown as TableTemplateDefinition,
+          )
+        ).table;
+    if (!target) throw new Error('Target table not found');
+    let targetColumns = await this.prisma.column.findMany({
+      where: { tableId: target.id },
+      orderBy: { position: 'asc' },
+    });
+    const required = [
+      'First name',
+      'Last name',
+      'Title',
+      'Seniority',
+      'Department',
+      'LinkedIn',
+      'Email',
+      'Company',
+      'Domain',
+    ];
+    for (const name of [...required, ...input.carry]) {
+      if (targetColumns.some((column) => column.name === name)) continue;
+      const position = targetColumns.length;
+      const created = await this.prisma.column.create({
+        data: { tableId: target.id, name, type: 'text', kind: 'input', config: {}, position },
+      });
+      targetColumns = [...targetColumns, created];
+    }
+    const rows = input.rowIds
+      ? source.rows.filter((row) => input.rowIds?.includes(row.id))
+      : source.rows;
+    const credentials = decryptCredentials(connection.encryptedCredentials);
+    let imported = 0;
+    const errors: { rowId: string; message: string }[] = [];
+    let position = await this.prisma.row.count({ where: { tableId: target.id } });
+    for (const row of rows) {
+      const sourceValues = Object.fromEntries(
+        row.cells.map((cell) => [cell.column.name, cell.value]),
+      );
+      try {
+        const result = await action.run(resolveBindingsDeep(input.input, sourceValues), {
+          credentials,
+          fetch,
+          logger: { info: () => undefined, error: () => undefined },
+        });
+        if (!result.found) throw new Error(result.reason ?? 'People search failed');
+        const people = Array.isArray((result.data as { people?: unknown[] }).people)
+          ? ((result.data as { people: unknown[] }).people ?? [])
+          : [];
+        for (const personValue of people) {
+          const person = personValue as Record<string, unknown>;
+          const company =
+            person.company && typeof person.company === 'object'
+              ? (person.company as Record<string, unknown>)
+              : {};
+          const valuesByName: Record<string, unknown> = {
+            'First name': person.firstName,
+            'Last name': person.lastName,
+            Title: person.title,
+            Seniority: person.seniority,
+            Department: person.department,
+            LinkedIn: person.linkedinUrl,
+            Email: person.email,
+            Company: company.name ?? sourceValues.Company,
+            Domain: company.domain ?? sourceValues.Domain,
+            ...Object.fromEntries(input.carry.map((name) => [name, sourceValues[name]])),
+          };
+          const values = Object.fromEntries(
+            targetColumns.map((column) => [column.id, valuesByName[column.name]]),
+          );
+          await createRowWithValues(this.prisma, target.id, targetColumns, values, position++);
+          imported += 1;
+        }
+        await debitCredits(this.prisma, {
+          workspaceId: request.user.workspaceId,
+          tableId: target.id,
+          provider: input.provider,
+          credits: action.creditCost,
+          reason: 'people fanout',
+          refType: 'fanout',
+          refId: row.id,
+        });
+      } catch (error) {
+        errors.push({
+          rowId: row.id,
+          message: error instanceof Error ? error.message : 'People search failed',
+        });
+      }
+    }
+    return { tableId: target.id, imported, sourceRows: rows.length, errors };
   }
 
   @Post(':id/import')
