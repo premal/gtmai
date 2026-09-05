@@ -23,6 +23,7 @@ export class AuthService {
       data: {
         name: `${name}'s Workspace`,
         users: { create: { userId: user.id, role: 'owner' } },
+        workbooks: { create: { name: 'Default workbook', position: 0 } },
       },
     });
     return this.issue(user, workspace.id);

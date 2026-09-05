@@ -1,16 +1,19 @@
 generator client {
   provider = "prisma-client-js"
 }
+
 datasource db {
   provider = "postgresql"
-  url = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
+
 enum MembershipRole {
   owner
   admin
   member
   viewer
 }
+
 enum ColumnType {
   text
   number
@@ -20,6 +23,7 @@ enum ColumnType {
   email
   json
 }
+
 enum ColumnKind {
   input
   enrichment
@@ -29,6 +33,7 @@ enum ColumnKind {
   http
   function
 }
+
 enum CellStatus {
   queued
   running
@@ -36,12 +41,14 @@ enum CellStatus {
   error
   skipped
 }
+
 enum DataSourceType {
   csv
   crm
   warehouse
   table
 }
+
 enum SignalType {
   job_change
   new_hire
@@ -49,6 +56,7 @@ enum SignalType {
   website_visit
   custom
 }
+
 enum StepStatus {
   queued
   running
@@ -56,488 +64,640 @@ enum StepStatus {
   error
   skipped
 }
+
 model Workspace {
-  id String @id @default(cuid())
-  name String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  users Membership[]
-  apiKeys ApiKey[]
-  connections Connection[]
-  tables Table[]
-  companies Company[]
-  contacts Contact[]
+  id               String             @id @default(cuid())
+  name             String
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  users            Membership[]
+  apiKeys          ApiKey[]
+  connections      Connection[]
+  tables           Table[]
+  companies        Company[]
+  contacts         Contact[]
   fieldDefinitions FieldDefinition[]
-  dataSources DataSource[]
-  segments Segment[]
-  signals SignalDefinition[]
-  workflows Workflow[]
-  functions Function[]
-  inboxes Inbox[]
-  sequences Sequence[]
-  campaigns Campaign[]
-  adAudiences AdAudience[]
-  crmSyncJobs CrmSyncJob[]
-  crmSyncRecords CrmSyncRecord[]
-  creditLedger CreditLedger[]
-  creditBudgets CreditBudget[]
-  usageSnapshots UsageSnapshot[]
-  alerts Alert[]
-  alertChannels AlertChannel[]
-  templates Template[]
+  dataSources      DataSource[]
+  segments         Segment[]
+  signals          SignalDefinition[]
+  workflows        Workflow[]
+  functions        Function[]
+  inboxes          Inbox[]
+  sequences        Sequence[]
+  campaigns        Campaign[]
+  adAudiences      AdAudience[]
+  crmSyncJobs      CrmSyncJob[]
+  crmSyncRecords   CrmSyncRecord[]
+  creditLedger     CreditLedger[]
+  creditBudgets    CreditBudget[]
+  usageSnapshots   UsageSnapshot[]
+  alerts           Alert[]
+  alertChannels    AlertChannel[]
+  templates        Template[]
+  folders          Folder[]
+  workbooks        Workbook[]
+  tags             Tag[]
 }
+
 model User {
-  id String @id @default(cuid())
-  email String @unique
-  passwordHash String
-  name String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  memberships Membership[]
+  id                 String       @id @default(cuid())
+  email              String       @unique
+  passwordHash       String
+  name               String
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  memberships        Membership[]
   createdConnections Connection[]
 }
+
 model Membership {
-  id String @id @default(cuid())
+  id          String         @id @default(cuid())
   workspaceId String
-  userId String
-  role MembershipRole @default(member)
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  role        MembershipRole @default(member)
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@unique([workspaceId, userId])
 }
+
 model ApiKey {
-  id String @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
-  name String
-  prefix String
-  hash String
-  lastUsedAt DateTime?
-  createdAt DateTime @default(now())
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  prefix      String
+  hash        String
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
+
 model Connection {
-  id String @id @default(cuid())
-  workspaceId String
-  createdById String
-  provider String
-  name String
+  id                   String    @id @default(cuid())
+  workspaceId          String
+  createdById          String
+  provider             String
+  name                 String
   encryptedCredentials String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy User @relation(fields: [createdById], references: [id])
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy            User      @relation(fields: [createdById], references: [id])
+
   @@index([workspaceId, provider])
 }
+
 model Table {
-  id String @id @default(cuid())
-  workspaceId String
-  name String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  columns Column[]
-  rows Row[]
-  creditLedger CreditLedger[]
+  id             String          @id @default(cuid())
+  workspaceId    String
+  workbookId     String
+  name           String
+  position       Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workbook       Workbook        @relation(fields: [workbookId], references: [id], onDelete: Cascade)
+  columns        Column[]
+  rows           Row[]
+  views          View[]
+  tagAssignments TagAssignment[]
+  creditLedger   CreditLedger[]
   usageSnapshots UsageSnapshot[]
+
   @@index([workspaceId])
+  @@index([workbookId, position])
 }
+
+model Folder {
+  id             String          @id @default(cuid())
+  workspaceId    String
+  name           String
+  parentId       String?
+  position       Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent         Folder?         @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children       Folder[]        @relation("FolderTree")
+  workbooks      Workbook[]
+  tagAssignments TagAssignment[]
+
+  @@index([workspaceId, parentId, position])
+}
+
+model Workbook {
+  id             String          @id @default(cuid())
+  workspaceId    String
+  folderId       String?
+  name           String
+  position       Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  workspace      Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  folder         Folder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  tables         Table[]
+  tagAssignments TagAssignment[]
+
+  @@index([workspaceId, folderId, position])
+}
+
 model Column {
-  id String @id @default(cuid())
-  tableId String
-  name String
-  type ColumnType
-  kind ColumnKind
-  config Json
+  id           String     @id @default(cuid())
+  tableId      String
+  name         String
+  type         ColumnType
+  kind         ColumnKind
+  config       Json
   runCondition String?
-  colorLabel String?
-  position Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  cells Cell[]
+  colorLabel   String?
+  position     Int
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  table        Table      @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  cells        Cell[]
+
   @@unique([tableId, name])
   @@index([tableId, position])
 }
+
 model Row {
-  id String @id @default(cuid())
-  tableId String
-  position Int
+  id        String   @id @default(cuid())
+  tableId   String
+  position  Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  table Table @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  cells Cell[]
+  table     Table    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  cells     Cell[]
+
   @@index([tableId, position])
 }
+
 model Cell {
-  id String @id @default(cuid())
-  rowId String
-  columnId String
-  value Json?
-  status CellStatus @default(queued)
-  error String?
-  provider String?
-  creditsUsed Float @default(0)
-  provenance Json?
-  durationMs Int?
-  updatedAt DateTime @updatedAt
-  row Row @relation(fields: [rowId], references: [id], onDelete: Cascade)
-  column Column @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  id          String     @id @default(cuid())
+  rowId       String
+  columnId    String
+  value       Json?
+  status      CellStatus @default(queued)
+  error       String?
+  provider    String?
+  creditsUsed Float      @default(0)
+  provenance  Json?
+  durationMs  Int?
+  updatedAt   DateTime   @updatedAt
+  row         Row        @relation(fields: [rowId], references: [id], onDelete: Cascade)
+  column      Column     @relation(fields: [columnId], references: [id], onDelete: Cascade)
+
   @@unique([rowId, columnId])
   @@index([columnId, status])
 }
-model Company {
-  id String @id @default(cuid())
+
+model View {
+  id              String   @id @default(cuid())
+  tableId         String
+  name            String
+  filter          Json?
+  sort            Json     @default("[]")
+  hiddenColumnIds Json     @default("[]")
+  position        Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  table           Table    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId, position])
+}
+
+model Tag {
+  id          String          @id @default(cuid())
   workspaceId String
-  name String
-  domain String?
-  domainKey String?
-  data Json
-  createdAt DateTime @default(now())
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  contacts Contact[]
+  name        String
+  color       String?
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignments TagAssignment[]
+
+  @@unique([workspaceId, name])
+}
+
+model TagAssignment {
+  id         String    @id @default(cuid())
+  tagId      String
+  folderId   String?
+  workbookId String?
+  tableId    String?
+  tag        Tag       @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  folder     Folder?   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  workbook   Workbook? @relation(fields: [workbookId], references: [id], onDelete: Cascade)
+  table      Table?    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([tagId, folderId])
+  @@unique([tagId, workbookId])
+  @@unique([tagId, tableId])
+}
+
+model Company {
+  id           String        @id @default(cuid())
+  workspaceId  String
+  name         String
+  domain       String?
+  domainKey    String?
+  data         Json
+  createdAt    DateTime      @default(now())
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts     Contact[]
   signalEvents SignalEvent[]
+
   @@unique([workspaceId, domainKey])
   @@index([workspaceId, domain])
 }
+
 model Contact {
-  id String @id @default(cuid())
-  workspaceId String
-  companyId String?
-  email String?
-  emailKey String?
-  firstName String?
-  lastName String?
-  data Json
-  createdAt DateTime @default(now())
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  company Company? @relation(fields: [companyId], references: [id])
-  signalEvents SignalEvent[]
+  id                 String              @id @default(cuid())
+  workspaceId        String
+  companyId          String?
+  email              String?
+  emailKey           String?
+  firstName          String?
+  lastName           String?
+  data               Json
+  createdAt          DateTime            @default(now())
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company            Company?            @relation(fields: [companyId], references: [id])
+  signalEvents       SignalEvent[]
   segmentMemberships SegmentMembership[]
-  enrollments Enrollment[]
+  enrollments        Enrollment[]
+
   @@unique([workspaceId, emailKey])
   @@index([workspaceId, email])
 }
+
 model FieldDefinition {
-  id String @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
-  name String
-  type String
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  type        String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
   @@unique([workspaceId, name])
 }
+
 model DataSource {
-  id String @id @default(cuid())
+  id          String         @id @default(cuid())
   workspaceId String
-  name String
-  type DataSourceType
-  config Json
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  type        DataSourceType
+  config      Json
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
+
 model Segment {
-  id String @id @default(cuid())
+  id          String              @id @default(cuid())
   workspaceId String
-  name String
-  filter Json
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  filter      Json
+  workspace   Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   memberships SegmentMembership[]
-  campaigns Campaign[]
+  campaigns   Campaign[]
+
   @@index([workspaceId])
 }
+
 model SegmentMembership {
-  id String @id @default(cuid())
+  id        String  @id @default(cuid())
   segmentId String
   contactId String
-  segment Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  segment   Segment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
   @@unique([segmentId, contactId])
 }
+
 model SignalDefinition {
-  id String @id @default(cuid())
-  workspaceId String
-  name String
-  type SignalType
-  config Json
-  secret String?
+  id                String        @id @default(cuid())
+  workspaceId       String
+  name              String
+  type              SignalType
+  config            Json
+  secret            String?
   triggerWorkflowId String?
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  events SignalEvent[]
+  workspace         Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  events            SignalEvent[]
+
   @@index([workspaceId, type])
 }
+
 model SignalEvent {
-  id String @id @default(cuid())
+  id           String           @id @default(cuid())
   definitionId String
-  dedupeKey String
-  contactId String?
-  companyId String?
-  payload Json
-  occurredAt DateTime
-  definition SignalDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
-  contact Contact? @relation(fields: [contactId], references: [id])
-  company Company? @relation(fields: [companyId], references: [id])
-  @@index([definitionId, occurredAt])
+  dedupeKey    String
+  contactId    String?
+  companyId    String?
+  payload      Json
+  occurredAt   DateTime
+  definition   SignalDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  contact      Contact?         @relation(fields: [contactId], references: [id])
+  company      Company?         @relation(fields: [companyId], references: [id])
+
   @@unique([definitionId, dedupeKey])
+  @@index([definitionId, occurredAt])
   @@index([contactId, occurredAt])
   @@index([companyId, occurredAt])
 }
+
 model Workflow {
-  id String @id @default(cuid())
+  id          String        @id @default(cuid())
   workspaceId String
-  name String
-  graph Json
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  runs WorkflowRun[]
+  name        String
+  graph       Json
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  runs        WorkflowRun[]
+
   @@index([workspaceId, createdAt])
 }
+
 model WorkflowRun {
-  id String @id @default(cuid())
-  workflowId String
-  status StepStatus @default(queued)
-  input Json?
-  output Json?
-  credits Float @default(0)
-  startedAt DateTime?
+  id          String     @id @default(cuid())
+  workflowId  String
+  status      StepStatus @default(queued)
+  input       Json?
+  output      Json?
+  credits     Float      @default(0)
+  startedAt   DateTime?
   completedAt DateTime?
-  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  steps StepRun[]
+  workflow    Workflow   @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  steps       StepRun[]
 }
+
 model StepRun {
-  id String @id @default(cuid())
+  id            String      @id @default(cuid())
   workflowRunId String
-  nodeId String
-  status StepStatus @default(queued)
-  credits Float @default(0)
-  input Json?
-  output Json?
-  error String?
-  durationMs Int?
-  workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  nodeId        String
+  status        StepStatus  @default(queued)
+  credits       Float       @default(0)
+  input         Json?
+  output        Json?
+  error         String?
+  durationMs    Int?
+  workflowRun   WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
 }
+
 model Function {
-  id String @id @default(cuid())
+  id          String            @id @default(cuid())
   workspaceId String
-  name String
-  createdAt DateTime @default(now())
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  versions FunctionVersion[]
-  runs FunctionRun[]
+  name        String
+  createdAt   DateTime          @default(now())
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions    FunctionVersion[]
+  runs        FunctionRun[]
 }
+
 model FunctionVersion {
-  id String @id @default(cuid())
+  id         String   @id @default(cuid())
   functionId String
-  version Int
-  program Json
-  testCases Json?
-  function Function @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  version    Int
+  program    Json
+  testCases  Json?
+  function   Function @relation(fields: [functionId], references: [id], onDelete: Cascade)
+
   @@unique([functionId, version])
 }
+
 model FunctionRun {
-  id String @id @default(cuid())
+  id         String     @id @default(cuid())
   functionId String
-  status StepStatus @default(queued)
-  input Json?
-  output Json?
-  function Function @relation(fields: [functionId], references: [id], onDelete: Cascade)
+  status     StepStatus @default(queued)
+  input      Json?
+  output     Json?
+  function   Function   @relation(fields: [functionId], references: [id], onDelete: Cascade)
 }
+
 model Inbox {
-  id String @id @default(cuid())
+  id          String     @id @default(cuid())
   workspaceId String
-  name String
-  config Json
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  sequences Sequence[]
+  name        String
+  config      Json
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sequences   Sequence[]
 }
+
 model Sequence {
-  id String @id @default(cuid())
+  id          String         @id @default(cuid())
   workspaceId String
-  inboxId String?
-  name String
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  inbox Inbox? @relation(fields: [inboxId], references: [id])
-  steps SequenceStep[]
-  campaigns Campaign[]
+  inboxId     String?
+  name        String
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inbox       Inbox?         @relation(fields: [inboxId], references: [id])
+  steps       SequenceStep[]
+  campaigns   Campaign[]
 }
+
 model SequenceStep {
-  id String @id @default(cuid())
-  sequenceId String
-  position Int
-  delayHours Int
+  id              String   @id @default(cuid())
+  sequenceId      String
+  position        Int
+  delayHours      Int
   subjectTemplate String
-  bodyTemplate String
-  sequence Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  bodyTemplate    String
+  sequence        Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
   @@unique([sequenceId, position])
 }
+
 model Campaign {
-  id String @id @default(cuid())
+  id          String       @id @default(cuid())
   workspaceId String
-  sequenceId String
-  name String
-  status String
-  segmentId String?
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  sequence Sequence @relation(fields: [sequenceId], references: [id])
-  segment Segment? @relation(fields: [segmentId], references: [id])
+  sequenceId  String
+  name        String
+  status      String
+  segmentId   String?
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sequence    Sequence     @relation(fields: [sequenceId], references: [id])
+  segment     Segment?     @relation(fields: [segmentId], references: [id])
   enrollments Enrollment[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
   @@index([workspaceId, status])
 }
+
 model Enrollment {
-  id String @id @default(cuid())
+  id         String    @id @default(cuid())
   campaignId String
-  contactId String
-  status String
+  contactId  String
+  status     String
   nextStepAt DateTime?
-  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  messages Message[]
+  campaign   Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact    Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  messages   Message[]
+
   @@unique([campaignId, contactId])
   @@index([campaignId, status])
 }
+
 model Message {
-  id String @id @default(cuid())
+  id           String     @id @default(cuid())
   enrollmentId String
-  direction String
-  subject String
-  body String
-  status String @default("queued")
-  error String?
+  direction    String
+  subject      String
+  body         String
+  status       String     @default("queued")
+  error        String?
   stepPosition Int?
-  sentAt DateTime?
-  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
-  replies Reply[]
+  sentAt       DateTime?
+  enrollment   Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  replies      Reply[]
 }
+
 model Reply {
-  id String @id @default(cuid())
-  messageId String
-  body String
+  id         String   @id @default(cuid())
+  messageId  String
+  body       String
   receivedAt DateTime
-  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message    Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
 }
+
 model AdAudience {
-  id String @id @default(cuid())
+  id          String           @id @default(cuid())
   workspaceId String
-  name String
-  config Json
-  segmentId String?
-  platforms Json
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  syncs AdPlatformSync[]
+  name        String
+  config      Json
+  segmentId   String?
+  platforms   Json
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  syncs       AdPlatformSync[]
 }
+
 model AdPlatformSync {
-  id String @id @default(cuid())
+  id         String     @id @default(cuid())
   audienceId String
-  platform String
-  status String
+  platform   String
+  status     String
   externalId String?
-  matched Int @default(0)
-  uploaded Int @default(0)
-  syncedAt DateTime?
-  error String?
-  audience AdAudience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+  matched    Int        @default(0)
+  uploaded   Int        @default(0)
+  syncedAt   DateTime?
+  error      String?
+  audience   AdAudience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+
   @@unique([audienceId, platform])
 }
+
 model CreditLedger {
-  id String @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
-  tableId String?
-  provider String?
-  delta Float
-  reason String
-  refType String?
-  refId String?
-  createdAt DateTime @default(now())
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  table Table? @relation(fields: [tableId], references: [id])
+  tableId     String?
+  provider    String?
+  delta       Float
+  reason      String
+  refType     String?
+  refId       String?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  table       Table?    @relation(fields: [tableId], references: [id])
+
   @@index([workspaceId, createdAt])
   @@index([workspaceId, provider, createdAt])
 }
+
 model CreditBudget {
-  id String @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
-  scope String
-  limit Float
-  period String
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scope       String
+  limit       Float
+  period      String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
   @@unique([workspaceId, scope, period])
 }
+
 model UsageSnapshot {
-  id String @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
-  tableId String?
-  provider String?
-  period DateTime
-  credits Float
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  table Table? @relation(fields: [tableId], references: [id])
+  tableId     String?
+  provider    String?
+  period      DateTime
+  credits     Float
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  table       Table?    @relation(fields: [tableId], references: [id])
+
   @@unique([workspaceId, tableId, period])
 }
+
 model CrmSyncJob {
-  id String @id @default(cuid())
+  id          String          @id @default(cuid())
   workspaceId String
-  name String
-  source Json
+  name        String
+  source      Json
   destination Json
-  schedule String?
-  lastRunAt DateTime?
-  lastStats Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  records CrmSyncRecord[]
-  runs CrmSyncRun[]
+  schedule    String?
+  lastRunAt   DateTime?
+  lastStats   Json?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  records     CrmSyncRecord[]
+  runs        CrmSyncRun[]
+
   @@index([workspaceId, updatedAt])
 }
+
 model CrmSyncRecord {
-  id String @id @default(cuid())
+  id          String     @id @default(cuid())
   workspaceId String
-  jobId String
+  jobId       String
   externalKey String
-  data Json
-  syncedAt DateTime @default(now())
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  job CrmSyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  data        Json
+  syncedAt    DateTime   @default(now())
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  job         CrmSyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
   @@unique([jobId, externalKey])
 }
+
 model CrmSyncRun {
-  id String @id @default(cuid())
-  jobId String
-  status String
-  stats Json?
-  startedAt DateTime @default(now())
+  id          String     @id @default(cuid())
+  jobId       String
+  status      String
+  stats       Json?
+  startedAt   DateTime   @default(now())
   completedAt DateTime?
-  error String?
-  job CrmSyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  error       String?
+  job         CrmSyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
   @@index([jobId, startedAt])
 }
+
 model AlertChannel {
-  id String @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
-  type String
-  url String
-  enabled Boolean @default(true)
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  type        String
+  url         String
+  enabled     Boolean   @default(true)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
+
 model Alert {
-  id String @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String
-  dedupeKey String? @unique
-  type String
-  severity String @default("warning")
-  message String
-  metadata Json?
-  status String @default("open")
-  createdAt DateTime @default(now())
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dedupeKey   String?   @unique
+  type        String
+  severity    String    @default("warning")
+  message     String
+  metadata    Json?
+  status      String    @default("open")
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
   @@index([workspaceId, createdAt])
 }
+
 model Template {
-  id String @id @default(cuid())
+  id          String     @id @default(cuid())
   workspaceId String?
-  name String
-  kind String
-  definition Json
-  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  kind        String
+  definition  Json
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
   @@index([workspaceId, kind])
 }
