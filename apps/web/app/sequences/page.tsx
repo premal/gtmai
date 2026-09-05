@@ -1,9 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { renderSequenceTemplate } from '@gtmai/shared';
 import { Phase2Nav } from '../phase2-nav';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+const sampleContact = {
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  email: 'ada@analytical.engine',
+  data: { title: 'Founder' },
+};
+const sampleCompany = { name: 'Analytical Engines', domain: 'analytical.engine' };
 type Step = {
   id?: string;
   position: number;
@@ -11,17 +19,12 @@ type Step = {
   subjectTemplate: string;
   bodyTemplate: string;
 };
-type Sequence = {
-  id: string;
-  name: string;
-  steps: Step[];
-  inbox?: { name: string; config: Record<string, unknown> } | null;
-  _count?: { campaigns: number };
-};
+type Sequence = { id: string; name: string; steps: Step[]; _count?: { campaigns: number } };
 
 export default function SequencesPage() {
   const [items, setItems] = useState<Sequence[]>([]);
   const [selected, setSelected] = useState<Sequence | null>(null);
+  const [message, setMessage] = useState('');
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   async function load() {
     const response = await fetch(`${api}/sequences`, {
@@ -29,7 +32,9 @@ export default function SequencesPage() {
     });
     const data = (await response.json()) as Sequence[];
     setItems(data);
-    if (selected) setSelected(data.find((item) => item.id === selected.id) ?? null);
+    setSelected((current) =>
+      current ? (data.find((item) => item.id === current.id) ?? current) : (data[0] ?? null),
+    );
   }
   useEffect(() => {
     if (token) void load();
@@ -54,15 +59,71 @@ export default function SequencesPage() {
     });
     await load();
   }
+  function updateSelected(mutator: (sequence: Sequence) => Sequence) {
+    setSelected((current) => (current ? mutator(current) : current));
+  }
+  function updateStep(index: number, patch: Partial<Step>) {
+    updateSelected((sequence) => ({
+      ...sequence,
+      steps: sequence.steps.map((step, stepIndex) =>
+        stepIndex === index ? { ...step, ...patch } : step,
+      ),
+    }));
+  }
+  function addStep() {
+    updateSelected((sequence) => ({
+      ...sequence,
+      steps: [
+        ...sequence.steps,
+        {
+          position: sequence.steps.length + 1,
+          delayHours: 24,
+          subjectTemplate: 'Following up, {{contact.firstName}}',
+          bodyTemplate:
+            'Hi {{contact.firstName}}, I wanted to follow up about {{contact.data.title}}.',
+        },
+      ],
+    }));
+  }
+  function removeStep(index: number) {
+    updateSelected((sequence) => ({
+      ...sequence,
+      steps: sequence.steps
+        .filter((_, stepIndex) => stepIndex !== index)
+        .map((step, position) => ({ ...step, position: position + 1 })),
+    }));
+  }
+  function moveStep(index: number, direction: -1 | 1) {
+    updateSelected((sequence) => {
+      const next = [...sequence.steps];
+      const target = index + direction;
+      if (target < 0 || target >= next.length) return sequence;
+      [next[index], next[target]] = [next[target]!, next[index]!];
+      return {
+        ...sequence,
+        steps: next.map((step, position) => ({ ...step, position: position + 1 })),
+      };
+    });
+  }
   async function save() {
     if (!selected) return;
-    await fetch(`${api}/sequences/${selected.id}`, {
+    const response = await fetch(`${api}/sequences/${selected.id}`, {
       method: 'PATCH',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ name: selected.name, steps: selected.steps }),
     });
-    await load();
+    setMessage(response.ok ? 'Sequence saved' : 'Unable to save sequence');
+    if (response.ok) await load();
   }
+  const preview = useMemo(() => {
+    const step = selected?.steps[0];
+    return step
+      ? {
+          subject: renderSequenceTemplate(step.subjectTemplate, sampleContact, sampleCompany),
+          body: renderSequenceTemplate(step.bodyTemplate, sampleContact, sampleCompany),
+        }
+      : null;
+  }, [selected]);
   return (
     <main className="app-shell">
       <Phase2Nav active="sequences" />
@@ -93,27 +154,43 @@ export default function SequencesPage() {
                 <input
                   className="input"
                   value={selected.name}
-                  onChange={(event) => setSelected({ ...selected, name: event.target.value })}
+                  onChange={(event) =>
+                    updateSelected((sequence) => ({ ...sequence, name: event.target.value }))
+                  }
                 />
                 <div className="step-list">
                   {selected.steps.map((step, index) => (
-                    <div className="panel" key={step.id ?? step.position}>
-                      <strong>Step {index + 1}</strong>
+                    <div className="panel" key={step.id ?? `${step.position}-${index}`}>
+                      <div className="list-row">
+                        <strong>Step {index + 1}</strong>
+                        <span className="chip">Position {step.position}</span>
+                        <button
+                          className="button"
+                          disabled={index === 0}
+                          onClick={() => moveStep(index, -1)}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          className="button"
+                          disabled={index === selected.steps.length - 1}
+                          onClick={() => moveStep(index, 1)}
+                        >
+                          ↓
+                        </button>
+                        <button className="button" onClick={() => removeStep(index)}>
+                          Remove
+                        </button>
+                      </div>
                       <label>
                         Delay hours
                         <input
                           className="input"
                           type="number"
+                          min="0"
                           value={step.delayHours}
                           onChange={(event) =>
-                            setSelected({
-                              ...selected,
-                              steps: selected.steps.map((item) =>
-                                item === step
-                                  ? { ...item, delayHours: Number(event.target.value) }
-                                  : item,
-                              ),
-                            })
+                            updateStep(index, { delayHours: Number(event.target.value) })
                           }
                         />
                       </label>
@@ -123,14 +200,7 @@ export default function SequencesPage() {
                           className="input"
                           value={step.subjectTemplate}
                           onChange={(event) =>
-                            setSelected({
-                              ...selected,
-                              steps: selected.steps.map((item) =>
-                                item === step
-                                  ? { ...item, subjectTemplate: event.target.value }
-                                  : item,
-                              ),
-                            })
+                            updateStep(index, { subjectTemplate: event.target.value })
                           }
                         />
                       </label>
@@ -138,32 +208,51 @@ export default function SequencesPage() {
                         Body
                         <textarea
                           className="input"
+                          rows={4}
                           value={step.bodyTemplate}
                           onChange={(event) =>
-                            setSelected({
-                              ...selected,
-                              steps: selected.steps.map((item) =>
-                                item === step
-                                  ? { ...item, bodyTemplate: event.target.value }
-                                  : item,
-                              ),
-                            })
+                            updateStep(index, { bodyTemplate: event.target.value })
                           }
                         />
                       </label>
-                      <small>Preview: Hello Ada at Analytical Engines</small>
+                      <div className="preview-card">
+                        <small>Sample preview · Ada Lovelace · Analytical Engines</small>
+                        <strong>
+                          {renderSequenceTemplate(
+                            step.subjectTemplate,
+                            sampleContact,
+                            sampleCompany,
+                          )}
+                        </strong>
+                        <p>
+                          {renderSequenceTemplate(step.bodyTemplate, sampleContact, sampleCompany)}
+                        </p>
+                      </div>
                     </div>
                   ))}
                 </div>
-                <button className="button primary" onClick={() => void save()}>
-                  Save sequence
-                </button>
+                <div className="modal-actions">
+                  <button className="button" onClick={addStep}>
+                    + Add step
+                  </button>
+                  <button className="button primary" onClick={() => void save()}>
+                    Save sequence
+                  </button>
+                </div>
+                {preview && (
+                  <div className="preview-card">
+                    <small>Live selected-step preview</small>
+                    <strong>{preview.subject}</strong>
+                    <p>{preview.body}</p>
+                  </div>
+                )}
               </>
             ) : (
               <p>Select a sequence to edit steps and preview templates.</p>
             )}
           </div>
         </div>
+        {message && <div className="toast">{message}</div>}
       </section>
     </main>
   );

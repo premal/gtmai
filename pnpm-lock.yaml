@@ -104,6 +104,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@gtmai/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@tanstack/react-query':
         specifier: 5.62.7
         version: 5.62.7(react@19.0.0)

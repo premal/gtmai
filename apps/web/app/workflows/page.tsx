@@ -70,10 +70,25 @@ export default function WorkflowsPage() {
   }
   async function run() {
     if (!selected) return;
+    const signalTrigger = selected.graph.nodes.some((node) => node.type === 'trigger.signal');
+    let input: Record<string, unknown> = {};
+    if (signalTrigger) {
+      const value = window.prompt('Signal input JSON', '{ "email": "", "domain": "" }');
+      if (value === null) return;
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+          throw new Error('Input must be a JSON object');
+        input = parsed as Record<string, unknown>;
+      } catch {
+        setMessage('Invalid signal input JSON');
+        return;
+      }
+    }
     const response = await fetch(`${api}/workflows/${selected.id}/run`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify(input),
     });
     if (!response.ok) {
       setMessage('Unable to queue workflow run');

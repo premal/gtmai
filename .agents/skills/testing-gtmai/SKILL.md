@@ -17,6 +17,11 @@ description: How to run and E2E-test the gtmai monorepo (Next.js web :3000, Nest
 - If a web production build was accidentally run in the active checkout, remove `apps/web/.next` and restart the dev server before testing again.
 - If Next.js throws `Cannot find module './NNN.js'`, stop the web dev process, run `rm -rf apps/web/.next`, and restart it.
 - Restarting the API may invalidate the browser JWT (401s). Clear localStorage (`gtmai-token`) and log in again as `demo@gtmai.dev / demo1234`.
+- Seed prints a one-time plaintext `gtm_` API key; use it for local CLI checks, but never reuse or store the plaintext in source control.
+- Webhook CRM jobs require a `Connection` with provider `webhook` and encrypted credentials containing `credentials.url`.
+- Delayed outbound step-2 jobs should be visible in the BullMQ `bull:outbound` delayed set.
+- CLI login includes the API URL: `gtmai login --api-key <key> --url http://localhost:4000`.
+- Build the CLI with `npx pnpm@9 --filter @gtmai/cli build`.
 
 ## Useful checks
 
