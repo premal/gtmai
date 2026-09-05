@@ -77,9 +77,13 @@ model Workspace {
   sequences Sequence[]
   campaigns Campaign[]
   adAudiences AdAudience[]
+  crmSyncJobs CrmSyncJob[]
+  crmSyncRecords CrmSyncRecord[]
   creditLedger CreditLedger[]
   creditBudgets CreditBudget[]
   usageSnapshots UsageSnapshot[]
+  alerts Alert[]
+  alertChannels AlertChannel[]
   templates Template[]
 }
 model User {
@@ -209,6 +213,7 @@ model Contact {
   company Company? @relation(fields: [companyId], references: [id])
   signalEvents SignalEvent[]
   segmentMemberships SegmentMembership[]
+  enrollments Enrollment[]
   @@unique([workspaceId, emailKey])
   @@index([workspaceId, email])
 }
@@ -235,6 +240,7 @@ model Segment {
   filter Json
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   memberships SegmentMembership[]
+  campaigns Campaign[]
   @@index([workspaceId])
 }
 model SegmentMembership {
@@ -360,6 +366,7 @@ model SequenceStep {
   subjectTemplate String
   bodyTemplate String
   sequence Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  @@unique([sequenceId, position])
 }
 model Campaign {
   id String @id @default(cuid())
@@ -367,17 +374,26 @@ model Campaign {
   sequenceId String
   name String
   status String
+  segmentId String?
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   sequence Sequence @relation(fields: [sequenceId], references: [id])
+  segment Segment? @relation(fields: [segmentId], references: [id])
   enrollments Enrollment[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([workspaceId, status])
 }
 model Enrollment {
   id String @id @default(cuid())
   campaignId String
   contactId String
   status String
+  nextStepAt DateTime?
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
   messages Message[]
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
 }
 model Message {
   id String @id @default(cuid())
@@ -385,6 +401,9 @@ model Message {
   direction String
   subject String
   body String
+  status String @default("queued")
+  error String?
+  stepPosition Int?
   sentAt DateTime?
   enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
   replies Reply[]
@@ -401,6 +420,8 @@ model AdAudience {
   workspaceId String
   name String
   config Json
+  segmentId String?
+  platforms Json
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   syncs AdPlatformSync[]
 }
@@ -410,7 +431,12 @@ model AdPlatformSync {
   platform String
   status String
   externalId String?
+  matched Int @default(0)
+  uploaded Int @default(0)
+  syncedAt DateTime?
+  error String?
   audience AdAudience @relation(fields: [audienceId], references: [id], onDelete: Cascade)
+  @@unique([audienceId, platform])
 }
 model CreditLedger {
   id String @id @default(cuid())
@@ -432,16 +458,64 @@ model CreditBudget {
   limit Float
   period String
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@unique([workspaceId, scope, period])
 }
 model UsageSnapshot {
   id String @id @default(cuid())
   workspaceId String
   tableId String?
+  provider String?
   period DateTime
   credits Float
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   table Table? @relation(fields: [tableId], references: [id])
   @@unique([workspaceId, tableId, period])
+}
+model CrmSyncJob {
+  id String @id @default(cuid())
+  workspaceId String
+  name String
+  source Json
+  destination Json
+  schedule String?
+  lastRunAt DateTime?
+  lastStats Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  records CrmSyncRecord[]
+  @@index([workspaceId, updatedAt])
+}
+model CrmSyncRecord {
+  id String @id @default(cuid())
+  workspaceId String
+  jobId String
+  externalKey String
+  data Json
+  syncedAt DateTime @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  job CrmSyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@unique([jobId, externalKey])
+}
+model AlertChannel {
+  id String @id @default(cuid())
+  workspaceId String
+  type String
+  url String
+  enabled Boolean @default(true)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+model Alert {
+  id String @id @default(cuid())
+  workspaceId String
+  type String
+  severity String @default("warning")
+  message String
+  metadata Json?
+  status String @default("open")
+  createdAt DateTime @default(now())
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@index([workspaceId, createdAt])
 }
 model Template {
   id String @id @default(cuid())

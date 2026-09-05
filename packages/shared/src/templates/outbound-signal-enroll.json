@@ -1,0 +1,16 @@
+{
+  "id": "builtin-outbound-signal-enroll",
+  "name": "Outbound: new signal → enroll in campaign",
+  "kind": "workflow",
+  "definition": {
+    "nodes": [
+      { "id": "trigger", "type": "trigger.signal", "config": {} },
+      {
+        "id": "enroll",
+        "type": "sequence.enroll",
+        "config": { "campaignId": "", "contactId": "{{trigger.contactId}}" }
+      }
+    ],
+    "edges": [{ "from": "trigger", "to": "enroll" }]
+  }
+}
