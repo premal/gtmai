@@ -12,6 +12,7 @@ import {
   executeWaterfall,
   validateEncryptionKey,
 } from './executors';
+import { budgetExceeded } from './budgets';
 
 const db = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
@@ -94,6 +95,23 @@ async function execute(job: Job<CellData>): Promise<void> {
       return;
     }
     const config = column.config as Values;
+    const estimatedCredits = Number(
+      config.creditCost ?? (['formula', 'input'].includes(column.kind) ? 0 : 1),
+    );
+    if (
+      await budgetExceeded(
+        workspaceId,
+        estimatedCredits,
+        column.tableId,
+        String(config.provider ?? ''),
+      )
+    ) {
+      await db.cell.update({
+        where: { id: cell.id },
+        data: { status: 'skipped', error: 'budget exceeded', durationMs: Date.now() - started },
+      });
+      return;
+    }
     let result: ActionResult<unknown>;
     let provider = 'formula';
     if (column.kind === 'formula') {

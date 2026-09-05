@@ -4,6 +4,10 @@ import Redis from 'ioredis';
 import { PrismaClient, Prisma } from '@gtmai/db';
 import { runProviderAction, type Values } from './executors';
 import { runWorkflow } from './workflows';
+import { startOutboundWorker } from './outbound';
+import { startAdsWorker } from './ads';
+import { startCrmWorker } from './crm';
+import { startUsageWorker } from './usage';
 
 const db = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
@@ -111,5 +115,9 @@ export function startPhase2Workers() {
     connection: redis,
     concurrency: 4,
   });
-  return { signalWorker, workflowWorker };
+  const outboundWorker = startOutboundWorker();
+  const adsWorker = startAdsWorker();
+  const crmWorker = startCrmWorker();
+  const usageWorker = startUsageWorker();
+  return { signalWorker, workflowWorker, outboundWorker, adsWorker, crmWorker, usageWorker };
 }
