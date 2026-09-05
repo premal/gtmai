@@ -123,15 +123,40 @@ export async function webSearch(
   const response = await context.fetch(
     `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
   );
-  const text = await response.text();
-  const sources = [...text.matchAll(/result__a[^>]+href="([^"]+)/g)]
+  const html = await response.text();
+  const decodeHtml = (value: string): string =>
+    value
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+  const decodeHref = (value: string): string => {
+    const href = decodeHtml(value);
+    const redirect = href.match(/[?&]uddg=([^&]+)/)?.[1];
+    if (redirect) {
+      try {
+        return decodeURIComponent(redirect);
+      } catch {
+        return redirect;
+      }
+    }
+    return href.startsWith('//') ? `https:${href}` : href;
+  };
+  const sourceMatches = [...html.matchAll(/result__a[^>]+href="([^"]+)/g)].slice(0, 5);
+  const snippets = [...html.matchAll(/result__snippet[^>]*>([\s\S]*?)<\/(?:a|div|span)>/g)]
     .slice(0, 5)
-    .map((match) => match[1]!);
+    .map((match) =>
+      decodeHtml(
+        match[1]!
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      ),
+    );
+  const sources = sourceMatches.map((match) => decodeHref(match[1]!));
   return {
-    text: text
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .slice(0, 20_000),
+    text: snippets.join('\n').slice(0, 20_000),
     sources,
   };
 }
@@ -197,10 +222,37 @@ export async function runAgentWithClient(
         ? result.sources.filter((source): source is string => typeof source === 'string')
         : [];
       try {
-        return output.parse({
+        const parsed = output.parse({
           ...result,
           sources: [...new Set([...resultSources, ...sources])],
         });
+        if (Object.keys(parsed.fields).length === 0 && /\bfields\b/i.test(prompt)) {
+          try {
+            const repair = JSON.parse(
+              await client.complete([
+                {
+                  role: 'system',
+                  content:
+                    'Extract the structured fields requested by the user prompt from the research answer. Respond only as JSON: {"fields": {...}}. Use "unknown"/""/0 when not determined.',
+                },
+                {
+                  role: 'user',
+                  content: `Prompt:\n${prompt}\n\nAnswer:\n${parsed.answer}\n\nSources:\n${sources.join('\n')}`,
+                },
+              ]),
+            ) as { fields?: unknown };
+            if (
+              repair.fields &&
+              typeof repair.fields === 'object' &&
+              !Array.isArray(repair.fields)
+            ) {
+              parsed.fields = repair.fields as Record<string, unknown>;
+            }
+          } catch {
+            // Keep the original finish result when field repair fails.
+          }
+        }
+        return parsed;
       } catch {
         return {
           answer: message.raw ?? '',
@@ -211,9 +263,19 @@ export async function runAgentWithClient(
       }
     }
     if (message.tool === 'web_search') {
-      const result = await webSearch(message.arguments?.query ?? prompt, context);
-      sources.push(...result.sources);
-      messages.push({ role: 'tool', content: JSON.stringify({ tool: 'web_search', ...result }) });
+      try {
+        const result = await webSearch(message.arguments?.query ?? prompt, context);
+        sources.push(...result.sources);
+        messages.push({ role: 'tool', content: JSON.stringify({ tool: 'web_search', ...result }) });
+      } catch (error) {
+        messages.push({
+          role: 'tool',
+          content: JSON.stringify({
+            tool: 'web_search',
+            error: error instanceof Error ? error.message : 'search failed',
+          }),
+        });
+      }
       continue;
     }
     if (message.tool === 'fetch_page') {
@@ -222,9 +284,20 @@ export async function runAgentWithClient(
         messages.push({ role: 'tool', content: JSON.stringify({ error: 'url is required' }) });
         continue;
       }
-      const text = await fetchPage(url, context.fetch);
-      sources.push(url);
-      messages.push({ role: 'tool', content: JSON.stringify({ tool: 'fetch_page', url, text }) });
+      try {
+        const text = await fetchPage(url, context.fetch);
+        sources.push(url);
+        messages.push({ role: 'tool', content: JSON.stringify({ tool: 'fetch_page', url, text }) });
+      } catch (error) {
+        messages.push({
+          role: 'tool',
+          content: JSON.stringify({
+            tool: 'fetch_page',
+            url,
+            error: error instanceof Error ? error.message : 'fetch failed',
+          }),
+        });
+      }
       continue;
     }
     messages.push({ role: 'tool', content: JSON.stringify({ error: 'Unknown tool' }) });

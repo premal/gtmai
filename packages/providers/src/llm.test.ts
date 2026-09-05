@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runAgentWithClient } from './llm';
+import { runAgentWithClient, webSearch } from './llm';
 
 describe('agent loop', () => {
   it('uses search, fetch, and finish tools within the step limit', async () => {
@@ -68,5 +68,47 @@ describe('agent loop', () => {
       sources: [],
       reasoning: '',
     });
+  });
+
+  it('decodes DuckDuckGo redirects and uses result snippets', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(`
+        <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fstory&amp;rut=abc">Story</a>
+        <div class="result__snippet">A <b>useful</b> search snippet.</div>
+      `),
+    );
+    const result = await webSearch('Clay', {
+      credentials: {},
+      fetch: fetcher as unknown as typeof fetch,
+      logger: { info: () => undefined, error: () => undefined },
+    });
+    expect(result.sources).toEqual(['https://example.com/story']);
+    expect(result.text).toBe('A useful search snippet.');
+  });
+
+  it('repairs empty fields from a follow-up structured response', async () => {
+    const client = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            tool: 'finish',
+            result: { answer: 'The company uses the technology.', fields: {} },
+          }),
+        )
+        .mockResolvedValueOnce(JSON.stringify({ fields: { uses_clay: 'yes' } })),
+    };
+    const result = await runAgentWithClient(
+      'Research whether the company uses Clay. Finish with fields: uses_clay.',
+      {
+        credentials: {},
+        fetch: vi.fn() as unknown as typeof fetch,
+        logger: { info: () => undefined, error: () => undefined },
+      },
+      client,
+    );
+    expect(result.fields).toEqual({ uses_clay: 'yes' });
+    expect(client.complete).toHaveBeenCalledTimes(2);
   });
 });

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { createRowWithValues } from '../tables/row-helper';
 
 type Request = FastifyRequest & { user: AuthUser };
 type TemplateKind = 'table' | 'workflow' | 'function';
@@ -90,33 +91,10 @@ export class TemplatesController {
         );
       }
       for (const [position, values] of (definition.rows ?? []).entries()) {
-        const row = await this.prisma.row.create({ data: { tableId: table.id, position } });
-        await this.prisma.$transaction(
-          columns.map((column) => {
-            const value = values[column.name];
-            if (column.kind === 'input') {
-              return this.prisma.cell.create({
-                data: {
-                  rowId: row.id,
-                  columnId: column.id,
-                  value: value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue),
-                  status: 'done',
-                },
-              });
-            }
-            return this.prisma.cell.create({
-              data:
-                value === undefined
-                  ? { rowId: row.id, columnId: column.id, status: 'skipped' }
-                  : {
-                      rowId: row.id,
-                      columnId: column.id,
-                      value: value as Prisma.InputJsonValue,
-                      status: 'done',
-                    },
-            });
-          }),
+        const cellValues = Object.fromEntries(
+          columns.map((column) => [column.id, values[column.name]]),
         );
+        await createRowWithValues(this.prisma, table.id, columns, cellValues, position);
       }
       return { kind: 'table', id: table.id };
     }

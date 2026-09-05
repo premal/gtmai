@@ -15,12 +15,13 @@ import type { Queue } from 'bullmq';
 import type { FastifyRequest } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
 import { Prisma } from '@gtmai/db';
-import { runAgent } from '@gtmai/providers';
+import { providers, runAgent } from '@gtmai/providers';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { decryptCredentials } from '../common/crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { createRowWithValues } from './row-helper';
 
 const tableBody = z.object({ name: z.string().min(1) });
 const columnBody = z.object({
@@ -153,35 +154,69 @@ export class TablesController {
     if (!table) throw new Error('Table not found');
     const input = z.object({ values: z.record(z.unknown()).default({}) }).parse(body);
     const position = await this.prisma.row.count({ where: { tableId } });
-    const row = await this.prisma.row.create({ data: { tableId, position } });
     const columns = await this.prisma.column.findMany({ where: { tableId } });
-    await this.prisma.$transaction(
-      columns.map((column) => {
-        const value = input.values[column.name];
-        if (column.kind === 'input') {
-          return this.prisma.cell.create({
-            data: {
-              rowId: row.id,
-              columnId: column.id,
-              value: value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue),
-              status: 'done',
-            },
-          });
-        }
-        return this.prisma.cell.create({
-          data:
-            value === undefined
-              ? { rowId: row.id, columnId: column.id, status: 'skipped' }
-              : {
-                  rowId: row.id,
-                  columnId: column.id,
-                  value: value as Prisma.InputJsonValue,
-                  status: 'done',
-                },
-        });
-      }),
+    const values = Object.fromEntries(
+      columns.map((column) => [column.id, input.values[column.name]]),
     );
-    return row;
+    return createRowWithValues(this.prisma, tableId, columns, values, position);
+  }
+
+  @Post(':id/source')
+  async importSource(@Param('id') tableId: string, @Body() body: unknown, @Req() request: Request) {
+    const input = z
+      .object({
+        provider: z.string().min(1),
+        action: z.string().min(1),
+        input: z.record(z.unknown()),
+        mapping: z.record(z.string()).optional(),
+      })
+      .parse(body);
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      include: { columns: true },
+    });
+    if (!table) throw new Error('Table not found');
+    const provider = providers.find((item) => item.id === input.provider);
+    const action = provider?.actions.find((item) => item.id === input.action);
+    if (!provider || !action || action.category !== 'search') {
+      throw new Error(`Search action not found: ${input.provider}/${input.action}`);
+    }
+    const connection = await this.prisma.connection.findFirst({
+      where: { workspaceId: request.user.workspaceId, provider: input.provider },
+    });
+    if (!connection)
+      throw new Error(`No connection for ${input.provider} — add one in Connections`);
+    const result = await action.run(input.input, {
+      credentials: decryptCredentials(connection.encryptedCredentials),
+      fetch,
+      logger: { info: () => undefined, error: () => undefined },
+    });
+    if (!result.found) throw new Error(result.reason ?? 'Source search failed');
+    const data = result.data as {
+      companies?: Record<string, unknown>[];
+      total?: number;
+    };
+    const companies = Array.isArray(data.companies) ? data.companies : [];
+    const defaults: Record<string, string> = {
+      Company: 'name',
+      Domain: 'domain',
+      Industry: 'industry',
+      Employees: 'employees',
+      Country: 'country',
+    };
+    const mapping = input.mapping ?? {};
+    const columns = table.columns;
+    const position = await this.prisma.row.count({ where: { tableId } });
+    for (const [index, company] of companies.entries()) {
+      const values = Object.fromEntries(
+        columns.map((column) => {
+          const sourceKey = mapping[column.name] ?? defaults[column.name];
+          return [column.id, sourceKey ? company[sourceKey] : undefined];
+        }),
+      );
+      await createRowWithValues(this.prisma, tableId, columns, values, position + index);
+    }
+    return { imported: companies.length, total: data.total ?? companies.length };
   }
 
   @Post(':id/import')

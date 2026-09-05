@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppNav } from '../../app-nav';
 import { useDialog } from '../../components/prompt-dialog';
+import { useToast } from '../../components/toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Cell = {
@@ -43,6 +44,27 @@ type CatalogAction = {
   category: string;
   creditCost: number;
 };
+type SourceField = {
+  name: string;
+  label: string;
+  type?: 'text' | 'number';
+  required?: boolean;
+  hint?: string;
+};
+const sourceFields: Record<string, SourceField[]> = {
+  'theirstack.searchCompanies': [
+    {
+      name: 'technology',
+      label: 'Technology slug',
+      required: true,
+      hint: 'TheirStack slug, e.g. salesforce, hubspot, clay',
+    },
+    { name: 'country', label: 'Country (ISO2)' },
+    { name: 'minEmployees', label: 'Minimum employees', type: 'number' },
+    { name: 'maxEmployees', label: 'Maximum employees', type: 'number' },
+    { name: 'limit', label: 'Limit', type: 'number' },
+  ],
+};
 
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const [tableId, setTableId] = useState('');
@@ -64,6 +86,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [catalog, setCatalog] = useState<CatalogAction[]>([]);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceActionId, setSourceActionId] = useState('theirstack.searchCompanies');
+  const [sourceInput, setSourceInput] = useState<Record<string, string>>({ limit: '25' });
   const [csv, setCsv] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -79,6 +104,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [menuColumnId, setMenuColumnId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const dialog = useDialog();
+  const { toast } = useToast();
   const gridRef = useRef<HTMLDivElement>(null);
   const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const menuRef = useRef<HTMLDivElement>(null);
@@ -299,6 +325,32 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     await reload();
   }
 
+  async function importSource(): Promise<void> {
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    const fields = sourceFields[sourceActionId] ?? [];
+    const input = Object.fromEntries(
+      fields
+        .filter((field) => sourceInput[field.name] !== undefined && sourceInput[field.name] !== '')
+        .map((field) => [
+          field.name,
+          field.type === 'number' ? Number(sourceInput[field.name]) : sourceInput[field.name],
+        ]),
+    );
+    const response = await fetch(`${api}/tables/${tableId}/source`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'theirstack', action: sourceActionId, input }),
+    });
+    const body = (await response.json()) as { imported?: number; message?: string };
+    if (!response.ok) {
+      toast(body.message ?? 'Source import failed', { kind: 'error' });
+      return;
+    }
+    setSourceOpen(false);
+    await reload();
+    toast(`Imported ${body.imported ?? 0} companies`);
+  }
+
   async function previewAgent(): Promise<void> {
     if (!selectedColumn) return;
     const token = localStorage.getItem('gtmai-token') ?? '';
@@ -405,6 +457,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               }}
             >
               ＋ Add column
+            </button>
+            <button className="button" onClick={() => setSourceOpen(true)}>
+              Import from source
             </button>
             <button className="button" onClick={() => void addRow()}>
               ＋ Row
@@ -1044,6 +1099,58 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {sourceOpen && (
+        <div className="modal-backdrop" onClick={() => setSourceOpen(false)}>
+          <section className="modal" onClick={(event) => event.stopPropagation()}>
+            <h3>Import from source</h3>
+            <p className="muted">Search a provider and append matching companies as new rows.</p>
+            <label>
+              Search action
+              <select
+                value={sourceActionId}
+                onChange={(event) => {
+                  setSourceActionId(event.target.value);
+                  setSourceInput({ limit: '25' });
+                }}
+              >
+                {catalog
+                  .filter((item) => item.category === 'search')
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.provider} · {item.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {(sourceFields[sourceActionId] ?? []).map((field) => (
+              <label key={field.name}>
+                {field.label}
+                {field.required && ' *'}
+                <input
+                  type={field.type ?? 'text'}
+                  value={sourceInput[field.name] ?? ''}
+                  required={field.required}
+                  onChange={(event) =>
+                    setSourceInput((current) => ({
+                      ...current,
+                      [field.name]: event.target.value,
+                    }))
+                  }
+                />
+                {field.hint && <span className="muted">{field.hint}</span>}
+              </label>
+            ))}
+            <div className="modal-actions">
+              <button className="button" onClick={() => setSourceOpen(false)}>
+                Cancel
+              </button>
+              <button className="button primary" onClick={() => void importSource()}>
+                Import companies
+              </button>
+            </div>
+          </section>
         </div>
       )}
       {message && <div className="toast">{message}</div>}
