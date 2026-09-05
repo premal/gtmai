@@ -65,6 +65,7 @@ const sourceFields: Record<string, SourceField[]> = {
     { name: 'limit', label: 'Limit', type: 'number' },
   ],
 };
+const sourceActionIds = new Set(Object.keys(sourceFields));
 
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const [tableId, setTableId] = useState('');
@@ -708,7 +709,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                                   >
                                     {cell.status === 'error'
                                       ? (cell.error ?? 'error')
-                                      : cell.status}
+                                      : cell.status === 'running'
+                                        ? 'running…'
+                                        : cell.status}
                                   </span>
                                 )}
                               </td>
@@ -1116,7 +1119,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                 }}
               >
                 {catalog
-                  .filter((item) => item.category === 'search')
+                  .filter((item) => item.category === 'search' && sourceActionIds.has(item.id))
                   .map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.provider} · {item.name}

@@ -28,6 +28,7 @@ description: How to run and E2E-test the gtmai monorepo (Next.js web :3000, Nest
 - Seeded table "Prospects" has 20 rows; find its id via `docker exec gtmai-postgres-1 psql -U gtmai -d gtmai -c 'select id,name from "Table"'`.
 - SSE: `curl -N -H 'Origin: http://localhost:3000' "localhost:4000/tables/<id>/events?token=<jwt>"` should return `text/event-stream`, CORS origin header and a leading `: ok`. If the grid never updates without refresh, check this first.
 - Job status: Redis keys `bull:cells:<n>`; cell status/value in table `"Cell"`.
+- To rerun one cell, use the cell detail drawer's rerun action; agent cells can take about two minutes. When a run fails, inspect the API response body for the underlying error message rather than relying only on the UI status.
 - Credits ledger row count: `select count(*) from "CreditLedger"`.
 - Swagger: http://localhost:4000/docs.
 

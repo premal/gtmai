@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AppNav } from '../app-nav';
+import { useDialog } from '../components/prompt-dialog';
 import { useToast } from '../components/toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -31,6 +32,7 @@ export default function ConnectionsPage() {
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   const { toast } = useToast();
+  const dialog = useDialog();
 
   async function load(): Promise<void> {
     const [connectionsResponse, providersResponse] = await Promise.all([
@@ -62,6 +64,13 @@ export default function ConnectionsPage() {
   }
 
   async function remove(id: string): Promise<void> {
+    const confirmed = await dialog.confirm({
+      title: 'Delete connection?',
+      description: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
     await fetch(`${api}/connections/${id}`, { method: 'DELETE', headers });
     await load();
   }
@@ -140,7 +149,9 @@ export default function ConnectionsPage() {
             {(providers.find((item) => item.id === provider)?.auth.fields ?? []).map((field) => (
               <label key={field.key}>
                 {field.label}
-                {field.optional && <span className="muted"> (optional)</span>}
+                {field.optional && !/\boptional\b/i.test(field.label) && (
+                  <span className="muted"> (optional)</span>
+                )}
                 <input
                   type={field.secret === false ? 'text' : 'password'}
                   value={credentials[field.key] ?? ''}
@@ -151,6 +162,11 @@ export default function ConnectionsPage() {
                     }))
                   }
                 />
+                {field.key === 'tavilyApiKey' && (
+                  <span className="muted">
+                    Enables web search for agents; falls back to DuckDuckGo/Bing
+                  </span>
+                )}
               </label>
             ))}
             <div className="modal-actions">

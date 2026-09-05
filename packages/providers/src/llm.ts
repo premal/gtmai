@@ -26,7 +26,7 @@ async function structuredChat(
   context: RunContext,
 ): Promise<AgentResult> {
   if (value.provider === 'anthropic') {
-    const client = new Anthropic({ apiKey: context.credentials.apiKey });
+    const client = new Anthropic({ apiKey: context.credentials.apiKey, maxRetries: 5 });
     const response = await client.messages.create({
       model: value.model ?? 'claude-3-5-haiku-latest',
       max_tokens: 2_000,
@@ -39,7 +39,7 @@ async function structuredChat(
       reasoning: '',
     });
   }
-  const client = new OpenAI({ apiKey: context.credentials.apiKey });
+  const client = new OpenAI({ apiKey: context.credentials.apiKey, maxRetries: 5 });
   const response = await client.chat.completions.create({
     model: value.model ?? 'gpt-4o-mini',
     messages: [{ role: 'user', content: value.prompt }],
@@ -62,7 +62,7 @@ export const llmProvider: Provider = {
       { key: 'apiKey', label: 'API key', secret: true },
       {
         key: 'tavilyApiKey',
-        label: 'Tavily API key (optional — web search; falls back to DuckDuckGo)',
+        label: 'Tavily API key',
         secret: true,
         optional: true,
       },
@@ -429,7 +429,7 @@ function sdkClient(
   model?: string,
 ): AgentClient {
   if (provider === 'anthropic') {
-    const client = new Anthropic({ apiKey: context.credentials.apiKey });
+    const client = new Anthropic({ apiKey: context.credentials.apiKey, maxRetries: 5 });
     return {
       async complete(messages) {
         const system = messages.find((item) => item.role === 'system')?.content;
@@ -448,7 +448,7 @@ function sdkClient(
       },
     };
   }
-  const client = new OpenAI({ apiKey: context.credentials.apiKey });
+  const client = new OpenAI({ apiKey: context.credentials.apiKey, maxRetries: 5 });
   return {
     async complete(messages) {
       const response = await client.chat.completions.create({

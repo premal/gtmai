@@ -516,6 +516,10 @@ h3 {
   background: #dcfce7;
   color: #16803b;
 }
+.status.running {
+  background: #e0e7ff;
+  color: #4f46e5;
+}
 .status.error {
   display: block;
   background: #fee2e2;

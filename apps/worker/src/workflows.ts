@@ -233,11 +233,15 @@ async function executeWorkflowNode(
             : { rowId: row.id, columnId: column.id, value: json(resolved), status: 'done' },
       });
       if (resolved === undefined && column.kind !== 'input') {
-        await new Queue('cells', { connection: redis }).add('cell', {
-          rowId: row.id,
-          columnId: column.id,
-          workspaceId,
-        });
+        await new Queue('cells', { connection: redis }).add(
+          'cell',
+          {
+            rowId: row.id,
+            columnId: column.id,
+            workspaceId,
+          },
+          { attempts: 3, backoff: { type: 'exponential', delay: 10_000 } },
+        );
       }
     }
     return { output: { rowId: row.id }, credits: 0 };

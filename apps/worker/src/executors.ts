@@ -183,7 +183,7 @@ export async function executeAgent(
     agentProvider,
     typeof config.model === 'string' ? config.model : undefined,
   );
-  return { result: { found: true, data: agent }, provider: agentProvider, creditsUsed: 0 };
+  return { result: { found: true, data: agent }, provider: agentProvider, creditsUsed: 5 };
 }
 
 export async function executeHttp(

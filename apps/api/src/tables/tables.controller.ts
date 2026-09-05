@@ -179,7 +179,7 @@ export class TablesController {
     const provider = providers.find((item) => item.id === input.provider);
     const action = provider?.actions.find((item) => item.id === input.action);
     if (!provider || !action || action.category !== 'search') {
-      throw new Error(`Search action not found: ${input.provider}/${input.action}`);
+      throw new Error(`Unknown search action: ${input.provider}/${input.action}`);
     }
     const connection = await this.prisma.connection.findFirst({
       where: { workspaceId: request.user.workspaceId, provider: input.provider },
@@ -404,11 +404,15 @@ export class TablesController {
         create: { rowId: row.id, columnId, status: 'queued' },
         update: { status: 'queued', error: null },
       });
-      await this.queue.add('cell', {
-        rowId: row.id,
-        columnId,
-        workspaceId: request.user.workspaceId,
-      });
+      await this.queue.add(
+        'cell',
+        {
+          rowId: row.id,
+          columnId,
+          workspaceId: request.user.workspaceId,
+        },
+        { attempts: 3, backoff: { type: 'exponential', delay: 10_000 } },
+      );
       queued += 1;
     }
     return { queued };
@@ -429,11 +433,15 @@ export class TablesController {
         create: { rowId, columnId: column.id, status: 'queued' },
         update: { status: 'queued', error: null },
       });
-      await this.queue.add('cell', {
-        rowId,
-        columnId: column.id,
-        workspaceId: request.user.workspaceId,
-      });
+      await this.queue.add(
+        'cell',
+        {
+          rowId,
+          columnId: column.id,
+          workspaceId: request.user.workspaceId,
+        },
+        { attempts: 3, backoff: { type: 'exponential', delay: 10_000 } },
+      );
     }
     return { queued: columns.length };
   }

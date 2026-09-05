@@ -37,6 +37,11 @@ export function hasMissingInputs(input: Values): boolean {
   );
 }
 
+const cellJobOptions = {
+  attempts: 3,
+  backoff: { type: 'exponential' as const, delay: 10_000 },
+};
+
 function rowValues(row: { cells: { value: unknown; column: { name: string } }[] }): Values {
   return Object.fromEntries(row.cells.map((cell) => [cell.column.name, cell.value]));
 }
@@ -58,7 +63,7 @@ async function enqueueDependents(
         create: { rowId, columnId: column.id, status: 'queued' },
         update: { status: 'queued', error: null },
       });
-      await queue.add('cell', { rowId, columnId: column.id, workspaceId });
+      await queue.add('cell', { rowId, columnId: column.id, workspaceId }, cellJobOptions);
     }
   }
   await queue.close();
@@ -77,13 +82,17 @@ async function execute(job: Job<CellData>): Promise<void> {
   if (!column || !row) throw new Error('Cell target not found');
   const values = rowValues(row);
   const claimed = await db.cell.updateMany({
-    where: { rowId, columnId, status: 'queued' },
+    where: { rowId, columnId, status: { in: ['queued', 'running'] } },
     data: { status: 'running', error: null },
   });
   if (claimed.count === 0) return;
   const cell = await db.cell.findUniqueOrThrow({
     where: { rowId_columnId: { rowId, columnId } },
   });
+  await publisher.publish(
+    `table:${column.tableId}`,
+    JSON.stringify({ rowId, columnId, status: 'running' }),
+  );
   const started = Date.now();
   let creditsUsed = 0;
   try {
@@ -96,7 +105,8 @@ async function execute(job: Job<CellData>): Promise<void> {
     }
     const config = column.config as Values;
     const estimatedCredits = Number(
-      config.creditCost ?? (['formula', 'input'].includes(column.kind) ? 0 : 1),
+      config.creditCost ??
+        (column.kind === 'agent' ? 5 : ['formula', 'input'].includes(column.kind) ? 0 : 1),
     );
     if (
       await budgetExceeded(
@@ -233,14 +243,17 @@ async function execute(job: Job<CellData>): Promise<void> {
     await enqueueDependents(column.tableId, column.name, rowId, workspaceId);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Execution failed';
-    await db.cell.update({
-      where: { id: cell.id },
-      data: { status: 'error', error: message, durationMs: Date.now() - started },
-    });
-    await publisher.publish(
-      `table:${column.tableId}`,
-      JSON.stringify({ rowId, columnId, status: 'error', error: message }),
-    );
+    const finalAttempt = (job.attemptsMade ?? 0) + 1 >= (job.opts.attempts ?? 1);
+    if (finalAttempt) {
+      await db.cell.update({
+        where: { id: cell.id },
+        data: { status: 'error', error: message, durationMs: Date.now() - started },
+      });
+      await publisher.publish(
+        `table:${column.tableId}`,
+        JSON.stringify({ rowId, columnId, status: 'error', error: message }),
+      );
+    }
     throw error;
   }
 }
