@@ -45,6 +45,21 @@ export class TablesController {
     @InjectQueue('cells') private readonly queue: Queue,
   ) {}
 
+  @Get()
+  list(@Req() request: Request) {
+    return this.prisma.table.findMany({
+      where: { workspaceId: request.user.workspaceId },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { rows: true, columns: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
   @Get(':id')
   async get(@Param('id') id: string, @Req() request: Request) {
     const table = await this.prisma.table.findFirst({
