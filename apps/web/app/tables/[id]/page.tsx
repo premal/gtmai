@@ -2,7 +2,7 @@
 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SignOutFooter } from '../../auth';
+import { AppNav } from '../../app-nav';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Cell = {
@@ -361,25 +361,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   if (!table) return <main className="loading">Loading table…</main>;
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">G</span>
-          <strong>GTM AI</strong>
-        </div>
+      <AppNav>
         <a className="back-link" href="/">
           ← All tables
         </a>
         <div className="sidebar-section">TABLE</div>
         <div className="current-table">▦ {table.name}</div>
-        <nav>
-          <a className="active" href={`/tables/${tableId}`}>
-            ▤ Grid
-          </a>
-          <a href="/connections">⌁ Connections</a>
-          <a href="/credits">◈ Credits</a>
-        </nav>
-        <SignOutFooter />
-      </aside>
+      </AppNav>
       <section className="content wide">
         <header className="topbar">
           <div>

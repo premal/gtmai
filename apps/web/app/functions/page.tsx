@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
 import { WorkflowEditor, type EditorGraph } from '../../components/workflow-editor';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -101,7 +101,7 @@ export default function FunctionsPage() {
   }
   return (
     <main className="app-shell">
-      <Phase2Nav active="functions" />
+      <AppNav active="functions" />
       <section className="content wide">
         <header className="topbar">
           <div>

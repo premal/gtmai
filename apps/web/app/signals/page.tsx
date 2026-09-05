@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Definition = { id: string; name: string; type: string; _count: { events: number } };
@@ -59,7 +59,7 @@ export default function SignalsPage() {
   }
   return (
     <main className="app-shell">
-      <Phase2Nav active="signals" />
+      <AppNav active="signals" />
       <section className="content">
         <header className="topbar">
           <div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Budget = { id: string; scope: string; period: string; limit: number };
 type Alert = { id: string; type: string; message: string; createdAt: string };
@@ -112,7 +112,7 @@ export default function CreditsPage() {
     .map(([key, spend]) => ({ key, spend }));
   return (
     <main className="app-shell">
-      <Phase2Nav active="credits" />
+      <AppNav active="credits" />
       <section className="content wide">
         <header className="topbar">
           <div>

@@ -54,6 +54,19 @@ a {
   font-size: 12px;
   margin-bottom: 20px;
 }
+.sidebar-context {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.sidebar-context .current-table {
+  margin-bottom: 0;
+}
+.nav-divider {
+  height: 1px;
+  margin: 8px 10px;
+  background: #edf0f5;
+}
 .sidebar nav {
   display: grid;
   gap: 4px;

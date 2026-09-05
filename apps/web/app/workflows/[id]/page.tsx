@@ -1,7 +1,7 @@
 'use client';
 
 import { use, useEffect, useState } from 'react';
-import { Phase2Nav } from '../../phase2-nav';
+import { AppNav } from '../../app-nav';
 import { WorkflowEditor, type EditorGraph } from '../../../components/workflow-editor';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -149,7 +149,7 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   if (notFound)
     return (
       <main className="app-shell">
-        <Phase2Nav active="workflows" />
+        <AppNav active="workflows" />
         <section className="content empty-state">
           <h2>Workflow not found</h2>
           <a className="button" href="/workflows">
@@ -161,13 +161,13 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   if (!workflow)
     return (
       <main className="app-shell">
-        <Phase2Nav active="workflows" />
+        <AppNav active="workflows" />
         <section className="content empty-state">Loading workflow…</section>
       </main>
     );
   return (
     <main className="app-shell">
-      <Phase2Nav active="workflows" />
+      <AppNav active="workflows" />
       <section className="content wide">
         <header className="topbar">
           <div>

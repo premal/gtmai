@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Segment = { id: string; name: string };
 type Sync = {
@@ -75,7 +75,7 @@ export default function AdsPage() {
   }
   return (
     <main className="app-shell">
-      <Phase2Nav active="ads" />
+      <AppNav active="ads" />
       <section className="content wide">
         <header className="topbar">
           <div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Template = { id: string; name: string; kind: string; definition: unknown };
@@ -26,7 +26,7 @@ export default function TemplatesPage() {
   }
   return (
     <main className="app-shell">
-      <Phase2Nav active="templates" />
+      <AppNav active="templates" />
       <section className="content">
         <header className="topbar">
           <div>

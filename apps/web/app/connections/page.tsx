@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { SignOutFooter } from '../auth';
+import { AppNav } from '../app-nav';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Connection = {
@@ -62,21 +62,7 @@ export default function ConnectionsPage() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">G</span>
-          <strong>GTM AI</strong>
-        </div>
-        <nav>
-          <a href="/">▦ Tables</a>
-          <a className="active" href="/connections">
-            ⌁ Connections
-          </a>
-          <a href="/credits">◈ Credits</a>
-          <a href="/settings">⚙ Settings</a>
-        </nav>
-        <SignOutFooter />
-      </aside>
+      <AppNav />
       <section className="content">
         <header className="topbar">
           <div>

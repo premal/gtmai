@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type AudienceTab = 'companies' | 'contacts' | 'segments';
@@ -219,7 +219,7 @@ export default function AudiencesPage() {
 
   return (
     <main className="app-shell">
-      <Phase2Nav active="audiences" />
+      <AppNav active="audiences" />
       <section className="content">
         <header className="topbar">
           <div>

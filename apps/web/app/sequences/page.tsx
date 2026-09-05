@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { renderSequenceTemplate } from '@gtmai/shared';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const sampleContact = {
@@ -126,7 +126,7 @@ export default function SequencesPage() {
   }, [selected]);
   return (
     <main className="app-shell">
-      <Phase2Nav active="sequences" />
+      <AppNav active="sequences" />
       <section className="content wide">
         <header className="topbar">
           <div>
