@@ -486,6 +486,7 @@ model CrmSyncJob {
   updatedAt DateTime @updatedAt
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   records CrmSyncRecord[]
+  runs CrmSyncRun[]
   @@index([workspaceId, updatedAt])
 }
 model CrmSyncRecord {
@@ -499,6 +500,17 @@ model CrmSyncRecord {
   job CrmSyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
   @@unique([jobId, externalKey])
 }
+model CrmSyncRun {
+  id String @id @default(cuid())
+  jobId String
+  status String
+  stats Json?
+  startedAt DateTime @default(now())
+  completedAt DateTime?
+  error String?
+  job CrmSyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  @@index([jobId, startedAt])
+}
 model AlertChannel {
   id String @id @default(cuid())
   workspaceId String
@@ -510,6 +522,7 @@ model AlertChannel {
 model Alert {
   id String @id @default(cuid())
   workspaceId String
+  dedupeKey String? @unique
   type String
   severity String @default("warning")
   message String

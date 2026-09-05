@@ -35,7 +35,7 @@ export function mapCrmRecord(source: Record<string, unknown>, config: Config) {
   );
 }
 
-export async function executeCrmRun(job: Job<CrmRunJob>) {
+async function executeCrmRunInternal(job: Job<CrmRunJob>) {
   const syncJob = await db.crmSyncJob.findFirst({
     where: { id: job.data.jobId, workspaceId: job.data.workspaceId },
   });
@@ -136,6 +136,26 @@ export async function executeCrmRun(job: Job<CrmRunJob>) {
     data: { lastRunAt: new Date(), lastStats: stats },
   });
   return stats;
+}
+export async function executeCrmRun(job: Job<CrmRunJob>) {
+  const run = await db.crmSyncRun.create({
+    data: { jobId: job.data.jobId, status: 'running', startedAt: new Date() },
+  });
+  try {
+    const stats = await executeCrmRunInternal(job);
+    await db.crmSyncRun.update({
+      where: { id: run.id },
+      data: { status: 'completed', stats: json(stats), completedAt: new Date() },
+    });
+    return stats;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'CRM sync failed';
+    await db.crmSyncRun.update({
+      where: { id: run.id },
+      data: { status: 'failed', error: message, completedAt: new Date() },
+    });
+    throw error;
+  }
 }
 export function startCrmWorker() {
   return new Worker<CrmRunJob>('crm', executeCrmRun, { connection, concurrency: 2 });

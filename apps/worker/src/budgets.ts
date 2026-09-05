@@ -1,4 +1,4 @@
-import { PrismaClient } from '@gtmai/db';
+import { Prisma, PrismaClient } from '@gtmai/db';
 const db = new PrismaClient();
 
 export function budgetMatches(scope: string, tableId?: string, provider?: string) {
@@ -19,6 +19,44 @@ export function ledgerScopeFilter(scope: string, tableId?: string, provider?: st
 
 export function spendExceedsBudget(spend: number, estimated: number, limit: number) {
   return Math.max(0, -spend) + estimated > limit;
+}
+
+async function notifyBudgetExceeded(
+  workspaceId: string,
+  scope: string,
+  period: string,
+  periodStart: Date,
+) {
+  const dedupeKey = `budget_exceeded:${workspaceId}:${scope}:${periodStart.toISOString()}`;
+  const existing = await db.alert.findUnique({ where: { dedupeKey } });
+  if (existing) return;
+  let alert;
+  try {
+    alert = await db.alert.create({
+      data: {
+        workspaceId,
+        dedupeKey,
+        type: 'budget_exceeded',
+        message: `Budget exceeded for ${scope} (${period})`,
+        metadata: { scope, period, periodStart: periodStart.toISOString() },
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return;
+    throw error;
+  }
+  const channels = await db.alertChannel.findMany({
+    where: { workspaceId, enabled: true, type: 'webhook' },
+  });
+  await Promise.all(
+    channels.map((channel) =>
+      fetch(channel.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(alert),
+      }).catch(() => undefined),
+    ),
+  );
 }
 
 export async function budgetExceeded(
@@ -49,7 +87,15 @@ export async function budgetExceeded(
       },
       _sum: { delta: true },
     });
-    if (spendExceedsBudget(spend._sum.delta ?? 0, estimated, budget.limit)) return true;
+    if (spendExceedsBudget(spend._sum.delta ?? 0, estimated, budget.limit)) {
+      await notifyBudgetExceeded(
+        workspaceId,
+        budget.scope,
+        budget.period,
+        periodStart(budget.period),
+      );
+      return true;
+    }
   }
   return false;
 }

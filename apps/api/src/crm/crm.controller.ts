@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Prisma } from '@gtmai/db';
 import type { Queue } from 'bullmq';
@@ -68,11 +68,28 @@ export class CrmController {
     );
     return { queued: true, jobId: queued.id };
   }
+  @Patch('jobs/:id')
+  async update(@Req() request: Request, @Param('id') id: string, @Body() body: unknown) {
+    const input = bodySchema.partial().parse(body);
+    const job = await this.prisma.crmSyncJob.findFirst({
+      where: { id, workspaceId: request.user.workspaceId },
+    });
+    if (!job) throw new Error('CRM sync job not found');
+    return this.prisma.crmSyncJob.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.source ? { source: json(input.source) } : {}),
+        ...(input.destination ? { destination: json(input.destination) } : {}),
+        ...(input.schedule !== undefined ? { schedule: input.schedule || null } : {}),
+      },
+    });
+  }
   @Get('jobs/:id/runs')
   runs(@Req() request: Request, @Param('id') id: string) {
-    return this.prisma.crmSyncRecord.findMany({
-      where: { jobId: id, workspaceId: request.user.workspaceId },
-      orderBy: { syncedAt: 'desc' },
+    return this.prisma.crmSyncRun.findMany({
+      where: { jobId: id, job: { workspaceId: request.user.workspaceId } },
+      orderBy: { startedAt: 'desc' },
       take: 100,
     });
   }

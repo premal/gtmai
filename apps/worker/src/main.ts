@@ -115,6 +115,10 @@ async function execute(job: Job<CellData>): Promise<void> {
           durationMs: Date.now() - started,
         },
       });
+      await publisher.publish(
+        `table:${column.tableId}`,
+        JSON.stringify({ rowId, columnId, status: 'skipped', error: 'budget exceeded' }),
+      );
       return;
     }
     let result: ActionResult<unknown>;

@@ -15,6 +15,7 @@ const campaignSchema = z.object({
   sequenceId: z.string(),
   segmentId: z.string().optional(),
   contactIds: z.array(z.string()).default([]),
+  contactEmails: z.array(z.string().email()).default([]),
 });
 
 @Controller('campaigns')
@@ -68,6 +69,25 @@ export class CampaignsController {
     });
   }
 
+  @Get(':id/enrollments/:enrollmentId')
+  enrollment(
+    @Req() request: Request,
+    @Param('id') id: string,
+    @Param('enrollmentId') enrollmentId: string,
+  ) {
+    return this.prisma.enrollment.findFirst({
+      where: {
+        id: enrollmentId,
+        campaignId: id,
+        campaign: { workspaceId: request.user.workspaceId },
+      },
+      include: {
+        contact: { include: { company: true } },
+        messages: { orderBy: { sentAt: 'asc' }, include: { replies: true } },
+      },
+    });
+  }
+
   @Post()
   async create(@Req() request: Request, @Body() body: unknown) {
     const input = campaignSchema.parse(body);
@@ -85,7 +105,10 @@ export class CampaignsController {
       ...new Set([...input.contactIds, ...segmentContacts.map((item) => item.contactId)]),
     ];
     const contacts = await this.prisma.contact.findMany({
-      where: { id: { in: contactIds }, workspaceId: request.user.workspaceId },
+      where: {
+        workspaceId: request.user.workspaceId,
+        OR: [{ id: { in: contactIds } }, { email: { in: input.contactEmails } }],
+      },
       select: { id: true },
     });
     return this.prisma.campaign.create({
