@@ -17,6 +17,7 @@ process.env.ENCRYPTION_KEY ??= '0123456789abcdef0123456789abcdef0123456789abcdef
 
 describe('people fanout', () => {
   it('fans out mock people and carries source values', async () => {
+    expect(process.env.ENCRYPTION_KEY).toHaveLength(64);
     process.env.NODE_ENV = 'test';
     const app = await createApp();
     await app.init();
