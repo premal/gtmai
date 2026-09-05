@@ -4,6 +4,7 @@ import {
   evaluateFormula,
   getPath,
   resolveBindings,
+  resolveBindingsDeep,
   topologicalOrder,
   type WorkflowGraph,
 } from '@gtmai/shared';
@@ -53,12 +54,15 @@ function bindingValues(outputs: Values): Values {
 }
 
 function bindConfig(config: Values, outputs: Values): Values {
-  return Object.fromEntries(
-    Object.entries(config).map(([key, value]) => [
-      key,
-      typeof value === 'string' ? resolveBindings(value, outputs) : value,
-    ]),
-  );
+  return resolveBindingsDeep(config, outputs);
+}
+
+function bindNodeConfig(type: string, config: Values, context: Values): Values {
+  const resolved = bindConfig(config, context);
+  if (type === 'condition' || type === 'formula') {
+    return { ...resolved, expression: config.expression };
+  }
+  return resolved;
 }
 
 function evaluateCondition(expression: string, context: Values): boolean {
@@ -87,14 +91,11 @@ async function executeFunction(
     nodes?: WorkflowGraph['nodes'];
     output?: string;
   };
-  const outputs: Values = { inputs: { output: input } };
+  const outputs: Values = { inputs: { ...input, output: input } };
   let credits = 0;
   for (const node of program.nodes ?? []) {
     const context = bindingValues(outputs);
-    const nodeConfig =
-      node.type === 'condition' || node.type === 'formula'
-        ? node.config
-        : bindConfig(node.config, context);
+    const nodeConfig = bindNodeConfig(node.type, node.config, context);
     const result = await executeWorkflowNode(node.type, nodeConfig, context, workspaceId);
     outputs[node.id] = { output: result.output };
     credits += result.credits;
@@ -182,7 +183,7 @@ async function executeWorkflowNode(
     const values = (config.values ?? {}) as Values;
     for (const column of table.columns) {
       const value = values[column.name];
-      const resolved = typeof value === 'string' ? resolveBindings(value, context) : value;
+      const resolved = resolveBindingsDeep(value, context);
       await executorDb.cell.create({
         data:
           resolved === undefined
@@ -266,10 +267,7 @@ export async function executeWorkflowRun(
       continue;
     }
     const context = bindingValues(outputs);
-    const input =
-      node.type === 'condition' || node.type === 'formula'
-        ? node.config
-        : bindConfig(node.config, context);
+    const input = bindNodeConfig(node.type, node.config, context);
     const step = await executorDb.stepRun.create({
       data: { workflowRunId: run.id, nodeId, status: 'running', input: json(input) },
     });

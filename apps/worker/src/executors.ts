@@ -2,7 +2,7 @@ import { createDecipheriv } from 'node:crypto';
 import Redis from 'ioredis';
 import { PrismaClient } from '@gtmai/db';
 import { providers, runAgent, type ActionResult, type ProviderAction } from '@gtmai/providers';
-import { evaluateFormula, resolveBindings } from '@gtmai/shared';
+import { evaluateFormula, resolveBindings, resolveBindingsDeep } from '@gtmai/shared';
 
 export type Values = Record<string, unknown>;
 export type EnrichmentConfig = {
@@ -83,12 +83,7 @@ export function executeFormula(expression: string, values: Values): unknown {
 }
 
 function boundInputs(input: Values | undefined, values: Values): Values {
-  return Object.fromEntries(
-    Object.entries(input ?? {}).map(([key, value]) => [
-      key,
-      typeof value === 'string' ? resolveBindings(value, values) : value,
-    ]),
-  );
+  return resolveBindingsDeep(input ?? {}, values);
 }
 
 export function acceptsWaterfallResult(
@@ -198,9 +193,12 @@ export async function executeHttp(
 ): Promise<ExecutionResult> {
   const request: RequestInit = {
     method: String(config.method ?? 'GET'),
-    headers: (config.headers ?? {}) as Record<string, string>,
+    headers: resolveBindingsDeep(config.headers ?? {}, values) as Record<string, string>,
   };
-  if (config.body) request.body = resolveBindings(String(config.body), values);
+  if (config.body) {
+    const body = resolveBindingsDeep(config.body, values);
+    request.body = typeof body === 'string' ? body : JSON.stringify(body);
+  }
   const response = await fetch(resolveBindings(String(config.url ?? ''), values), request);
   const raw = await response.text();
   let data: unknown = raw;

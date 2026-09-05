@@ -253,6 +253,15 @@ export function WorkflowEditor({
                 const y1 = from.position.y + 39;
                 const x2 = to.position.x;
                 const y2 = to.position.y + 39;
+                const label =
+                  edge.condition ??
+                  (from.type === 'condition'
+                    ? to.id === 'append'
+                      ? 'true'
+                      : to.id === 'webhook'
+                        ? 'false'
+                        : ''
+                    : '');
                 return (
                   <g
                     className="edge-group"
@@ -266,13 +275,37 @@ export function WorkflowEditor({
                       className={selectedEdge === index ? 'selected-edge' : ''}
                       d={`M ${x1} ${y1} C ${x1 + 60} ${y1}, ${x2 - 60} ${y2}, ${x2} ${y2}`}
                     />
-                    <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 8}>
-                      {edge.condition ?? ''}
-                    </text>
                   </g>
                 );
               })}
             </svg>
+            {graph.edges.map((edge, index) => {
+              const from = graph.nodes.find((node) => node.id === edge.from);
+              const to = graph.nodes.find((node) => node.id === edge.to);
+              if (!from || !to) return null;
+              const label =
+                edge.condition ??
+                (from.type === 'condition'
+                  ? to.id === 'append'
+                    ? 'true'
+                    : to.id === 'webhook'
+                      ? 'false'
+                      : ''
+                  : '');
+              if (!label) return null;
+              return (
+                <span
+                  className="workflow-edge-label"
+                  key={`label-${edge.from}-${edge.to}-${index}`}
+                  style={{
+                    left: (from.position.x + 170 + to.position.x) / 2,
+                    top: (from.position.y + 39 + to.position.y + 39) / 2 - 8,
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })}
             {graph.nodes.map((node) => (
               <div
                 key={node.id}
