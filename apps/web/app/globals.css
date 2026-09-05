@@ -332,7 +332,8 @@ h3 {
   padding: 10px 12px;
   text-align: left;
   color: #4b5870;
-  overflow: hidden;
+  overflow: visible;
+  z-index: 2;
 }
 .data-grid td {
   border-bottom: 1px solid #edf0f5;
@@ -384,6 +385,86 @@ h3 {
   align-items: center;
   gap: 8px;
   margin-top: 6px;
+}
+.column-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.column-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  width: 180px;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid #dce2ed;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 28px #16203d26;
+}
+.column-menu > button {
+  width: 100%;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  padding: 7px 8px;
+  color: #455169;
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+.column-menu > button:hover {
+  background: #f1f0ff;
+  color: #4338ca;
+}
+.column-menu > button.danger {
+  color: #b91c1c;
+}
+.column-menu > button.danger:hover {
+  background: #fef2f2;
+  color: #991b1b;
+}
+.color-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px 5px;
+}
+.menu-label {
+  color: #8a95a8;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.color-options {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.color-dot {
+  width: 13px;
+  height: 13px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.color-dot:hover {
+  border-color: #455169;
+}
+.color-dot.indigo {
+  background: #6366f1;
+}
+.color-dot.green {
+  background: #22c55e;
+}
+.color-dot.orange {
+  background: #f97316;
+}
+.color-dot.pink {
+  background: #ec4899;
 }
 .column-meta {
   display: block;

@@ -37,9 +37,11 @@ export function PromptDialog({
   fields,
   confirmLabel,
   danger,
+  eyebrow = 'CONFIRMATION',
   onSubmit,
   onCancel,
 }: PromptOptions & {
+  eyebrow?: string;
   onSubmit: (values: Record<string, string>) => void | Promise<void>;
   onCancel: () => void;
 }) {
@@ -67,7 +69,7 @@ export function PromptDialog({
       <section className="modal" onClick={(event) => event.stopPropagation()}>
         <div className="card-header">
           <div>
-            <div className="eyebrow">CONFIRMATION</div>
+            <div className="eyebrow">{eyebrow}</div>
             <h3>{title}</h3>
           </div>
         </div>
@@ -136,6 +138,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
       {request?.type === 'prompt' && (
         <PromptDialog
           {...request.options}
+          eyebrow="Input"
           onSubmit={(values) => {
             request.resolve(values);
             setRequest(null);
@@ -147,6 +150,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         <PromptDialog
           {...request.options}
           fields={[]}
+          eyebrow="Confirm"
           onSubmit={() => {
             request.resolve(true);
             setRequest(null);

@@ -81,10 +81,27 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const dialog = useDialog();
   const gridRef = useRef<HTMLDivElement>(null);
   const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void params.then(({ id }) => setTableId(id));
   }, [params]);
+
+  useEffect(() => {
+    if (!menuColumnId) return;
+    function closeMenu(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuColumnId(null);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMenuColumnId(null);
+    }
+    document.addEventListener('mousedown', closeMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', closeMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuColumnId]);
 
   useEffect(() => {
     if (!tableId) return;
@@ -443,94 +460,124 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                       <button className="run-link" onClick={() => openColumn(column)}>
                         ✎ Edit
                       </button>
-                      <button
-                        className="icon-button"
-                        aria-label={`More actions for ${column.name}`}
-                        onClick={() =>
-                          setMenuColumnId(menuColumnId === column.id ? null : column.id)
-                        }
+                      <div
+                        className="column-menu-anchor"
+                        ref={menuColumnId === column.id ? menuRef : undefined}
                       >
-                        ⋮
-                      </button>
-                      {menuColumnId === column.id && (
-                        <div className="column-menu">
-                          <button onClick={() => void run(column.id, { onlyEmpty: true })}>
-                            Run empty
-                          </button>
-                          <button onClick={() => void run(column.id, { onlyErrored: true })}>
-                            Run errored
-                          </button>
-                          <button onClick={() => openColumn(column)}>Edit config</button>
-                          <div className="menu-label">Color label</div>
-                          <div className="color-options">
-                            {['indigo', 'green', 'orange', 'pink'].map((color) => (
-                              <button
-                                key={color}
-                                className={`color-dot ${color}`}
-                                aria-label={`Set ${color} label`}
-                                onClick={async () => {
-                                  const token = localStorage.getItem('gtmai-token') ?? '';
-                                  await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                    method: 'PATCH',
-                                    headers: {
-                                      authorization: `Bearer ${token}`,
-                                      'content-type': 'application/json',
+                        <button
+                          className="icon-button"
+                          aria-label={`More actions for ${column.name}`}
+                          onClick={() =>
+                            setMenuColumnId(menuColumnId === column.id ? null : column.id)
+                          }
+                        >
+                          ⋮
+                        </button>
+                        {menuColumnId === column.id && (
+                          <div className="column-menu">
+                            <button
+                              onClick={() => {
+                                setMenuColumnId(null);
+                                void run(column.id, { onlyEmpty: true });
+                              }}
+                            >
+                              Run empty
+                            </button>
+                            <button
+                              onClick={() => {
+                                setMenuColumnId(null);
+                                void run(column.id, { onlyErrored: true });
+                              }}
+                            >
+                              Run errored
+                            </button>
+                            <button
+                              onClick={() => {
+                                setMenuColumnId(null);
+                                openColumn(column);
+                              }}
+                            >
+                              Edit config
+                            </button>
+                            <div className="color-label-row">
+                              <div className="menu-label">Color label</div>
+                              <div className="color-options">
+                                {['indigo', 'green', 'orange', 'pink'].map((color) => (
+                                  <button
+                                    key={color}
+                                    className={`color-dot ${color}`}
+                                    aria-label={`Set ${color} label`}
+                                    onClick={async () => {
+                                      const token = localStorage.getItem('gtmai-token') ?? '';
+                                      await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                        method: 'PATCH',
+                                        headers: {
+                                          authorization: `Bearer ${token}`,
+                                          'content-type': 'application/json',
+                                        },
+                                        body: JSON.stringify({ colorLabel: color }),
+                                      });
+                                      setMenuColumnId(null);
+                                      await reload();
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setMenuColumnId(null);
+                                const values = await dialog.prompt({
+                                  title: 'Rename column',
+                                  fields: [
+                                    {
+                                      name: 'name',
+                                      label: 'Column name',
+                                      defaultValue: column.name,
                                     },
-                                    body: JSON.stringify({ colorLabel: color }),
-                                  });
-                                  setMenuColumnId(null);
-                                  await reload();
-                                }}
-                              />
-                            ))}
+                                  ],
+                                  confirmLabel: 'Rename column',
+                                });
+                                if (!values?.name) return;
+                                const name = values.name;
+                                const token = localStorage.getItem('gtmai-token') ?? '';
+                                await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                  method: 'PATCH',
+                                  headers: {
+                                    authorization: `Bearer ${token}`,
+                                    'content-type': 'application/json',
+                                  },
+                                  body: JSON.stringify({ name }),
+                                });
+                                await reload();
+                              }}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              className="danger"
+                              onClick={async () => {
+                                setMenuColumnId(null);
+                                const confirmed = await dialog.confirm({
+                                  title: `Delete ${column.name}?`,
+                                  description: 'This column and its values will be removed.',
+                                  confirmLabel: 'Delete column',
+                                  danger: true,
+                                });
+                                if (!confirmed) return;
+                                const token = localStorage.getItem('gtmai-token') ?? '';
+                                await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                  method: 'DELETE',
+                                  headers: { authorization: `Bearer ${token}` },
+                                });
+                                await reload();
+                              }}
+                            >
+                              Delete
+                            </button>
                           </div>
-                          <button
-                            onClick={async () => {
-                              const values = await dialog.prompt({
-                                title: 'Rename column',
-                                fields: [
-                                  { name: 'name', label: 'Column name', defaultValue: column.name },
-                                ],
-                                confirmLabel: 'Rename column',
-                              });
-                              if (!values?.name) return;
-                              const name = values.name;
-                              const token = localStorage.getItem('gtmai-token') ?? '';
-                              await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                method: 'PATCH',
-                                headers: {
-                                  authorization: `Bearer ${token}`,
-                                  'content-type': 'application/json',
-                                },
-                                body: JSON.stringify({ name }),
-                              });
-                              await reload();
-                            }}
-                          >
-                            Rename
-                          </button>
-                          <button
-                            onClick={async () => {
-                              const confirmed = await dialog.confirm({
-                                title: `Delete ${column.name}?`,
-                                description: 'This column and its values will be removed.',
-                                confirmLabel: 'Delete column',
-                                danger: true,
-                              });
-                              if (!confirmed) return;
-                              const token = localStorage.getItem('gtmai-token') ?? '';
-                              await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                method: 'DELETE',
-                                headers: { authorization: `Bearer ${token}` },
-                              });
-                              setMenuColumnId(null);
-                              await reload();
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </th>
                 ))}
