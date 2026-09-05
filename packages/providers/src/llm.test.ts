@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { runAgentWithClient, webSearch } from './llm';
+import { parseBing, parseDuckDuckGo, runAgentWithClient, webSearch } from './llm';
 
 describe('agent loop', () => {
   it('uses search, fetch, and finish tools within the step limit', async () => {
@@ -71,13 +71,11 @@ describe('agent loop', () => {
   });
 
   it('decodes DuckDuckGo redirects and uses result snippets', async () => {
-    const fetcher = vi.fn(
-      async () =>
-        new Response(`
+    const fixture = `
         <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fstory&amp;rut=abc">Story</a>
         <div class="result__snippet">A <b>useful</b> search snippet.</div>
-      `),
-    );
+      `;
+    const fetcher = vi.fn(async () => new Response(fixture));
     const result = await webSearch('Clay', {
       credentials: {},
       fetch: fetcher as unknown as typeof fetch,
@@ -85,6 +83,53 @@ describe('agent loop', () => {
     });
     expect(result.sources).toEqual(['https://example.com/story']);
     expect(result.text).toBe('A useful search snippet.');
+    expect(parseDuckDuckGo(fixture)).toEqual({
+      sources: ['https://example.com/story'],
+      text: 'A useful search snippet.',
+    });
+  });
+
+  it('parses Bing result blocks and falls back when DuckDuckGo fails', async () => {
+    const encodedSource = `a1${Buffer.from('https://example.com/bing').toString('base64')}`;
+    const fixture = `
+      <li class="b_algo">
+        <h2><a href="https://www.bing.com/ck/a?u=${encodedSource}">Bing result</a></h2>
+        <p>A <strong>Bing</strong> snippet.</p>
+      </li>
+    `;
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.includes('duckduckgo')) throw new Error('connect timeout');
+      return new Response(fixture);
+    });
+    const result = await webSearch('Clay', {
+      credentials: {},
+      fetch: fetcher as unknown as typeof fetch,
+      logger: { info: () => undefined, error: () => undefined },
+    });
+    expect(result).toMatchObject({
+      sources: ['https://example.com/bing'],
+      text: 'Bing result: A Bing snippet.',
+    });
+    expect(parseBing(fixture)).toEqual({
+      sources: ['https://example.com/bing'],
+      text: 'Bing result: A Bing snippet.',
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports unavailable search backends without throwing', async () => {
+    const result = await webSearch('Clay', {
+      credentials: {},
+      fetch: vi.fn(async () => {
+        throw new Error('connect timeout');
+      }) as unknown as typeof fetch,
+      logger: { info: () => undefined, error: () => undefined },
+    });
+    expect(result).toEqual({
+      text: 'Search unavailable: duckduckgo: connect timeout; bing: connect timeout',
+      sources: [],
+      unavailable: true,
+    });
   });
 
   it('repairs empty fields from a follow-up structured response', async () => {
@@ -110,5 +155,31 @@ describe('agent loop', () => {
     );
     expect(result.fields).toEqual({ uses_clay: 'yes' });
     expect(client.complete).toHaveBeenCalledTimes(2);
+  });
+
+  it('records unavailable search reasoning when no search succeeds', async () => {
+    const client = {
+      complete: vi
+        .fn()
+        .mockResolvedValueOnce(JSON.stringify({ tool: 'web_search', arguments: { query: 'Clay' } }))
+        .mockResolvedValueOnce(
+          JSON.stringify({
+            tool: 'finish',
+            result: { answer: 'No evidence found.', fields: { uses_clay: 'unknown' } },
+          }),
+        ),
+    };
+    const result = await runAgentWithClient(
+      'Research whether the company uses Clay. Finish with fields: uses_clay.',
+      {
+        credentials: {},
+        fetch: vi.fn(async () => {
+          throw new Error('connect timeout');
+        }) as unknown as typeof fetch,
+        logger: { info: () => undefined, error: () => undefined },
+      },
+      client,
+    );
+    expect(result.reasoning).toContain('search_unavailable: Search unavailable:');
   });
 });

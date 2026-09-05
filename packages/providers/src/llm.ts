@@ -101,10 +101,94 @@ export async function fetchPage(url: string, fetcher: typeof fetch): Promise<str
     .slice(0, 20_000);
 }
 
-export async function webSearch(
-  query: string,
-  context: RunContext,
-): Promise<{ text: string; sources: string[] }> {
+export type SearchParseResult = {
+  text: string;
+  sources: string[];
+};
+
+const decodeHtml = (value: string): string =>
+  value
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+
+const cleanSearchText = (value: string): string =>
+  decodeHtml(
+    value
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
+
+const decodeSearchHref = (value: string): string => {
+  const href = decodeHtml(value);
+  const redirect = href.match(/[?&]uddg=([^&]+)/)?.[1];
+  if (redirect) {
+    try {
+      return decodeURIComponent(redirect);
+    } catch {
+      return redirect;
+    }
+  }
+  try {
+    const url = new URL(href);
+    const encoded = url.searchParams.get('u');
+    if (encoded?.startsWith('a1')) {
+      return atob(encoded.slice(2));
+    }
+  } catch {
+    // Preserve non-URL search links.
+  }
+  return href.startsWith('//') ? `https:${href}` : href;
+};
+
+export function parseDuckDuckGo(html: string): SearchParseResult {
+  const sourceMatches = [...html.matchAll(/result__a[^>]+href="([^"]+)/g)].slice(0, 5);
+  const snippets = [...html.matchAll(/result__snippet[^>]*>([\s\S]*?)<\/(?:a|div|span)>/g)]
+    .slice(0, 5)
+    .map((match) => cleanSearchText(match[1]!));
+  return {
+    text: snippets.join('\n').slice(0, 20_000),
+    sources: sourceMatches.map((match) => decodeSearchHref(match[1]!)),
+  };
+}
+
+export function parseBing(html: string): SearchParseResult {
+  const blocks = [...html.matchAll(/<li[^>]*class="[^"]*\bb_algo\b[^"]*"[\s\S]*?<\/li>/gi)];
+  const results = blocks
+    .map((match) => {
+      const block = match[0];
+      const href = block.match(/<h2[^>]*>\s*<a[^>]+href="([^"]+)"/i)?.[1];
+      const title = block.match(/<h2[^>]*>\s*<a[^>]*>([\s\S]*?)<\/a>/i)?.[1];
+      const snippet = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1];
+      return href
+        ? {
+            source: decodeSearchHref(href),
+            text: [title ? cleanSearchText(title) : '', snippet ? cleanSearchText(snippet) : '']
+              .filter(Boolean)
+              .join(': '),
+          }
+        : null;
+    })
+    .filter((result): result is { source: string; text: string } => result !== null)
+    .slice(0, 5);
+  return {
+    text: results
+      .map((result) => result.text)
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 20_000),
+    sources: results.map((result) => result.source),
+  };
+}
+
+type WebSearchResult = SearchParseResult & {
+  unavailable?: boolean;
+};
+
+export async function webSearch(query: string, context: RunContext): Promise<WebSearchResult> {
   if (context.credentials.tavilyApiKey) {
     const response = await context.fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -115,49 +199,59 @@ export async function webSearch(
       results?: { title: string; url: string; content: string }[];
     };
     const results = body.results ?? [];
+    context.logger.info('web_search backend=tavily');
     return {
       text: results.map((item) => `${item.title}: ${item.content}`).join('\n'),
       sources: results.map((item) => item.url),
     };
   }
-  const response = await context.fetch(
-    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-  );
-  const html = await response.text();
-  const decodeHtml = (value: string): string =>
-    value
-      .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;|&apos;/g, "'")
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>');
-  const decodeHref = (value: string): string => {
-    const href = decodeHtml(value);
-    const redirect = href.match(/[?&]uddg=([^&]+)/)?.[1];
-    if (redirect) {
-      try {
-        return decodeURIComponent(redirect);
-      } catch {
-        return redirect;
+  const attempts = [
+    {
+      name: 'duckduckgo',
+      url: `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
+      headers: { 'accept-language': 'en-US' },
+      parse: parseDuckDuckGo,
+    },
+    {
+      name: 'bing',
+      url: `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=10`,
+      headers: {
+        accept: 'text/html',
+        'accept-language': 'en-US',
+        'user-agent':
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36',
+      },
+      parse: parseBing,
+    },
+  ] as const;
+  const failures: string[] = [];
+  for (const attempt of attempts) {
+    try {
+      const response = await context.fetch(attempt.url, {
+        headers: attempt.headers,
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        failures.push(`${attempt.name} HTTP ${response.status}`);
+        continue;
       }
+      const parsed = attempt.parse(await response.text());
+      if (parsed.sources.length === 0) {
+        failures.push(`${attempt.name} returned no results`);
+        continue;
+      }
+      context.logger.info(`web_search backend=${attempt.name}`);
+      return parsed;
+    } catch (error) {
+      failures.push(
+        `${attempt.name}: ${error instanceof Error ? error.message : 'request failed'}`,
+      );
     }
-    return href.startsWith('//') ? `https:${href}` : href;
-  };
-  const sourceMatches = [...html.matchAll(/result__a[^>]+href="([^"]+)/g)].slice(0, 5);
-  const snippets = [...html.matchAll(/result__snippet[^>]*>([\s\S]*?)<\/(?:a|div|span)>/g)]
-    .slice(0, 5)
-    .map((match) =>
-      decodeHtml(
-        match[1]!
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim(),
-      ),
-    );
-  const sources = sourceMatches.map((match) => decodeHref(match[1]!));
+  }
   return {
-    text: snippets.join('\n').slice(0, 20_000),
-    sources,
+    text: `Search unavailable: ${failures.join('; ')}`,
+    sources: [],
+    unavailable: true,
   };
 }
 
@@ -206,6 +300,8 @@ export async function runAgentWithClient(
     { role: 'user', content: prompt },
   ];
   const sources: string[] = [];
+  const searchFailures: string[] = [];
+  let successfulSearches = 0;
   for (let step = 0; step < 8; step += 1) {
     const message = parseToolMessage(await client.complete(messages));
     if (message.tool === 'finish') {
@@ -226,6 +322,11 @@ export async function runAgentWithClient(
           ...result,
           sources: [...new Set([...resultSources, ...sources])],
         });
+        if (searchFailures.length > 0 && successfulSearches === 0) {
+          parsed.reasoning = [parsed.reasoning, `search_unavailable: ${searchFailures.join('; ')}`]
+            .filter(Boolean)
+            .join(' ');
+        }
         if (Object.keys(parsed.fields).length === 0 && /\bfields\b/i.test(prompt)) {
           try {
             const repair = JSON.parse(
@@ -266,6 +367,11 @@ export async function runAgentWithClient(
       try {
         const result = await webSearch(message.arguments?.query ?? prompt, context);
         sources.push(...result.sources);
+        if (result.unavailable) {
+          searchFailures.push(result.text);
+        } else {
+          successfulSearches += 1;
+        }
         messages.push({ role: 'tool', content: JSON.stringify({ tool: 'web_search', ...result }) });
       } catch (error) {
         messages.push({
