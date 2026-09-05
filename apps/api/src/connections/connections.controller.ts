@@ -57,7 +57,7 @@ export class ConnectionsController {
   }
 
   @Post()
-  create(@Body() body: unknown, @Req() request: Request) {
+  async create(@Body() body: unknown, @Req() request: Request) {
     const input = z
       .object({
         provider: z.string().min(1),
@@ -65,7 +65,7 @@ export class ConnectionsController {
         credentials: z.record(z.string()),
       })
       .parse(body);
-    return this.prisma.connection.create({
+    return await this.prisma.connection.create({
       data: {
         workspaceId: request.user.workspaceId,
         createdById: request.user.id,
