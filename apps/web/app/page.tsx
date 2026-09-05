@@ -17,6 +17,22 @@ type Workbook = {
   _count: { tables: number };
   tables: { id: string; name: string; _count: { rows: number; columns: number } }[];
 };
+type SearchResult = {
+  id: string;
+  name: string;
+  kind: 'folder' | 'workbook' | 'table';
+  tags: Tag[];
+  folderId?: string;
+  workbookId?: string;
+  workbookName?: string;
+  folderName?: string;
+  updatedAt: string;
+};
+type SearchResults = {
+  folders: SearchResult[];
+  workbooks: SearchResult[];
+  tables: SearchResult[];
+};
 type MenuState =
   | { kind: 'folder'; item: Folder; top: number; left: number }
   | { kind: 'workbook'; item: Workbook; top: number; left: number }
@@ -28,7 +44,10 @@ export default function Home() {
   const [workbooks, setWorkbooks] = useState<Workbook[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
-  const [tagFilter, setTagFilter] = useState('');
+  const [searchText, setSearchText] = useState('');
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
+  const [searching, setSearching] = useState(false);
   const [collapsed, setCollapsed] = useState<string[]>([]);
   const [menu, setMenu] = useState<MenuState>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -74,15 +93,71 @@ export default function Home() {
     };
   }, [menu]);
 
+  useEffect(() => {
+    const query = searchText.trim();
+    const active = Boolean(query || selectedTagIds.length);
+    if (!active || !token) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setSearching(true);
+      const params = new URLSearchParams();
+      if (query) params.set('q', query);
+      if (selectedTagIds.length) params.set('tagIds', selectedTagIds.join(','));
+      void fetch(`${api}/search?${params.toString()}`, {
+        headers: { authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            toast(await responseMessage(response, 'Search failed'), { kind: 'error' });
+            return null;
+          }
+          return (await response.json()) as SearchResults;
+        })
+        .then((results) => {
+          if (results) setSearchResults(results);
+        })
+        .catch(() => undefined)
+        .finally(() => setSearching(false));
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchText, selectedTagIds, token]);
+
   const visibleWorkbooks = useMemo(
     () =>
       workbooks.filter(
         (workbook) =>
           (selectedFolder === null || workbook.folderId === selectedFolder) &&
-          (!tagFilter || workbook.tags.some((tag) => tag.id === tagFilter)),
+          selectedTagIds.every((tagId) => workbook.tags.some((tag) => tag.id === tagId)),
       ),
-    [selectedFolder, tagFilter, workbooks],
+    [selectedFolder, selectedTagIds, workbooks],
   );
+
+  const searchActive = Boolean(searchText.trim() || selectedTagIds.length);
+
+  function toggleTag(tagId: string) {
+    setSelectedTagIds((current) =>
+      current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId],
+    );
+  }
+
+  function clearSearch() {
+    setSearchText('');
+    setSelectedTagIds([]);
+    setSearchResults(null);
+  }
+
+  function selectSearchFolder(folderId: string) {
+    setSelectedFolder(folderId);
+    clearSearch();
+  }
 
   async function createFolder(parentId?: string | null) {
     const values = await dialog.prompt({
@@ -246,7 +321,20 @@ export default function Home() {
             <h2>Workbooks</h2>
             <p className="muted">Organize enrichment tables into focused GTM workspaces.</p>
           </div>
-          <div className="toolbar">
+          <div className="toolbar home-toolbar">
+            <label className="home-search">
+              <span className="sr-only">Search workbooks</span>
+              <input
+                value={searchText}
+                placeholder="Search folders, workbooks, tables, tags…"
+                onChange={(event) => setSearchText(event.target.value)}
+              />
+              {searchActive && (
+                <button type="button" aria-label="Clear search" onClick={clearSearch}>
+                  ×
+                </button>
+              )}
+            </label>
             <button className="button" onClick={() => void createFolder(selectedFolder)}>
               ＋ Folder
             </button>
@@ -257,113 +345,121 @@ export default function Home() {
         </header>
         <div className="tag-filter-row">
           <button
-            className={`chip ${!tagFilter ? 'selected' : ''}`}
-            onClick={() => setTagFilter('')}
+            className={`chip ${selectedTagIds.length === 0 ? 'selected' : ''}`}
+            onClick={() => setSelectedTagIds([])}
           >
             All tags
           </button>
           {tags.map((tag) => (
             <button
-              className={`chip ${tagFilter === tag.id ? 'selected' : ''}`}
+              className={`chip ${selectedTagIds.includes(tag.id) ? 'selected' : ''}`}
               key={tag.id}
-              onClick={() => setTagFilter(tag.id)}
+              onClick={() => toggleTag(tag.id)}
             >
               <span className="tag-dot" style={{ background: tag.color ?? '#6366f1' }} />
               {tag.name}
             </button>
           ))}
         </div>
-        <div className="workbook-layout">
-          <aside className="folder-tree">
-            <button
-              className={`folder-node root ${selectedFolder === null ? 'selected' : ''}`}
-              onClick={() => setSelectedFolder(null)}
-            >
-              ◫ All workbooks
-            </button>
-            <FolderTree
-              folders={folders}
-              parentId={null}
-              selectedFolder={selectedFolder}
-              collapsed={collapsed}
-              onSelect={setSelectedFolder}
-              onToggle={(id) =>
-                setCollapsed((current) =>
-                  current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
-                )
-              }
-              onMenu={(event, folder) => {
-                const rect = event.currentTarget.getBoundingClientRect();
-                setMenu((current) =>
-                  current?.kind === 'folder' && current.item.id === folder.id
-                    ? null
-                    : {
-                        kind: 'folder',
-                        item: folder,
-                        top: rect.bottom + 4,
-                        left: rect.right - 130,
-                      },
-                );
-              }}
-            />
-          </aside>
-          <div className="workbook-grid">
-            {visibleWorkbooks.map((workbook) => (
-              <article className="workbook-card" key={workbook.id}>
-                <div className="workbook-card-header">
-                  <a href={`/workbooks/${workbook.id}`}>
-                    <span className="table-icon">▤</span>
-                    <div>
-                      <h3>{workbook.name}</h3>
-                      <p>{workbook._count.tables} tables</p>
-                    </div>
-                  </a>
-                  <button
-                    className="icon-button"
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      setMenu((current) =>
-                        current?.kind === 'workbook' && current.item.id === workbook.id
-                          ? null
-                          : {
-                              kind: 'workbook',
-                              item: workbook,
-                              top: rect.bottom + 4,
-                              left: rect.right - 130,
-                            },
-                      );
-                    }}
-                  >
-                    ⋮
-                  </button>
-                </div>
-                <div className="workbook-card-tables">
-                  {workbook.tables.slice(0, 4).map((table) => (
-                    <a href={`/tables/${table.id}`} key={table.id}>
-                      <span>▦ {table.name}</span>
-                      <small>{table._count.rows} rows</small>
+        {searchActive ? (
+          <SearchResultsView
+            results={searchResults}
+            searching={searching}
+            onFolder={selectSearchFolder}
+          />
+        ) : (
+          <div className="workbook-layout">
+            <aside className="folder-tree">
+              <button
+                className={`folder-node root ${selectedFolder === null ? 'selected' : ''}`}
+                onClick={() => setSelectedFolder(null)}
+              >
+                ◫ All workbooks
+              </button>
+              <FolderTree
+                folders={folders}
+                parentId={null}
+                selectedFolder={selectedFolder}
+                collapsed={collapsed}
+                onSelect={setSelectedFolder}
+                onToggle={(id) =>
+                  setCollapsed((current) =>
+                    current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
+                  )
+                }
+                onMenu={(event, folder) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setMenu((current) =>
+                    current?.kind === 'folder' && current.item.id === folder.id
+                      ? null
+                      : {
+                          kind: 'folder',
+                          item: folder,
+                          top: rect.bottom + 4,
+                          left: rect.right - 130,
+                        },
+                  );
+                }}
+              />
+            </aside>
+            <div className="workbook-grid">
+              {visibleWorkbooks.map((workbook) => (
+                <article className="workbook-card" key={workbook.id}>
+                  <div className="workbook-card-header">
+                    <a href={`/workbooks/${workbook.id}`}>
+                      <span className="table-icon">▤</span>
+                      <div>
+                        <h3>{workbook.name}</h3>
+                        <p>{workbook._count.tables} tables</p>
+                      </div>
                     </a>
-                  ))}
-                </div>
-                <TagPicker
-                  target={{ type: 'workbookId', id: workbook.id }}
-                  selected={workbook.tags}
-                  onChange={(next) =>
-                    setWorkbooks((current) =>
-                      current.map((item) =>
-                        item.id === workbook.id ? { ...item, tags: next } : item,
-                      ),
-                    )
-                  }
-                  onTagCreated={() => void load()}
-                />
-              </article>
-            ))}
-            {!visibleWorkbooks.length && (
-              <div className="empty-state">No workbooks in this view.</div>
-            )}
+                    <button
+                      className="icon-button"
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setMenu((current) =>
+                          current?.kind === 'workbook' && current.item.id === workbook.id
+                            ? null
+                            : {
+                                kind: 'workbook',
+                                item: workbook,
+                                top: rect.bottom + 4,
+                                left: rect.right - 130,
+                              },
+                        );
+                      }}
+                    >
+                      ⋮
+                    </button>
+                  </div>
+                  <div className="workbook-card-tables">
+                    {workbook.tables.slice(0, 4).map((table) => (
+                      <a href={`/tables/${table.id}`} key={table.id}>
+                        <span>▦ {table.name}</span>
+                        <small>{table._count.rows} rows</small>
+                      </a>
+                    ))}
+                  </div>
+                  <TagPicker
+                    target={{ type: 'workbookId', id: workbook.id }}
+                    selected={workbook.tags}
+                    onChange={(next) =>
+                      setWorkbooks((current) =>
+                        current.map((item) =>
+                          item.id === workbook.id ? { ...item, tags: next } : item,
+                        ),
+                      )
+                    }
+                    onTagCreated={() => void load()}
+                  />
+                </article>
+              ))}
+              {!visibleWorkbooks.length && (
+                <div className="empty-state">No workbooks in this view.</div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </section>
       {menu && (
         <div
@@ -439,6 +535,89 @@ export default function Home() {
         </div>
       )}
     </main>
+  );
+}
+
+function SearchResultsView({
+  results,
+  searching,
+  onFolder,
+}: {
+  results: SearchResults | null;
+  searching: boolean;
+  onFolder: (folderId: string) => void;
+}) {
+  if (searching && !results) return <div className="empty-state">Searching…</div>;
+  if (!results) return null;
+  const groups: Array<{ label: string; items: SearchResult[] }> = [
+    { label: 'Folders', items: results.folders },
+    { label: 'Workbooks', items: results.workbooks },
+    { label: 'Tables', items: results.tables },
+  ];
+  const count = groups.reduce((total, group) => total + group.items.length, 0);
+  if (!count) return <div className="empty-state">No results</div>;
+
+  return (
+    <div className="search-results">
+      {groups.map(
+        (group) =>
+          group.items.length > 0 && (
+            <section className="search-result-group" key={group.label}>
+              <h3>{group.label}</h3>
+              <div className="search-result-list">
+                {group.items.map((item) => {
+                  const breadcrumb =
+                    item.kind === 'table'
+                      ? [item.folderName, item.workbookName].filter(Boolean).join(' › ')
+                      : item.folderName;
+                  const content = (
+                    <>
+                      <span className="search-result-icon">
+                        {item.kind === 'folder' ? '▰' : item.kind === 'workbook' ? '▤' : '▦'}
+                      </span>
+                      <span className="search-result-copy">
+                        <strong>{item.name}</strong>
+                        {breadcrumb && <small>{breadcrumb}</small>}
+                        <span className="search-result-tags">
+                          {item.tags.map((tag) => (
+                            <span className="chip" key={tag.id}>
+                              <span
+                                className="tag-dot"
+                                style={{ background: tag.color ?? '#6366f1' }}
+                              />
+                              {tag.name}
+                            </span>
+                          ))}
+                        </span>
+                      </span>
+                    </>
+                  );
+                  if (item.kind === 'folder') {
+                    return (
+                      <button
+                        className="search-result-row"
+                        key={item.id}
+                        onClick={() => onFolder(item.id)}
+                      >
+                        {content}
+                      </button>
+                    );
+                  }
+                  return (
+                    <a
+                      className="search-result-row"
+                      href={`/${item.kind === 'workbook' ? 'workbooks' : 'tables'}/${item.id}`}
+                      key={item.id}
+                    >
+                      {content}
+                    </a>
+                  );
+                })}
+              </div>
+            </section>
+          ),
+      )}
+    </div>
   );
 }
 

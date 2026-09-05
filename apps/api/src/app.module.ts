@@ -24,6 +24,7 @@ import { UsageModule } from './usage/usage.module';
 import { FoldersModule } from './folders/folders.module';
 import { WorkbooksModule } from './workbooks/workbooks.module';
 import { TagsModule } from './tags/tags.module';
+import { SearchModule } from './search/search.module';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -85,6 +86,7 @@ function required(name: string): string {
     FoldersModule,
     WorkbooksModule,
     TagsModule,
+    SearchModule,
   ],
   controllers: [FormulaController],
 })
