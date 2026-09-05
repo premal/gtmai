@@ -22,6 +22,12 @@ type AudienceItem = {
   _count?: { contacts?: number; signalEvents?: number; memberships?: number };
 };
 type FilterRow = { field: string; op: string; value: string };
+type AudienceTable = {
+  id: string;
+  name: string;
+  columns: Array<{ name: string; type: string }>;
+};
+const importFields = ['email', 'firstName', 'lastName', 'companyName', 'domain'] as const;
 
 export default function AudiencesPage() {
   const [tab, setTab] = useState<AudienceTab>('companies');
@@ -30,6 +36,12 @@ export default function AudiencesPage() {
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState<AudienceItem | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [tables, setTables] = useState<AudienceTable[]>([]);
+  const [importTableId, setImportTableId] = useState('');
+  const [importMapping, setImportMapping] = useState<Record<string, string>>({});
+  const [importing, setImporting] = useState(false);
+  const [messageLink, setMessageLink] = useState('');
   const [filterRow, setFilterRow] = useState<FilterRow>({
     field: 'data.title',
     op: 'contains',
@@ -43,6 +55,9 @@ export default function AudiencesPage() {
         : '',
     [filterRow],
   );
+  const workspace =
+    typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-workspace') ?? '');
+  const selectedTable = tables.find((table) => table.id === importTableId);
   function signalSummary(payload: unknown) {
     if (!payload || typeof payload !== 'object') return 'Signal received';
     const entries = Object.entries(payload as Record<string, unknown>).filter(
@@ -88,22 +103,75 @@ export default function AudiencesPage() {
       body: JSON.stringify(payload),
     });
     setMessage('Created');
+    setMessageLink('');
     await load();
   }
 
-  async function importFromTable() {
-    const tableId = window.prompt('Table ID to import');
-    if (!tableId) return;
-    const mapping = window.prompt(
-      'Optional mapping JSON',
-      '{"email":"Email","firstName":"First name","lastName":"Last name","domain":"Domain"}',
+  function detectMapping(columns: AudienceTable['columns']) {
+    const score = (field: string, column: AudienceTable['columns'][number]) => {
+      const name = column.name.toLowerCase();
+      if (field === 'email') {
+        if (column.type === 'email' && /work\s*e-?mail/i.test(name)) return 5;
+        if (column.type === 'email') return 4;
+        if (/e-?mail/i.test(name)) return 3;
+      }
+      if (field === 'firstName' && /first/i.test(name)) return 3;
+      if (field === 'lastName' && /last/i.test(name)) return 3;
+      if (field === 'domain') {
+        if (column.type === 'url') return 3;
+        if (/domain|website/i.test(name)) return 2;
+      }
+      if (field === 'companyName' && /company/i.test(name)) return 3;
+      return 0;
+    };
+    return Object.fromEntries(
+      importFields.map((field) => {
+        const match = columns
+          .map((column, index) => ({ column, score: score(field, column), index }))
+          .filter((item) => item.score > 0)
+          .sort((left, right) => right.score - left.score || left.index - right.index)[0]
+          ?.column.name;
+        return [field, match ?? ''];
+      }),
     );
-    await fetch(`${api}/audiences/import/table/${tableId}`, {
+  }
+
+  useEffect(() => {
+    if (!importOpen || !workspace) return;
+    void fetch(`${api}/workspaces/${workspace}/tables`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((response) => response.json() as Promise<AudienceTable[]>)
+      .then((data) => {
+        setTables(data);
+        setImportTableId((current) => current || data[0]?.id || '');
+        if (data[0]) setImportMapping(detectMapping(data[0].columns));
+      });
+  }, [importOpen, workspace, token]);
+
+  useEffect(() => {
+    if (selectedTable) setImportMapping(detectMapping(selectedTable.columns));
+  }, [importTableId]);
+
+  async function submitImport() {
+    if (!importTableId) return;
+    setImporting(true);
+    const response = await fetch(`${api}/audiences/import/table/${importTableId}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ mapping: mapping ? JSON.parse(mapping) : {} }),
+      body: JSON.stringify({ mapping: importMapping }),
     });
-    setMessage('Imported into audiences');
+    const result = (await response.json()) as {
+      contacts?: number;
+      companies?: number;
+      updated?: number;
+    };
+    setImporting(false);
+    setImportOpen(false);
+    setMessage(
+      `Imported ${result.contacts ?? 0} contacts, ${result.companies ?? 0} companies (${result.updated ?? 0} updated)`,
+    );
+    setMessageLink('');
     setTab('contacts');
     await load();
   }
@@ -115,6 +183,7 @@ export default function AudiencesPage() {
     });
     const result = (await response.json()) as { count?: number };
     setMessage(`Segment refreshed: ${result.count ?? 0} contacts`);
+    setMessageLink('');
     await load();
   }
 
@@ -127,7 +196,8 @@ export default function AudiencesPage() {
       body: JSON.stringify({ name, segmentId: id }),
     });
     const result = (await response.json()) as { tableId?: string };
-    setMessage(`Created table ${result.tableId ?? ''}`);
+    setMessage('Created table');
+    setMessageLink(result.tableId ? `/tables/${result.tableId}` : '');
   }
 
   return (
@@ -140,7 +210,7 @@ export default function AudiencesPage() {
             <h2>Audiences</h2>
           </div>
           <div className="button-row">
-            <button className="button" onClick={() => void importFromTable()}>
+            <button className="button" onClick={() => setImportOpen(true)}>
               Import from table
             </button>
             <button className="button primary" onClick={() => void create()}>
@@ -169,6 +239,7 @@ export default function AudiencesPage() {
           <button className="button" onClick={() => setFilterOpen((value) => !value)}>
             {filterOpen ? 'Hide filter' : '＋ Filter'}
           </button>
+          <span className="muted">{items.length} matching</span>
         </div>
         {filterOpen && (
           <div className="filter-builder panel">
@@ -220,13 +291,23 @@ export default function AudiencesPage() {
               </span>
               {tab === 'segments' && (
                 <span className="row-actions">
-                  <span role="button" tabIndex={0} onClick={() => void refreshSegment(item.id)}>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void refreshSegment(item.id);
+                    }}
+                  >
                     Refresh
                   </span>
                   <span
                     role="button"
                     tabIndex={0}
-                    onClick={() => void createTableFromSegment(item.id)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void createTableFromSegment(item.id);
+                    }}
                   >
                     Create table
                   </span>
@@ -268,7 +349,89 @@ export default function AudiencesPage() {
             </details>
           </aside>
         )}
-        {message && <div className="toast">{message}</div>}
+        {message && (
+          <div className="toast">
+            {message}
+            {messageLink && (
+              <a href={messageLink} className="toast-link">
+                Open table →
+              </a>
+            )}
+          </div>
+        )}
+        {importOpen && (
+          <div className="modal-backdrop" onClick={() => setImportOpen(false)}>
+            <section className="modal" onClick={(event) => event.stopPropagation()}>
+              <div className="canvas-toolbar">
+                <div>
+                  <div className="eyebrow">AUDIENCE IMPORT</div>
+                  <h3>Import from table</h3>
+                </div>
+                <button className="drawer-close" onClick={() => setImportOpen(false)}>
+                  ×
+                </button>
+              </div>
+              <label className="field-label">
+                Source table
+                <select
+                  value={importTableId}
+                  onChange={(event) => setImportTableId(event.target.value)}
+                >
+                  <option value="">Choose a table</option>
+                  {tables.map((table) => (
+                    <option value={table.id} key={table.id}>
+                      {table.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedTable ? (
+                <>
+                  <p className="muted">
+                    Detected mapping · review or change any source column before importing.
+                  </p>
+                  <div className="mapping-grid">
+                    {importFields.map((field) => (
+                      <label className="field-label" key={field}>
+                        {field}
+                        <select
+                          value={importMapping[field] ?? ''}
+                          onChange={(event) =>
+                            setImportMapping({
+                              ...importMapping,
+                              [field]: event.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Not mapped</option>
+                          {selectedTable.columns.map((column) => (
+                            <option value={column.name} key={column.name}>
+                              {column.name} · {column.type}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="button-row">
+                    <button className="button" onClick={() => setImportOpen(false)}>
+                      Cancel
+                    </button>
+                    <button
+                      className="button primary"
+                      disabled={importing}
+                      onClick={() => void submitImport()}
+                    >
+                      {importing ? 'Importing…' : 'Import audiences'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="empty-state">No tables available.</div>
+              )}
+            </section>
+          </div>
+        )}
       </section>
     </main>
   );

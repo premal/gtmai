@@ -89,7 +89,13 @@ export default function FunctionsPage() {
     const response = await fetch(`${api}/functions/${selected.id}/test`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({
+        program: { inputs, nodes: graph.nodes, edges: graph.edges, output },
+        testCases: cases.map((testCase) => ({
+          input: JSON.parse(testCase.input),
+          expected: testCase.expected,
+        })),
+      }),
     });
     setResults(((await response.json()) as { results: TestResult[] }).results ?? []);
   }

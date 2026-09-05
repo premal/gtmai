@@ -29,6 +29,11 @@ const versionBody = z.object({
   program: programSchema,
   testCases: z.array(z.object({ input: z.record(z.unknown()), expected: z.unknown() })).default([]),
 });
+const testBody = z.object({
+  version: z.number().optional(),
+  program: programSchema.optional(),
+  testCases: z.array(z.object({ input: z.record(z.unknown()), expected: z.unknown() })).optional(),
+});
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 
 @Controller('functions')
@@ -91,14 +96,7 @@ export class FunctionsController {
 
   @Post(':id/test')
   async test(@Req() request: Request, @Param('id') id: string, @Body() body: unknown) {
-    const input = z
-      .object({
-        version: z.number().optional(),
-        testCases: z
-          .array(z.object({ input: z.record(z.unknown()), expected: z.unknown() }))
-          .optional(),
-      })
-      .parse(body ?? {});
+    const input = testBody.parse(body ?? {});
     const fn = await this.prisma.function.findFirst({
       where: { id, workspaceId: request.user.workspaceId },
       include: { versions: { orderBy: { version: 'desc' }, take: 1 } },
@@ -112,7 +110,7 @@ export class FunctionsController {
       ((version.testCases as Array<{ input: Record<string, unknown>; expected: unknown }>) || []);
     const results = cases.map((testCase) => {
       const output = runProgram(
-        version.program as {
+        (input.program ?? version.program) as {
           output: string;
           nodes?: Array<{ id: string; type: string; config: Record<string, unknown> }>;
         },

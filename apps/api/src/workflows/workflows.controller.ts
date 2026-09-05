@@ -56,6 +56,7 @@ export class WorkflowsController {
     if (errors.length) throw new Error(errors.join('; '));
     return this.prisma.workflow.create({
       data: { workspaceId: request.user.workspaceId, name: input.name, graph: json(input.graph) },
+      include: { _count: { select: { runs: true } } },
     });
   }
 

@@ -167,6 +167,20 @@ integration('api smoke', () => {
     });
     expect(imported.statusCode).toBe(201);
     expect(imported.json()).toMatchObject({ contacts: 1, companies: 1 });
+    const importedAgain = await instance.inject({
+      method: 'POST',
+      url: `/audiences/import/table/${table.id}`,
+      headers,
+      payload: { mapping: { email: 'Email', firstName: 'First name', domain: 'Domain' } },
+    });
+    expect(importedAgain.statusCode).toBe(201);
+    expect(importedAgain.json()).toMatchObject({ contacts: 1, companies: 1, updated: 2 });
+    const contacts = await instance.inject({
+      method: 'GET',
+      url: '/audiences/contacts?limit=100',
+      headers,
+    });
+    expect(contacts.json().items).toHaveLength(1);
     const segment = await instance.inject({
       method: 'POST',
       url: '/audiences/segments',

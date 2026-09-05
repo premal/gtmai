@@ -151,7 +151,13 @@ export class SignalsController {
       .parse(body);
     const contact = input.email
       ? await this.prisma.contact.findFirst({
-          where: { workspaceId: definition.workspaceId, emailKey: input.email.toLowerCase() },
+          where: {
+            workspaceId: definition.workspaceId,
+            OR: [
+              { emailKey: input.email.toLowerCase() },
+              { email: { equals: input.email, mode: 'insensitive' } },
+            ],
+          },
         })
       : null;
     const company = input.domain

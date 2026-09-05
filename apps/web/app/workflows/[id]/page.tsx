@@ -44,6 +44,12 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
       );
     if (runsResponse.ok) setRuns((await runsResponse.json()) as Run[]);
   }
+  async function loadRuns() {
+    const response = await fetch(`${api}/workflows/${id}/runs`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (response.ok) setRuns((await response.json()) as Run[]);
+  }
   useEffect(() => {
     if (token) void load();
   }, [token, id]);
@@ -88,14 +94,32 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
     setSelectedRun(run);
     setSelectedStep(null);
     setEditMode(false);
+    void loadRuns();
     void fetch(`${api}/workflows/runs/${run.id}`, { headers: { authorization: `Bearer ${token}` } })
       .then((response) => (response.ok ? (response.json() as Promise<Run>) : run))
       .then(setSelectedRun);
     const stream = new EventSource(
       `${api}/workflows/runs/${run.id}/events?token=${encodeURIComponent(token)}`,
     );
-    stream.onmessage = () => {
-      void load();
+    stream.onmessage = (event) => {
+      let status: string | undefined;
+      try {
+        status = (JSON.parse(event.data) as { status?: string }).status;
+      } catch {
+        status = undefined;
+      }
+      if (status === 'done' || status === 'error') {
+        void loadRuns();
+        void fetch(`${api}/workflows/runs/${run.id}`, {
+          headers: { authorization: `Bearer ${token}` },
+        })
+          .then((response) => (response.ok ? (response.json() as Promise<Run>) : null))
+          .then((latest) => {
+            if (latest) setSelectedRun(latest);
+          });
+      } else {
+        void load();
+      }
     };
     stream.onerror = () => stream.close();
   }

@@ -56,6 +56,33 @@ function parseFilter(value: string | undefined): Filter | undefined {
   return filterSchema.parse(JSON.parse(value));
 }
 
+function detectColumnName(
+  columns: Array<{ name: string; type: string }>,
+  key: string,
+): string | undefined {
+  const normalized = key.toLowerCase();
+  const score = (column: { name: string; type: string }) => {
+    const name = column.name.toLowerCase();
+    if (normalized === 'email') {
+      if (column.type === 'email' && /work\s*e-?mail/i.test(name)) return 5;
+      if (column.type === 'email') return 4;
+      if (/e-?mail/i.test(name)) return 3;
+    }
+    if (normalized === 'firstName' && /first/i.test(name)) return 3;
+    if (normalized === 'lastName' && /last/i.test(name)) return 3;
+    if (normalized === 'domain') {
+      if (column.type === 'url') return 3;
+      if (/domain|website/i.test(name)) return 2;
+    }
+    if (normalized === 'companyName' && /company/i.test(name)) return 3;
+    return 0;
+  };
+  return columns
+    .map((column, index) => ({ column, score: score(column), index }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.column.name;
+}
+
 @Controller('audiences')
 @UseGuards(JwtAuthGuard)
 export class AudiencesController {
@@ -214,13 +241,13 @@ export class AudiencesController {
       include: { columns: true, rows: { include: { cells: true } } },
     });
     if (!table) throw new Error('Table not found');
-    const columns = new Map(table.columns.map((column) => [column.name.toLowerCase(), column]));
     const resolveColumn = (key: string): string | undefined =>
-      input.mapping[key] ??
-      [...columns.keys()].find((name) => name === key.toLowerCase()) ??
-      [...columns.keys()].find((name) => name.replace(/[^a-z]/g, '').includes(key.toLowerCase()));
+      input.mapping[key] ||
+      table.columns.find((column) => column.name.toLowerCase() === key.toLowerCase())?.name ||
+      detectColumnName(table.columns, key);
     let contacts = 0;
-    let companies = 0;
+    let updated = 0;
+    const companyKeys = new Set<string>();
     for (const row of table.rows) {
       const values = new Map(
         row.cells.map((cell) => [
@@ -237,53 +264,70 @@ export class AudiencesController {
           .split('/')[0] || undefined;
       let companyId: string | undefined;
       if (domain) {
-        const company = await this.prisma.company.upsert({
+        const domainKey = domain.toLowerCase();
+        const existing = await this.prisma.company.findFirst({
           where: {
-            workspaceId_domainKey: {
-              workspaceId: request.user.workspaceId,
-              domainKey: domain.toLowerCase(),
-            },
-          },
-          update: {
-            name: String(get('companyName') ?? domain),
-            data: json({ importedFrom: table.name }),
-          },
-          create: {
             workspaceId: request.user.workspaceId,
-            name: String(get('companyName') ?? domain),
-            domain,
-            domainKey: domain.toLowerCase(),
-            data: json({ importedFrom: table.name }),
+            OR: [{ domainKey }, { domain: { equals: domain, mode: 'insensitive' } }],
           },
         });
+        const company = existing
+          ? await this.prisma.company.update({
+              where: { id: existing.id },
+              data: {
+                name: String(get('companyName') ?? domain),
+                domain,
+                domainKey,
+                data: json({ importedFrom: table.name }),
+              },
+            })
+          : await this.prisma.company.create({
+              data: {
+                workspaceId: request.user.workspaceId,
+                name: String(get('companyName') ?? domain),
+                domain,
+                domainKey,
+                data: json({ importedFrom: table.name }),
+              },
+            });
+        if (existing) updated++;
         companyId = company.id;
-        companies++;
+        companyKeys.add(domainKey);
       }
       if (email) {
         const firstName = String(get('firstName') ?? '').trim();
         const lastName = String(get('lastName') ?? '').trim();
-        const mapped: Prisma.ContactUpdateInput = { data: json(Object.fromEntries(values)) };
+        const emailKey = email.toLowerCase();
+        const mapped: Prisma.ContactUpdateInput = {
+          email,
+          emailKey,
+          data: json(Object.fromEntries(values)),
+        };
         if (firstName) mapped.firstName = firstName;
         if (lastName) mapped.lastName = lastName;
         if (companyId) mapped.company = { connect: { id: companyId } };
-        await this.prisma.contact.upsert({
+        const existing = await this.prisma.contact.findFirst({
           where: {
-            workspaceId_emailKey: {
-              workspaceId: request.user.workspaceId,
-              emailKey: email.toLowerCase(),
-            },
-          },
-          update: mapped,
-          create: {
-            workspace: { connect: { id: request.user.workspaceId } },
-            email,
-            emailKey: email.toLowerCase(),
-            ...(firstName ? { firstName } : {}),
-            ...(lastName ? { lastName } : {}),
-            ...(companyId ? { company: { connect: { id: companyId } } } : {}),
-            data: json(Object.fromEntries(values)),
+            workspaceId: request.user.workspaceId,
+            OR: [{ emailKey }, { email: { equals: email, mode: 'insensitive' } }],
           },
         });
+        if (existing) {
+          await this.prisma.contact.update({ where: { id: existing.id }, data: mapped });
+          updated++;
+        } else {
+          await this.prisma.contact.create({
+            data: {
+              workspace: { connect: { id: request.user.workspaceId } },
+              email,
+              emailKey,
+              ...(firstName ? { firstName } : {}),
+              ...(lastName ? { lastName } : {}),
+              ...(companyId ? { company: { connect: { id: companyId } } } : {}),
+              data: json(Object.fromEntries(values)),
+            },
+          });
+        }
         contacts++;
       }
       for (const [key, value] of values) {
@@ -294,7 +338,7 @@ export class AudiencesController {
         });
       }
     }
-    return { contacts, companies, rows: table.rows.length };
+    return { contacts, companies: companyKeys.size, updated, rows: table.rows.length };
   }
 
   @Post('export/table')

@@ -11,7 +11,7 @@ type Workflow = {
     nodes: Array<{ id: string; type: string; position: { x: number; y: number } }>;
     edges: Array<{ from: string; to: string }>;
   };
-  _count: { runs: number };
+  _count?: { runs?: number };
 };
 
 export default function WorkflowsPage() {
@@ -88,7 +88,7 @@ export default function WorkflowsPage() {
                 >
                   <strong>{item.name}</strong>
                   <span>
-                    {item.graph.nodes.length} nodes · {item._count.runs} runs
+                    {item.graph.nodes.length} nodes · {item._count?.runs ?? 0} runs
                   </span>
                 </button>
                 <a className="workflow-open" href={`/workflows/${item.id}`}>

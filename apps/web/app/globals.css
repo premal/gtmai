@@ -441,6 +441,24 @@ h3 {
   padding: 28px;
   box-shadow: 0 16px 50px #16203d33;
 }
+.mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+  margin-top: 8px;
+}
+.modal select {
+  border: 1px solid #dce2ed;
+  border-radius: 7px;
+  padding: 10px;
+  background: #fff;
+  color: #455169;
+}
+.toast-link {
+  color: #4338ca;
+  font-weight: 700;
+  margin-left: 10px;
+}
 .picker-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

@@ -11,7 +11,8 @@ description: How to run and E2E-test the gtmai monorepo (Next.js web :3000, Nest
 - `cp .env.example .env` if missing. `ENCRYPTION_KEY` MUST be 64 hex chars (32 bytes); a shorter key makes every enrichment cell fail with "Invalid key length". The worker now validates this at startup, so an old worker process with a stale env is the usual culprit — kill and restart it.
 - Load env before each app: `set -a && . ./.env && set +a`, then run api/worker/web from their `apps/*` dirs (`npx pnpm@9 dev` or `npx next dev -p 3000`).
 - Before Prisma commands from `packages/db`, load the repository environment in the same shell so a stale shell-level `DATABASE_URL` cannot override it: `set -a && . ../../.env && set +a && npx prisma migrate deploy --schema prisma/schema.prisma`; run the seed the same way with `set -a && . ../../.env && set +a && npx prisma db seed`.
-- If Next.js throws `Cannot find module './NNN.js'`, `rm -rf apps/web/.next` and restart.
+- Never run `pnpm build` or `next build` in `apps/web` while the dev server is being used by a tester; the production build can clobber its `.next` output. Use CI or an isolated checkout/output directory for web build verification.
+- If Next.js throws `Cannot find module './NNN.js'`, stop the web dev process, run `rm -rf apps/web/.next`, and restart it.
 - Restarting the API may invalidate the browser JWT (401s). Clear localStorage (`gtmai-token`) and log in again as `demo@gtmai.dev / demo1234`.
 
 ## Useful checks
