@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { AppNav } from './app-nav';
 import { TagPicker } from './components/tag-picker';
 import { useDialog } from './components/prompt-dialog';
+import { useToast } from './components/toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Tag = { id: string; name: string; color?: string | null };
@@ -16,6 +17,10 @@ type Workbook = {
   _count: { tables: number };
   tables: { id: string; name: string; _count: { rows: number; columns: number } }[];
 };
+type MenuState =
+  | { kind: 'folder'; item: Folder; top: number; left: number }
+  | { kind: 'workbook'; item: Workbook; top: number; left: number }
+  | null;
 
 export default function Home() {
   const [token, setToken] = useState('');
@@ -25,7 +30,10 @@ export default function Home() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState('');
   const [collapsed, setCollapsed] = useState<string[]>([]);
+  const [menu, setMenu] = useState<MenuState>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const dialog = useDialog();
+  const { toast } = useToast();
 
   async function load() {
     const headers = { authorization: `Bearer ${token}` };
@@ -34,6 +42,13 @@ export default function Home() {
       fetch(`${api}/workbooks`, { headers }),
       fetch(`${api}/tags`, { headers }),
     ]);
+    if (!folderResponse.ok || !workbookResponse.ok || !tagResponse.ok) {
+      const failed = [folderResponse, workbookResponse, tagResponse].find(
+        (response) => !response.ok,
+      );
+      toast(await responseMessage(failed, 'Unable to load workbooks'), { kind: 'error' });
+      return;
+    }
     setFolders((await folderResponse.json()) as Folder[]);
     setWorkbooks((await workbookResponse.json()) as Workbook[]);
     setTags((await tagResponse.json()) as Tag[]);
@@ -43,6 +58,21 @@ export default function Home() {
   useEffect(() => {
     if (token) void load();
   }, [token]);
+  useEffect(() => {
+    if (!menu) return;
+    function close(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenu(null);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMenu(null);
+    }
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menu]);
 
   const visibleWorkbooks = useMemo(
     () =>
@@ -61,11 +91,15 @@ export default function Home() {
       confirmLabel: 'Create folder',
     });
     if (!values?.name) return;
-    await fetch(`${api}/folders`, {
+    const response = await fetch(`${api}/folders`, {
       method: 'POST',
       headers: jsonHeaders(token),
       body: JSON.stringify({ name: values.name, parentId: parentId ?? undefined }),
     });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Folder creation failed'), { kind: 'error' });
+      return;
+    }
     await load();
   }
 
@@ -80,7 +114,14 @@ export default function Home() {
         }))
       )
         return;
-      await fetch(`${api}/folders/${folder.id}`, { method: 'DELETE', headers: jsonHeaders(token) });
+      const response = await fetch(`${api}/folders/${folder.id}`, {
+        method: 'DELETE',
+        headers: jsonHeaders(token),
+      });
+      if (!response.ok) {
+        toast(await responseMessage(response, 'Folder deletion failed'), { kind: 'error' });
+        return;
+      }
       if (selectedFolder === folder.id) setSelectedFolder(null);
       await load();
       return;
@@ -88,22 +129,35 @@ export default function Home() {
     const values = await dialog.prompt({
       title: action === 'rename' ? 'Rename folder' : 'Move folder',
       fields: [
-        {
-          name: action === 'rename' ? 'name' : 'parentId',
-          label: action === 'rename' ? 'Folder name' : 'Parent folder ID (blank for root)',
-          defaultValue: action === 'rename' ? folder.name : (folder.parentId ?? ''),
-        },
+        action === 'rename'
+          ? { name: 'name', label: 'Folder name', defaultValue: folder.name }
+          : {
+              name: 'parentId',
+              label: 'Parent folder',
+              defaultValue: folder.parentId ?? '',
+              type: 'select' as const,
+              options: [
+                { value: '', label: 'Root folder' },
+                ...folders
+                  .filter((item) => item.id !== folder.id)
+                  .map((item) => ({ value: item.id, label: item.name })),
+              ],
+            },
       ],
       confirmLabel: action === 'rename' ? 'Rename' : 'Move',
     });
     if (!values) return;
-    await fetch(`${api}/folders/${folder.id}`, {
+    const response = await fetch(`${api}/folders/${folder.id}`, {
       method: 'PATCH',
       headers: jsonHeaders(token),
       body: JSON.stringify(
         action === 'rename' ? { name: values.name } : { parentId: values.parentId || null },
       ),
     });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Folder update failed'), { kind: 'error' });
+      return;
+    }
     await load();
   }
 
@@ -114,11 +168,15 @@ export default function Home() {
       confirmLabel: 'Create workbook',
     });
     if (!values?.name) return;
-    await fetch(`${api}/workbooks`, {
+    const response = await fetch(`${api}/workbooks`, {
       method: 'POST',
       headers: jsonHeaders(token),
       body: JSON.stringify({ name: values.name, folderId: selectedFolder }),
     });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Workbook creation failed'), { kind: 'error' });
+      return;
+    }
     await load();
   }
 
@@ -133,32 +191,47 @@ export default function Home() {
         }))
       )
         return;
-      await fetch(`${api}/workbooks/${workbook.id}`, {
+      const response = await fetch(`${api}/workbooks/${workbook.id}`, {
         method: 'DELETE',
         headers: jsonHeaders(token),
       });
+      if (!response.ok) {
+        toast(await responseMessage(response, 'Workbook deletion failed'), { kind: 'error' });
+        return;
+      }
       await load();
       return;
     }
     const values = await dialog.prompt({
       title: action === 'rename' ? 'Rename workbook' : 'Move workbook',
       fields: [
-        {
-          name: action === 'rename' ? 'name' : 'folderId',
-          label: action === 'rename' ? 'Workbook name' : 'Folder ID (blank for unfiled)',
-          defaultValue: action === 'rename' ? workbook.name : (workbook.folderId ?? ''),
-        },
+        action === 'rename'
+          ? { name: 'name', label: 'Workbook name', defaultValue: workbook.name }
+          : {
+              name: 'folderId',
+              label: 'Folder',
+              defaultValue: workbook.folderId ?? '',
+              type: 'select' as const,
+              options: [
+                { value: '', label: 'Unfiled' },
+                ...folders.map((folder) => ({ value: folder.id, label: folder.name })),
+              ],
+            },
       ],
       confirmLabel: action === 'rename' ? 'Rename' : 'Move',
     });
     if (!values) return;
-    await fetch(`${api}/workbooks/${workbook.id}`, {
+    const response = await fetch(`${api}/workbooks/${workbook.id}`, {
       method: 'PATCH',
       headers: jsonHeaders(token),
       body: JSON.stringify(
         action === 'rename' ? { name: values.name } : { folderId: values.folderId || null },
       ),
     });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Workbook update failed'), { kind: 'error' });
+      return;
+    }
     await load();
   }
 
@@ -219,7 +292,19 @@ export default function Home() {
                   current.includes(id) ? current.filter((item) => item !== id) : [...current, id],
                 )
               }
-              onEdit={editFolder}
+              onMenu={(event, folder) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setMenu((current) =>
+                  current?.kind === 'folder' && current.item.id === folder.id
+                    ? null
+                    : {
+                        kind: 'folder',
+                        item: folder,
+                        top: rect.bottom + 4,
+                        left: rect.right - 130,
+                      },
+                );
+              }}
             />
           </aside>
           <div className="workbook-grid">
@@ -233,14 +318,24 @@ export default function Home() {
                       <p>{workbook._count.tables} tables</p>
                     </div>
                   </a>
-                  <div className="card-menu">
-                    <button className="icon-button">⋮</button>
-                    <div className="card-menu-items">
-                      <button onClick={() => void editWorkbook(workbook, 'rename')}>Rename</button>
-                      <button onClick={() => void editWorkbook(workbook, 'move')}>Move</button>
-                      <button onClick={() => void editWorkbook(workbook, 'delete')}>Delete</button>
-                    </div>
-                  </div>
+                  <button
+                    className="icon-button"
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setMenu((current) =>
+                        current?.kind === 'workbook' && current.item.id === workbook.id
+                          ? null
+                          : {
+                              kind: 'workbook',
+                              item: workbook,
+                              top: rect.bottom + 4,
+                              left: rect.right - 130,
+                            },
+                      );
+                    }}
+                  >
+                    ⋮
+                  </button>
                 </div>
                 <div className="workbook-card-tables">
                   {workbook.tables.slice(0, 4).map((table) => (
@@ -260,6 +355,7 @@ export default function Home() {
                       ),
                     )
                   }
+                  onTagCreated={() => void load()}
                 />
               </article>
             ))}
@@ -269,12 +365,105 @@ export default function Home() {
           </div>
         </div>
       </section>
+      {menu && (
+        <div
+          className="card-menu-items floating-menu"
+          ref={menuRef}
+          style={{ top: menu.top, left: menu.left }}
+        >
+          {menu.kind === 'folder' ? (
+            <>
+              <button
+                onClick={() => {
+                  setMenu(null);
+                  void editFolder(menu.item, 'rename');
+                }}
+              >
+                Rename
+              </button>
+              <button
+                onClick={() => {
+                  setMenu(null);
+                  void editFolder(menu.item, 'move');
+                }}
+              >
+                Move
+              </button>
+              <TagPicker
+                target={{ type: 'folderId', id: menu.item.id }}
+                selected={menu.item.tags}
+                onChange={(tags) => {
+                  setFolders((current) =>
+                    current.map((item) => (item.id === menu.item.id ? { ...item, tags } : item)),
+                  );
+                }}
+                onTagCreated={() => void load()}
+              />
+              <button
+                onClick={() => {
+                  setMenu(null);
+                  void editFolder(menu.item, 'delete');
+                }}
+              >
+                Delete
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setMenu(null);
+                  void editWorkbook(menu.item, 'rename');
+                }}
+              >
+                Rename
+              </button>
+              <button
+                onClick={() => {
+                  setMenu(null);
+                  void editWorkbook(menu.item, 'move');
+                }}
+              >
+                Move
+              </button>
+              <TagPicker
+                target={{ type: 'workbookId', id: menu.item.id }}
+                selected={menu.item.tags}
+                onChange={(tags) => {
+                  setWorkbooks((current) =>
+                    current.map((item) => (item.id === menu.item.id ? { ...item, tags } : item)),
+                  );
+                }}
+                onTagCreated={() => void load()}
+              />
+              <button
+                onClick={() => {
+                  setMenu(null);
+                  void editWorkbook(menu.item, 'delete');
+                }}
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </main>
   );
 }
 
 function jsonHeaders(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+}
+
+async function responseMessage(response: Response | undefined, fallback: string): Promise<string> {
+  if (!response) return fallback;
+  try {
+    const body = (await response.json()) as { message?: string };
+    return body.message ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function FolderTree({
@@ -284,7 +473,7 @@ function FolderTree({
   collapsed,
   onSelect,
   onToggle,
-  onEdit,
+  onMenu,
 }: {
   folders: Folder[];
   parentId: string | null;
@@ -292,7 +481,7 @@ function FolderTree({
   collapsed: string[];
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
-  onEdit: (folder: Folder, action: 'rename' | 'move' | 'delete') => void;
+  onMenu: (event: ReactMouseEvent<HTMLButtonElement>, folder: Folder) => void;
 }) {
   return (
     <>
@@ -311,7 +500,7 @@ function FolderTree({
                 <button className="folder-name" onClick={() => onSelect(folder.id)}>
                   ▰ {folder.name}
                 </button>
-                <button className="folder-more" onClick={() => onEdit(folder, 'rename')}>
+                <button className="folder-more" onClick={(event) => onMenu(event, folder)}>
                   ⋮
                 </button>
               </div>
@@ -323,7 +512,7 @@ function FolderTree({
                   collapsed={collapsed}
                   onSelect={onSelect}
                   onToggle={onToggle}
-                  onEdit={onEdit}
+                  onMenu={onMenu}
                 />
               )}
             </div>

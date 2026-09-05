@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AppNav } from '../../app-nav';
 import { TagPicker } from '../../components/tag-picker';
 import { useDialog } from '../../components/prompt-dialog';
 import { TableWorkspace } from '../../components/table-workspace';
+import { useToast } from '../../components/toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Tag = { id: string; name: string; color?: string | null };
@@ -31,7 +32,10 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
   const [workbooks, setWorkbooks] = useState<Workbook[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [activeTableId, setActiveTableId] = useState('');
+  const [menu, setMenu] = useState<{ tableId: string; top: number; left: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const dialog = useDialog();
+  const { toast } = useToast();
   const router = useRouter();
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
 
@@ -45,6 +49,11 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
       fetch(`${api}/workbooks/${workbookId}`, { headers }),
       fetch(`${api}/workbooks`, { headers }),
     ]);
+    if (!response.ok || !allResponse.ok) {
+      const failed = !response.ok ? response : allResponse;
+      toast(await responseMessage(failed, 'Unable to load workbook'), { kind: 'error' });
+      return;
+    }
     const next = (await response.json()) as Workbook;
     setWorkbook(next);
     setWorkbooks((await allResponse.json()) as Workbook[]);
@@ -57,9 +66,30 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
   useEffect(() => {
     if (!token) return;
     void fetch(`${api}/templates`, { headers: { authorization: `Bearer ${token}` } })
-      .then((response) => response.json() as Promise<Template[]>)
+      .then(async (response) => {
+        if (!response.ok) {
+          toast(await responseMessage(response, 'Unable to load templates'), { kind: 'error' });
+          return [];
+        }
+        return (await response.json()) as Template[];
+      })
       .then((items) => setTemplates(items.filter((item) => item.kind === 'table')));
   }, [token]);
+  useEffect(() => {
+    if (!menu) return;
+    function close(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenu(null);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMenu(null);
+    }
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menu]);
 
   const folderName = useMemo(
     () => workbook?.folder?.name ?? 'All workbooks',
@@ -74,11 +104,15 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
       confirmLabel: 'Rename',
     });
     if (!values?.name) return;
-    await fetch(`${api}/workbooks/${workbook.id}`, {
+    const response = await fetch(`${api}/workbooks/${workbook.id}`, {
       method: 'PATCH',
       headers: jsonHeaders(token),
       body: JSON.stringify({ name: values.name }),
     });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to rename workbook'), { kind: 'error' });
+      return;
+    }
     await load();
   }
 
@@ -109,7 +143,10 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
         workbookId: workbookId,
       }),
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to create table'), { kind: 'error' });
+      return;
+    }
     const result = (await response.json()) as { id?: string; tableId?: string };
     await load();
     setActiveTableId(result.id ?? result.tableId ?? '');
@@ -126,7 +163,14 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
         }))
       )
         return;
-      await fetch(`${api}/tables/${table.id}`, { method: 'DELETE', headers: jsonHeaders(token) });
+      const response = await fetch(`${api}/tables/${table.id}`, {
+        method: 'DELETE',
+        headers: jsonHeaders(token),
+      });
+      if (!response.ok) {
+        toast(await responseMessage(response, 'Unable to delete table'), { kind: 'error' });
+        return;
+      }
       await load();
       return;
     }
@@ -137,29 +181,39 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
         confirmLabel: 'Rename',
       });
       if (!values?.name) return;
-      await fetch(`${api}/tables/${table.id}`, {
+      const response = await fetch(`${api}/tables/${table.id}`, {
         method: 'PATCH',
         headers: jsonHeaders(token),
         body: JSON.stringify({ name: values.name }),
       });
+      if (!response.ok) {
+        toast(await responseMessage(response, 'Unable to rename table'), { kind: 'error' });
+        return;
+      }
     } else {
       const values = await dialog.prompt({
         title: 'Move table',
         fields: [
           {
             name: 'workbookId',
-            label: 'Destination workbook ID',
+            label: 'Destination workbook',
             defaultValue: workbookId,
+            type: 'select',
+            options: workbooks.map((item) => ({ value: item.id, label: item.name })),
           },
         ],
         confirmLabel: 'Move',
       });
       if (!values?.workbookId) return;
-      await fetch(`${api}/tables/${table.id}`, {
+      const response = await fetch(`${api}/tables/${table.id}`, {
         method: 'PATCH',
         headers: jsonHeaders(token),
         body: JSON.stringify({ workbookId: values.workbookId }),
       });
+      if (!response.ok) {
+        toast(await responseMessage(response, 'Unable to move table'), { kind: 'error' });
+        return;
+      }
     }
     await load();
   }
@@ -168,16 +222,24 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
     const index = workbook?.tables.findIndex((item) => item.id === table.id) ?? -1;
     const next = workbook?.tables[index + direction];
     if (!next) return;
-    await fetch(`${api}/tables/${table.id}`, {
+    const firstResponse = await fetch(`${api}/tables/${table.id}`, {
       method: 'PATCH',
       headers: jsonHeaders(token),
       body: JSON.stringify({ position: next.position }),
     });
-    await fetch(`${api}/tables/${next.id}`, {
+    if (!firstResponse.ok) {
+      toast(await responseMessage(firstResponse, 'Unable to reorder table'), { kind: 'error' });
+      return;
+    }
+    const secondResponse = await fetch(`${api}/tables/${next.id}`, {
       method: 'PATCH',
       headers: jsonHeaders(token),
       body: JSON.stringify({ position: table.position }),
     });
+    if (!secondResponse.ok) {
+      toast(await responseMessage(secondResponse, 'Unable to reorder table'), { kind: 'error' });
+      return;
+    }
     await load();
   }
 
@@ -223,23 +285,19 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
                 ▦ {table.name}
                 <small>{table._count.rows}</small>
               </button>
-              <div className="table-tab-menu">
-                <button className="icon-button">⋮</button>
-                <div className="card-menu-items">
-                  <button onClick={() => void updateTable(table, 'rename')}>Rename</button>
-                  <button onClick={() => void updateTable(table, 'move')}>Move</button>
-                  <button onClick={() => void moveTable(table, -1)} disabled={index === 0}>
-                    Move left
-                  </button>
-                  <button
-                    onClick={() => void moveTable(table, 1)}
-                    disabled={index === workbook.tables.length - 1}
-                  >
-                    Move right
-                  </button>
-                  <button onClick={() => void updateTable(table, 'delete')}>Delete</button>
-                </div>
-              </div>
+              <button
+                className="icon-button"
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setMenu((current) =>
+                    current?.tableId === table.id
+                      ? null
+                      : { tableId: table.id, top: rect.bottom + 4, left: rect.right - 130 },
+                  );
+                }}
+              >
+                ⋮
+              </button>
             </div>
           ))}
           <button className="table-tab add" onClick={() => void addTable()}>
@@ -247,15 +305,83 @@ export default function WorkbookPage({ params }: { params: Promise<{ id: string 
           </button>
         </div>
         {activeTableId ? (
-          <TableWorkspace tableId={activeTableId} embedded />
+          <TableWorkspace key={activeTableId} tableId={activeTableId} embedded />
         ) : (
           <div className="empty-state">Add a table to start working in this workbook.</div>
         )}
       </section>
+      {menu && (
+        <div
+          className="card-menu-items floating-menu"
+          ref={menuRef}
+          style={{ top: menu.top, left: menu.left }}
+        >
+          {(() => {
+            const table = workbook.tables.find((item) => item.id === menu.tableId);
+            if (!table) return null;
+            const index = workbook.tables.findIndex((item) => item.id === table.id);
+            return (
+              <>
+                <button
+                  onClick={() => {
+                    setMenu(null);
+                    void updateTable(table, 'rename');
+                  }}
+                >
+                  Rename
+                </button>
+                <button
+                  onClick={() => {
+                    setMenu(null);
+                    void updateTable(table, 'move');
+                  }}
+                >
+                  Move
+                </button>
+                <button
+                  onClick={() => {
+                    setMenu(null);
+                    void moveTable(table, -1);
+                  }}
+                  disabled={index === 0}
+                >
+                  Move left
+                </button>
+                <button
+                  onClick={() => {
+                    setMenu(null);
+                    void moveTable(table, 1);
+                  }}
+                  disabled={index === workbook.tables.length - 1}
+                >
+                  Move right
+                </button>
+                <button
+                  onClick={() => {
+                    setMenu(null);
+                    void updateTable(table, 'delete');
+                  }}
+                >
+                  Delete
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
     </main>
   );
 }
 
 function jsonHeaders(token: string): Record<string, string> {
   return { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+}
+
+async function responseMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string };
+    return body.message ?? fallback;
+  } catch {
+    return fallback;
+  }
 }

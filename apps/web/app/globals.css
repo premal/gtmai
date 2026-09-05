@@ -107,6 +107,7 @@ a {
 }
 .content {
   flex: 1;
+  min-width: 0;
   padding: 38px 48px;
   max-width: 1120px;
 }
@@ -314,6 +315,11 @@ a {
 .card-menu-items button:hover {
   background: #f1f0ff;
   color: #4338ca;
+}
+.floating-menu {
+  position: fixed;
+  display: grid;
+  z-index: 30;
 }
 .workbook-card-tables {
   display: grid;

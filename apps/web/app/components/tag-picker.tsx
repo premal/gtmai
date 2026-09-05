@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useToast } from './toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const colors = [
@@ -19,10 +20,12 @@ export function TagPicker({
   target,
   selected,
   onChange,
+  onTagCreated,
 }: {
   target: { type: 'folderId' | 'workbookId' | 'tableId'; id: string };
   selected: Tag[];
   onChange: (tags: Tag[]) => void;
+  onTagCreated?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -30,6 +33,7 @@ export function TagPicker({
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(colors[0]);
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
+  const { toast } = useToast();
   const matches = useMemo(
     () => available.filter((tag) => tag.name.toLowerCase().includes(query.toLowerCase())),
     [available, query],
@@ -39,16 +43,24 @@ export function TagPicker({
     setOpen((value) => !value);
     if (available.length) return;
     const response = await fetch(`${api}/tags`, { headers: { authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to load tags'), { kind: 'error' });
+      return;
+    }
     setAvailable((await response.json()) as Tag[]);
   }
 
   async function assign(tag: Tag) {
     if (selected.some((item) => item.id === tag.id)) return;
-    await fetch(`${api}/tags/${tag.id}/assign`, {
+    const response = await fetch(`${api}/tags/${tag.id}/assign`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ [target.type]: target.id }),
     });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to assign tag'), { kind: 'error' });
+      return;
+    }
     onChange([...selected, tag]);
   }
 
@@ -59,19 +71,27 @@ export function TagPicker({
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ name: newName.trim(), color: newColor }),
     });
-    if (!response.ok) return;
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to create tag'), { kind: 'error' });
+      return;
+    }
     const tag = (await response.json()) as Tag;
     setAvailable((current) => [...current, tag]);
     setNewName('');
     await assign(tag);
+    onTagCreated?.();
   }
 
   async function remove(tag: Tag) {
-    await fetch(`${api}/tags/${tag.id}/unassign`, {
+    const response = await fetch(`${api}/tags/${tag.id}/unassign`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ [target.type]: target.id }),
     });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to remove tag'), { kind: 'error' });
+      return;
+    }
     onChange(selected.filter((item) => item.id !== tag.id));
   }
 
@@ -131,4 +151,13 @@ export function TagPicker({
       )}
     </div>
   );
+}
+
+async function responseMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string };
+    return body.message ?? fallback;
+  } catch {
+    return fallback;
+  }
 }

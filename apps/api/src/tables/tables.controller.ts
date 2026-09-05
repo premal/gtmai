@@ -532,10 +532,13 @@ export class TablesController {
     const rows = loadedView
       ? applyView(loadedView.definition, table.columns, table.rows)
       : table.rows;
+    const columns = loadedView
+      ? table.columns.filter((column) => !loadedView.definition.hiddenColumnIds.includes(column.id))
+      : table.columns;
     const lines = [
-      table.columns.map((column) => escape(column.name)).join(','),
+      columns.map((column) => escape(column.name)).join(','),
       ...rows.map((row) =>
-        table.columns
+        columns
           .map((column) => escape(row.cells.find((cell) => cell.columnId === column.id)?.value))
           .join(','),
       ),

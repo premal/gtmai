@@ -126,7 +126,7 @@ export function TableWorkspace({
   tableId: string;
   embedded?: boolean;
 }) {
-  const [tableId] = useState(initialTableId);
+  const tableId = initialTableId;
   const [table, setTable] = useState<Table | null>(null);
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [selectedColumn, setSelectedColumn] = useState<Column | null>(null);
@@ -170,7 +170,6 @@ export function TableWorkspace({
   const [menuColumnId, setMenuColumnId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [views, setViews] = useState<SavedView[]>([]);
-  const [activeViewId, setActiveViewId] = useState('');
   const [totalRows, setTotalRows] = useState(0);
   const [viewMenu, setViewMenu] = useState<'filter' | 'sort' | 'hide' | null>(null);
   const [draftFilters, setDraftFilters] = useState<FilterDraft[]>([
@@ -188,10 +187,13 @@ export function TableWorkspace({
   const gridRef = useRef<HTMLDivElement>(null);
   const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const menuRef = useRef<HTMLDivElement>(null);
+  const activeViewId = searchParams.get('view') ?? '';
+  const activeViewRef = useRef(activeViewId);
+  const loadSequence = useRef(0);
 
   useEffect(() => {
-    setActiveViewId(searchParams.get('view') ?? '');
-  }, [searchParams]);
+    activeViewRef.current = activeViewId;
+  }, [activeViewId]);
 
   useEffect(() => {
     if (!menuColumnId) return;
@@ -225,31 +227,48 @@ export function TableWorkspace({
   useEffect(() => {
     if (!tableId) return;
     const token = localStorage.getItem('gtmai-token') ?? '';
-    const load = (): void => {
-      const suffix = activeViewId ? `?viewId=${encodeURIComponent(activeViewId)}` : '';
-      void fetch(`${api}/tables/${tableId}${suffix}`, {
-        headers: { authorization: `Bearer ${token}` },
-      })
-        .then((response) => response.json() as Promise<Table>)
-        .then(setTable);
+    const controller = new AbortController();
+    const sequence = ++loadSequence.current;
+    const headers = { authorization: `Bearer ${token}` };
+    const load = async (viewId: string): Promise<void> => {
+      const suffix = viewId ? `?viewId=${encodeURIComponent(viewId)}` : '';
+      const viewedResponse = await fetch(`${api}/tables/${tableId}${suffix}`, {
+        headers,
+        signal: controller.signal,
+      });
+      if (!viewedResponse.ok) return;
+      const viewed = (await viewedResponse.json()) as Table;
+      let total = viewed.rows.length;
+      if (viewId) {
+        const totalResponse = await fetch(`${api}/tables/${tableId}`, {
+          headers,
+          signal: controller.signal,
+        });
+        if (!totalResponse.ok) return;
+        const unfiltered = (await totalResponse.json()) as Table;
+        total = unfiltered.rows.length;
+      }
+      if (controller.signal.aborted || sequence !== loadSequence.current) return;
+      setTable(viewed);
+      setTotalRows(total);
     };
-    load();
-    void fetch(`${api}/tables/${tableId}/views`, {
-      headers: { authorization: `Bearer ${token}` },
-    })
-      .then((response) => response.json() as Promise<SavedView[]>)
-      .then(setViews);
-    void fetch(`${api}/tables/${tableId}`, { headers: { authorization: `Bearer ${token}` } })
-      .then((response) => response.json() as Promise<Table>)
-      .then((value) => setTotalRows(value.rows.length));
+    void load(activeViewId).catch(() => undefined);
+    void fetch(`${api}/tables/${tableId}/views`, { headers, signal: controller.signal })
+      .then((response) => (response.ok ? (response.json() as Promise<SavedView[]>) : []))
+      .then(setViews)
+      .catch(() => undefined);
     void fetch(`${api}/providers/catalog`)
       .then((response) => response.json() as Promise<CatalogAction[]>)
       .then(setCatalog);
     const stream = new EventSource(
       `${api}/tables/${tableId}/events?token=${encodeURIComponent(token)}`,
     );
-    stream.onmessage = () => load();
-    return () => stream.close();
+    stream.onmessage = () => void load(activeViewRef.current).catch(() => undefined);
+    return () => {
+      loadSequence.current += 1;
+      controller.abort();
+      stream.close();
+    };
   }, [activeViewId, tableId]);
 
   async function run(columnId: string, options: RunOptions = {}): Promise<void> {
@@ -341,7 +360,6 @@ export function TableWorkspace({
     setViews((current) =>
       view.id ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved],
     );
-    setActiveViewId(saved.id);
     router.replace(`/tables/${tableId}?view=${saved.id}`);
   }
 
@@ -366,7 +384,6 @@ export function TableWorkspace({
   }
 
   async function selectView(id: string): Promise<void> {
-    setActiveViewId(id);
     router.replace(id ? `/tables/${tableId}?view=${id}` : `/tables/${tableId}`);
   }
 
@@ -409,15 +426,18 @@ export function TableWorkspace({
       if (values?.name) await saveView({ ...view, name: values.name });
       return;
     }
-    await fetch(`${api}/tables/${tableId}/views/${view.id}/duplicate`, {
+    const duplicateResponse = await fetch(`${api}/tables/${tableId}/views/${view.id}/duplicate`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },
       body: JSON.stringify({}),
     });
+    if (!duplicateResponse.ok) return;
+    const duplicate = (await duplicateResponse.json()) as SavedView;
     const refreshed = await fetch(`${api}/tables/${tableId}/views`, {
       headers: { authorization: `Bearer ${token}` },
     });
     setViews((await refreshed.json()) as SavedView[]);
+    await selectView(duplicate.id);
   }
 
   async function addRow(): Promise<void> {
