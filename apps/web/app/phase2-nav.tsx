@@ -5,6 +5,10 @@ import { SignOutFooter } from './auth';
 export function Phase2Nav({ active }: { active: string }) {
   const links = [
     ['audiences', '◎ Audiences'],
+    ['sequences', '✉ Sequences'],
+    ['campaigns', '➜ Campaigns'],
+    ['ads', '◉ Ads'],
+    ['crm', '↗ CRM'],
     ['signals', '◌ Signals'],
     ['workflows', '⌘ Workflows'],
     ['functions', 'ƒ Functions'],

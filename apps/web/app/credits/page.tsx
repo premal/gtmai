@@ -22,11 +22,16 @@ type LedgerPage = {
   pages: number;
   total: number;
 };
+type UsageItem = { key: string; spend: number };
 
 export default function CreditsPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [ledger, setLedger] = useState<LedgerPage | null>(null);
   const [page, setPage] = useState(1);
+  const [usage, setUsage] = useState<UsageItem[]>([]);
+  const [budgets, setBudgets] = useState<
+    Array<{ id: string; scope: string; limit: number; period: string }>
+  >([]);
   useEffect(() => {
     const token = localStorage.getItem('gtmai-token') ?? '';
     void fetch(`${api}/credits/summary`, { headers: { authorization: `Bearer ${token}` } })
@@ -37,6 +42,14 @@ export default function CreditsPage() {
     })
       .then((response) => response.json() as Promise<LedgerPage>)
       .then(setLedger);
+    void fetch(`${api}/usage/summary?groupBy=day`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((response) => response.json() as Promise<UsageItem[]>)
+      .then(setUsage);
+    void fetch(`${api}/usage/budgets`, { headers: { authorization: `Bearer ${token}` } })
+      .then((response) => response.json())
+      .then(setBudgets);
   }, [page]);
   const values = summary ? Object.values(summary.daily).slice(-30) : [];
   const max = Math.max(...values, 1);
@@ -77,6 +90,27 @@ export default function CreditsPage() {
         <div className="sparkline">
           {values.map((value, index) => (
             <span key={index} style={{ height: `${Math.max(4, (value / max) * 80)}px` }} />
+          ))}
+        </div>
+        <h3>Usage dashboard</h3>
+        <div className="table-list">
+          {usage.slice(-14).map((item) => (
+            <div className="table-card" key={item.key}>
+              <strong>{item.key}</strong>
+              <span>{item.spend} credits</span>
+              <span className="usage-bar" style={{ width: `${Math.min(100, item.spend)}%` }} />
+            </div>
+          ))}
+        </div>
+        <h3 className="section-title">Budgets</h3>
+        <div className="table-list">
+          {budgets.map((budget) => (
+            <div className="table-card" key={budget.id}>
+              <strong>{budget.scope}</strong>
+              <span>
+                {budget.limit} credits / {budget.period}
+              </span>
+            </div>
           ))}
         </div>
         <h3>Spend by table</h3>
