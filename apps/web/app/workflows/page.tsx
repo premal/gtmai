@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
+import { useDialog } from '../components/prompt-dialog';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Workflow = {
@@ -20,6 +21,7 @@ export default function WorkflowsPage() {
   const [runs, setRuns] = useState<unknown[]>([]);
   const [message, setMessage] = useState('');
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
+  const dialog = useDialog();
   async function load() {
     const response = await fetch(`${api}/workflows`, {
       headers: { authorization: `Bearer ${token}` },
@@ -70,10 +72,29 @@ export default function WorkflowsPage() {
   }
   async function run() {
     if (!selected) return;
+    const signalTrigger = selected.graph.nodes.some((node) => node.type === 'trigger.signal');
+    let input: Record<string, unknown> = {};
+    if (signalTrigger) {
+      const values = await dialog.prompt({
+        title: 'Run signal workflow',
+        description: 'Provide the signal payload as a JSON object.',
+        fields: [
+          {
+            name: 'input',
+            label: 'Signal input JSON',
+            defaultValue: '{ "email": "", "domain": "" }',
+            multiline: true,
+          },
+        ],
+        confirmLabel: 'Queue run',
+      });
+      if (!values) return;
+      input = JSON.parse(values.input ?? '{}') as Record<string, unknown>;
+    }
     const response = await fetch(`${api}/workflows/${selected.id}/run`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify(input),
     });
     if (!response.ok) {
       setMessage('Unable to queue workflow run');
@@ -84,7 +105,7 @@ export default function WorkflowsPage() {
   }
   return (
     <main className="app-shell">
-      <Phase2Nav active="workflows" />
+      <AppNav active="workflows" />
       <section className="content">
         <header className="topbar">
           <div>

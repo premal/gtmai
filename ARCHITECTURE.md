@@ -10,11 +10,12 @@ sequencer, ad-audience sync, CRM write-back, a public API/CLI and an MCP server.
 - **Monorepo**: pnpm workspaces + Turborepo, TypeScript everywhere (Node 20).
 - **apps/web**: Next.js 15 (App Router), Tailwind, shadcn/ui-style components, TanStack Query + TanStack Table (virtualized grid).
 - **apps/api**: NestJS 10 on the Fastify adapter. REST + OpenAPI (`/docs`), Zod-validated DTOs (`nestjs-zod`), JWT auth, workspace-scoped RBAC, API keys for the public API, MCP server endpoint (`/mcp`, Streamable HTTP).
-- **apps/worker**: same Nest application context, runs BullMQ processors only. Scale horizontally.
+- **apps/worker**: BullMQ processors for cells, workflows, outbound, ads, CRM, and usage. Scale horizontally.
 - **packages/db**: Prisma schema + client (Postgres). JSONB for cell values, column configs, workflow graphs.
 - **packages/providers**: provider adapter SDK + adapters (mock, Hunter, Prospeo, Datagma, Apollo, People Data Labs, HTTP, LLM via OpenAI/Anthropic).
 - **packages/shared**: Zod schemas shared by API/web/CLI, formula engine, column-type registry.
-- **packages/cli**: `gtm` CLI (device-code login, searches, run functions, workflows, tables).
+- **packages/cli**: `gtmai` Commander CLI using `~/.gtmai/config.json` and the public REST API.
+- **packages/mcp**: stdio MCP server exposing REST-backed contact, enrichment, workflow, table, and campaign tools.
 - **Infra**: Postgres 16 + Redis 7 via `docker-compose.yml`. Queues: BullMQ. Secrets (provider keys) encrypted at rest with AES-256-GCM using `ENCRYPTION_KEY`.
 
 ## Execution model
@@ -48,9 +49,10 @@ Concurrency is per worker (`CELL_CONCURRENCY`, default 20); per-provider rate li
 - **Signals**: SignalDefinition (type: job_change|new_hire|funding|website_visit|custom; config), SignalEvent (contactId/companyId, payload, occurredAt).
 - **Workflows**: Workflow (graph JSONB: nodes[trigger|enrich|agent|condition|score|route|action|delay], edges), WorkflowRun, StepRun (credits, input/output, status).
 - **Functions**: Function, FunctionVersion (program JSONB = ordered column definitions), FunctionRun; tags; test cases.
-- **Sequencer**: Inbox (SMTP/IMAP or provider), Sequence, SequenceStep, Campaign, Enrollment, Message, Reply.
-- **Ads**: AdAudience, AdPlatformSync.
-- **Credits**: CreditLedger (workspaceId, delta, reason, refType/refId), CreditBudget (scope, limit, period), UsageSnapshot.
+- **Sequencer**: Inbox, Sequence, ordered SequenceStep, Campaign, Enrollment, Message, Reply. The `outbound` worker renders `{{contact.*}}` and `{{company.*}}` bindings, sends mock/SMTP messages, and schedules delayed steps.
+- **Ads**: AdAudience, AdPlatformSync. Mock, Meta, Google, and LinkedIn adapters hash PII with SHA-256 and require a matching encrypted Connection for non-mock providers.
+- **CRM**: CrmSyncJob and CrmSyncRecord support segment/table sources, mock inspection, HubSpot batch upsert, and webhook destinations.
+- **Credits**: CreditLedger, scoped CreditBudget records, UsageSnapshot, Alert, and AlertChannel. Usage rollups and spike webhooks run on the `usage` queue.
 - **Template** (kind: table|workflow, definition JSONB).
 
 ## Provider adapter SDK (`packages/providers`)

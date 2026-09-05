@@ -16,13 +16,22 @@ import { FunctionsModule } from './functions/functions.module';
 import { TemplatesModule } from './templates/templates.module';
 import { FormulaController } from './formula.controller';
 import { DocsModule } from './docs.module';
+import { SequencesModule } from './sequences/sequences.module';
+import { AdsModule } from './ads/ads.module';
+import { CrmModule } from './crm/crm.module';
+import { ApiKeysModule } from './api-keys/api-keys.module';
+import { UsageModule } from './usage/usage.module';
 
 function required(name: string): string {
   const value = process.env[name];
   if (!value && process.env.NODE_ENV !== 'test') {
     throw new Error(`${name} is required`);
   }
-  return value ?? `test-${name.toLowerCase()}`;
+  if (value) return value;
+  if (name === 'ENCRYPTION_KEY') {
+    return '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+  }
+  return 'test-jwt-secret';
 }
 
 @Module({
@@ -43,7 +52,14 @@ function required(name: string): string {
         },
       }),
     }),
-    BullModule.registerQueue({ name: 'signals' }, { name: 'workflows' }),
+    BullModule.registerQueue(
+      { name: 'signals' },
+      { name: 'workflows' },
+      { name: 'outbound' },
+      { name: 'ads' },
+      { name: 'crm' },
+      { name: 'usage' },
+    ),
     PrismaModule,
     AuthModule,
     WorkspacesModule,
@@ -58,6 +74,11 @@ function required(name: string): string {
     WorkflowsModule,
     FunctionsModule,
     TemplatesModule,
+    SequencesModule,
+    AdsModule,
+    CrmModule,
+    ApiKeysModule,
+    UsageModule,
   ],
   controllers: [FormulaController],
 })

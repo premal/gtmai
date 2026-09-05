@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { Provider, ProviderAction, ActionResult } from './types';
+import { peopleOutput, type Provider, type ProviderAction, type ActionResult } from './types';
 const input = z.record(z.unknown());
 const output = z.record(z.unknown());
+const peopleInput = z.object({
+  domain: z.string().min(1),
+  limit: z.number().int().min(1).max(100).default(3),
+});
 function fake(
   action: string,
   data: Record<string, unknown>,
@@ -64,5 +68,45 @@ export const mockProvider: Provider = {
     action('mock.verifyEmail', 'Verify email', 'verify'),
     action('mock.jobChanges', 'Job changes', 'other'),
     action('mock.funding', 'Funding events', 'other'),
+    {
+      id: 'mock.findPeople',
+      name: 'Find people',
+      category: 'search',
+      sourceKind: 'people',
+      input: peopleInput,
+      output: peopleOutput,
+      creditCost: 1,
+      async run(value: unknown) {
+        const input = peopleInput.parse(value);
+        const domain = input.domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        const slug = domain
+          .replace(/[^a-z0-9]+/gi, '-')
+          .replace(/^-|-$/g, '')
+          .toLowerCase();
+        const people = [
+          ['Alex', 'Rivera', 'VP Revenue Operations', 'vp', 'revenue operations'],
+          ['Sam', 'Chen', 'Head of Growth', 'director', 'growth'],
+          ['Jordan', 'Patel', 'GTM Engineer', 'manager', 'engineering'],
+        ].slice(0, input.limit);
+        return {
+          found: true,
+          data: peopleOutput.parse({
+            people: people.map(([firstName, lastName, title, seniority, department]) => ({
+              firstName,
+              lastName,
+              fullName: `${firstName} ${lastName}`,
+              title,
+              seniority,
+              department,
+              email: `${String(firstName).toLowerCase()}@${domain}`,
+              emailStatus: 'verified',
+              linkedinUrl: `https://linkedin.com/in/${String(firstName).toLowerCase()}-${String(lastName).toLowerCase()}-${slug}`,
+              company: { domain },
+            })),
+            total: 3,
+          }),
+        };
+      },
+    },
   ] as unknown as Provider['actions'],
 };

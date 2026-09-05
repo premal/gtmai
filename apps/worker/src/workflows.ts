@@ -18,6 +18,7 @@ import {
   executorDb,
   type Values,
 } from './executors';
+import { budgetExceeded } from './budgets';
 
 const redis = new (require('ioredis'))(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -26,6 +27,7 @@ const publisher = new (require('ioredis'))(
   process.env.REDIS_URL ?? 'redis://localhost:6379',
 ) as import('ioredis').default;
 const workflowQueue = new Queue('workflows', { connection: redis });
+const outboundQueue = new Queue('outbound', { connection: redis });
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 
 type WorkflowJob = { runId: string; workspaceId: string; resumeFrom?: string };
@@ -182,6 +184,30 @@ async function executeWorkflowNode(
     });
     return { output: { contactId: contact.id }, credits: 0 };
   }
+  if (type === 'sequence.enroll') {
+    const campaignId = String(config.campaignId ?? '');
+    const contactId = String(config.contactId ?? getPath(context, 'trigger.contactId') ?? '');
+    if (!campaignId || !contactId) throw new Error('Campaign and contact are required');
+    const campaign = await executorDb.campaign.findFirst({
+      where: { id: campaignId, workspaceId },
+      include: { sequence: { include: { steps: { orderBy: { position: 'asc' } } } } },
+    });
+    if (!campaign) throw new Error('Campaign not found');
+    const enrollment = await executorDb.enrollment.upsert({
+      where: { campaignId_contactId: { campaignId, contactId } },
+      update: { status: 'active' },
+      create: { campaignId, contactId, status: 'active' },
+    });
+    const first = campaign.sequence.steps[0];
+    if (first) {
+      await outboundQueue.add(
+        'campaign-step',
+        { enrollmentId: enrollment.id, stepPosition: first.position, workspaceId },
+        { jobId: `outbound:${enrollment.id}:${first.position}` },
+      );
+    }
+    return { output: { enrollmentId: enrollment.id }, credits: 0 };
+  }
   if (type === 'table.appendRow') {
     const tableId = String(config.tableId ?? '');
     const table = await executorDb.table.findFirst({
@@ -207,11 +233,15 @@ async function executeWorkflowNode(
             : { rowId: row.id, columnId: column.id, value: json(resolved), status: 'done' },
       });
       if (resolved === undefined && column.kind !== 'input') {
-        await new Queue('cells', { connection: redis }).add('cell', {
-          rowId: row.id,
-          columnId: column.id,
-          workspaceId,
-        });
+        await new Queue('cells', { connection: redis }).add(
+          'cell',
+          {
+            rowId: row.id,
+            columnId: column.id,
+            workspaceId,
+          },
+          { attempts: 3, backoff: { type: 'exponential', delay: 10_000 } },
+        );
       }
     }
     return { output: { rowId: row.id }, credits: 0 };
@@ -280,6 +310,36 @@ export async function executeWorkflowRun(
     }
     const context = bindingValues(outputs);
     const input = bindNodeConfig(node.type, node.config, context);
+    const estimatedCredits = Number(
+      input.creditCost ??
+        (['formula', 'condition', 'delay', 'sequence.enroll'].includes(node.type) ? 0 : 1),
+    );
+    if (
+      await budgetExceeded(
+        workspaceId,
+        estimatedCredits,
+        input.tableId ? String(input.tableId) : undefined,
+        input.provider ? String(input.provider) : undefined,
+      )
+    ) {
+      states.set(nodeId, 'skipped');
+      await executorDb.stepRun.create({
+        data: {
+          workflowRunId: run.id,
+          nodeId,
+          status: 'skipped',
+          input: json(input),
+          error: 'budget exceeded',
+          credits: 0,
+        },
+      });
+      await publishWorkflowEvent(run.workflow.id, run.id, {
+        nodeId,
+        status: 'skipped',
+        error: 'budget exceeded',
+      });
+      continue;
+    }
     const step = await executorDb.stepRun.create({
       data: { workflowRunId: run.id, nodeId, status: 'running', input: json(input) },
     });
@@ -314,6 +374,7 @@ export async function executeWorkflowRun(
         await executorDb.creditLedger.create({
           data: {
             workspaceId,
+            provider: input.provider ? String(input.provider) : null,
             delta: -result.credits,
             reason: 'workflow step',
             refType: 'workflowRun',

@@ -5,11 +5,13 @@ import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swag
 import multipart from '@fastify/multipart';
 import { AppModule } from './app.module';
 import { DocsModule } from './docs.module';
+import { GlobalExceptionFilter } from './common/http-exception.filter';
 
 export async function createApp(): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
   await app.register(multipart);
   app.enableCors({ origin: true });
+  app.useGlobalFilters(new GlobalExceptionFilter());
   return app;
 }
 

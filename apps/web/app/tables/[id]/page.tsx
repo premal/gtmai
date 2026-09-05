@@ -1,8 +1,12 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SignOutFooter } from '../../auth';
+import type { ReactNode } from 'react';
+import { AppNav } from '../../app-nav';
+import { useDialog } from '../../components/prompt-dialog';
+import { useToast } from '../../components/toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Cell = {
@@ -23,6 +27,7 @@ type Column = {
   name: string;
   kind: string;
   type: string;
+  width?: number;
   config?: unknown;
   colorLabel?: string;
 };
@@ -39,8 +44,65 @@ type CatalogAction = {
   id: string;
   name: string;
   category: string;
+  sourceKind?: 'companies' | 'people';
   creditCost: number;
 };
+type SourceField = {
+  name: string;
+  label: string;
+  type?: 'text' | 'number';
+  required?: boolean;
+  hint?: string;
+};
+const sourceFields: Record<string, SourceField[]> = {
+  'theirstack.searchCompanies': [
+    {
+      name: 'technology',
+      label: 'Technology slug',
+      required: true,
+      hint: 'TheirStack slug, e.g. salesforce, hubspot, clay',
+    },
+    { name: 'country', label: 'Country (ISO2)' },
+    { name: 'minEmployees', label: 'Minimum employees', type: 'number' },
+    { name: 'maxEmployees', label: 'Maximum employees', type: 'number' },
+    { name: 'limit', label: 'Limit', type: 'number' },
+  ],
+};
+const sourceActionIds = new Set(Object.keys(sourceFields));
+type PeopleField = { name: string; label: string; type?: 'text' | 'number' };
+const peopleFields: Record<string, PeopleField[]> = {
+  'apollo.peopleSearch': [
+    { name: 'titles', label: 'Titles (comma-separated)' },
+    { name: 'seniorities', label: 'Seniorities (comma-separated)' },
+    { name: 'departments', label: 'Departments (comma-separated)' },
+    { name: 'limit', label: 'Limit', type: 'number' },
+  ],
+  'hunter.domainSearch': [
+    { name: 'department', label: 'Department' },
+    { name: 'seniority', label: 'Seniority' },
+    { name: 'limit', label: 'Limit', type: 'number' },
+  ],
+  'mock.findPeople': [{ name: 'limit', label: 'Limit', type: 'number' }],
+};
+
+function ModalShell({
+  children,
+  footer,
+  onClose,
+}: {
+  children: ReactNode;
+  footer: ReactNode;
+  onClose?: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <section className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-body">{children}</div>
+        <div className="modal-actions">{footer}</div>
+      </section>
+    </div>
+  );
+}
 
 export default function TablePage({ params }: { params: Promise<{ id: string }> }) {
   const [tableId, setTableId] = useState('');
@@ -62,6 +124,16 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [catalog, setCatalog] = useState<CatalogAction[]>([]);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [importOpen, setImportOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceActionId, setSourceActionId] = useState('theirstack.searchCompanies');
+  const [sourceInput, setSourceInput] = useState<Record<string, string>>({ limit: '25' });
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [peopleActionId, setPeopleActionId] = useState('mock.findPeople');
+  const [peopleInput, setPeopleInput] = useState<Record<string, string>>({ limit: '10' });
+  const [peopleDomain, setPeopleDomain] = useState('{{Domain}}');
+  const [peopleScope, setPeopleScope] = useState<'selected' | 'all'>('all');
+  const [peopleCarry, setPeopleCarry] = useState<string[]>([]);
+  const [peopleTableName, setPeopleTableName] = useState('');
   const [csv, setCsv] = useState('');
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
@@ -76,12 +148,45 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [agentPreview, setAgentPreview] = useState('');
   const [menuColumnId, setMenuColumnId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const dialog = useDialog();
+  const { toast } = useToast();
+  const router = useRouter();
   const gridRef = useRef<HTMLDivElement>(null);
   const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void params.then(({ id }) => setTableId(id));
   }, [params]);
+
+  useEffect(() => {
+    if (!menuColumnId) return;
+    function closeMenu(event: MouseEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuColumnId(null);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMenuColumnId(null);
+    }
+    document.addEventListener('mousedown', closeMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', closeMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuColumnId]);
+
+  useEffect(() => {
+    if (!adding && !importOpen && !sourceOpen && !peopleOpen) return;
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      if (adding) setAdding(false);
+      if (importOpen) setImportOpen(false);
+      if (sourceOpen) setSourceOpen(false);
+      if (peopleOpen) setPeopleOpen(false);
+    }
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [adding, importOpen, sourceOpen, peopleOpen]);
 
   useEffect(() => {
     if (!tableId) return;
@@ -279,6 +384,92 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     await reload();
   }
 
+  async function importSource(): Promise<void> {
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    const fields = sourceFields[sourceActionId] ?? [];
+    const input = Object.fromEntries(
+      fields
+        .filter((field) => sourceInput[field.name] !== undefined && sourceInput[field.name] !== '')
+        .map((field) => [
+          field.name,
+          field.type === 'number' ? Number(sourceInput[field.name]) : sourceInput[field.name],
+        ]),
+    );
+    const response = await fetch(`${api}/tables/${tableId}/source`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'theirstack', action: sourceActionId, input }),
+    });
+    const body = (await response.json()) as { imported?: number; message?: string };
+    if (!response.ok) {
+      toast(body.message ?? 'Source import failed', { kind: 'error' });
+      return;
+    }
+    setSourceOpen(false);
+    await reload();
+    toast(`Imported ${body.imported ?? 0} companies`);
+  }
+
+  function openPeople(): void {
+    if (!table) return;
+    const defaults = table.columns
+      .filter(
+        (column) =>
+          ['input', 'formula'].includes(column.kind) &&
+          !['Company', 'Domain'].includes(column.name),
+      )
+      .map((column) => column.name);
+    setPeopleCarry(defaults);
+    setPeopleTableName(`${table.name} — people`);
+    setPeopleActionId(peopleActions[0]?.id ?? 'mock.findPeople');
+    setPeopleInput({ limit: '10' });
+    setPeopleDomain('{{Domain}}');
+    setPeopleScope(selectedRows.length ? 'selected' : 'all');
+    setPeopleOpen(true);
+  }
+
+  async function fanoutPeople(): Promise<void> {
+    if (!table) return;
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    const selectedAction = catalog.find((item) => item.id === peopleActionId);
+    if (!selectedAction) return;
+    const fields = peopleFields[peopleActionId] ?? [];
+    const actionInput = Object.fromEntries(
+      fields
+        .filter((field) => peopleInput[field.name] !== undefined && peopleInput[field.name] !== '')
+        .map((field) => [
+          field.name,
+          field.type === 'number' ? Number(peopleInput[field.name]) : peopleInput[field.name],
+        ]),
+    );
+    const response = await fetch(`${api}/tables/${tableId}/fanout`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: selectedAction.provider,
+        action: selectedAction.id,
+        input: { domain: peopleDomain, ...actionInput },
+        rowIds: peopleScope === 'selected' ? selectedRows : undefined,
+        carry: peopleCarry,
+        target: { name: peopleTableName || `${table.name} — people` },
+      }),
+    });
+    const body = (await response.json()) as {
+      tableId?: string;
+      imported?: number;
+      sourceRows?: number;
+      errors?: { message: string }[];
+      message?: string;
+    };
+    if (!response.ok) {
+      toast(body.message ?? 'Find people failed', { kind: 'error' });
+      return;
+    }
+    setPeopleOpen(false);
+    toast(`Found ${body.imported ?? 0} people across ${body.sourceRows ?? 0} companies`);
+    if (body.tableId) router.push(`/tables/${body.tableId}`);
+  }
+
   async function previewAgent(): Promise<void> {
     if (!selectedColumn) return;
     const token = localStorage.getItem('gtmai-token') ?? '';
@@ -356,29 +547,23 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
     () => catalog.filter((item) => item.provider === provider),
     [catalog, provider],
   );
+  const peopleActions = useMemo(() => {
+    const order = ['apollo', 'hunter', 'mock'];
+    return catalog
+      .filter((item) => item.category === 'search' && item.sourceKind === 'people')
+      .sort((left, right) => order.indexOf(left.provider) - order.indexOf(right.provider));
+  }, [catalog]);
 
   if (!table) return <main className="loading">Loading table…</main>;
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">G</span>
-          <strong>GTM AI</strong>
-        </div>
+      <AppNav>
         <a className="back-link" href="/">
           ← All tables
         </a>
         <div className="sidebar-section">TABLE</div>
         <div className="current-table">▦ {table.name}</div>
-        <nav>
-          <a className="active" href={`/tables/${tableId}`}>
-            ▤ Grid
-          </a>
-          <a href="/connections">⌁ Connections</a>
-          <a href="/credits">◈ Credits</a>
-        </nav>
-        <SignOutFooter />
-      </aside>
+      </AppNav>
       <section className="content wide">
         <header className="topbar">
           <div>
@@ -397,6 +582,12 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
               }}
             >
               ＋ Add column
+            </button>
+            <button className="button" onClick={() => setSourceOpen(true)}>
+              Import from source
+            </button>
+            <button className="button" onClick={openPeople}>
+              Find people
             </button>
             <button className="button" onClick={() => void addRow()}>
               ＋ Row
@@ -425,14 +616,22 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         </div>
         <div className="grid-wrap" ref={gridRef}>
           <table className="data-grid">
+            <colgroup>
+              <col className="row-num-col" />
+              {table.columns.map((column) => (
+                <col key={column.id} style={{ width: `${column.width ?? 220}px` }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 <th className="row-num">✓</th>
                 {table.columns.map((column) => (
                   <th key={column.id}>
                     <div className="column-title">
-                      <span className={`kind-dot ${column.kind}`} />
-                      {column.name}
+                      <span className={`kind-dot kind-${column.kind}`} />
+                      <span className="column-name" title={column.name}>
+                        {column.name}
+                      </span>
                     </div>
                     <span className="column-meta">
                       {column.kind} · {column.type}
@@ -444,152 +643,218 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                       <button className="run-link" onClick={() => openColumn(column)}>
                         ✎ Edit
                       </button>
-                      <button
-                        className="icon-button"
-                        aria-label={`More actions for ${column.name}`}
-                        onClick={() =>
-                          setMenuColumnId(menuColumnId === column.id ? null : column.id)
-                        }
+                      <div
+                        className="column-menu-anchor"
+                        ref={menuColumnId === column.id ? menuRef : undefined}
                       >
-                        ⋮
-                      </button>
-                      {menuColumnId === column.id && (
-                        <div className="column-menu">
-                          <button onClick={() => void run(column.id, { onlyEmpty: true })}>
-                            Run empty
-                          </button>
-                          <button onClick={() => void run(column.id, { onlyErrored: true })}>
-                            Run errored
-                          </button>
-                          <button onClick={() => openColumn(column)}>Edit config</button>
-                          <div className="menu-label">Color label</div>
-                          <div className="color-options">
-                            {['indigo', 'green', 'orange', 'pink'].map((color) => (
-                              <button
-                                key={color}
-                                className={`color-dot ${color}`}
-                                aria-label={`Set ${color} label`}
-                                onClick={async () => {
-                                  const token = localStorage.getItem('gtmai-token') ?? '';
-                                  await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                    method: 'PATCH',
-                                    headers: {
-                                      authorization: `Bearer ${token}`,
-                                      'content-type': 'application/json',
+                        <button
+                          className="icon-button"
+                          aria-label={`More actions for ${column.name}`}
+                          onClick={() =>
+                            setMenuColumnId(menuColumnId === column.id ? null : column.id)
+                          }
+                        >
+                          ⋮
+                        </button>
+                        {menuColumnId === column.id && (
+                          <div className="column-menu">
+                            <button
+                              onClick={() => {
+                                setMenuColumnId(null);
+                                void run(column.id, { onlyEmpty: true });
+                              }}
+                            >
+                              Run empty
+                            </button>
+                            <button
+                              onClick={() => {
+                                setMenuColumnId(null);
+                                void run(column.id, { onlyErrored: true });
+                              }}
+                            >
+                              Run errored
+                            </button>
+                            <button
+                              onClick={() => {
+                                setMenuColumnId(null);
+                                openColumn(column);
+                              }}
+                            >
+                              Edit config
+                            </button>
+                            <div className="color-label-row">
+                              <div className="menu-label">Color label</div>
+                              <div className="color-options">
+                                {['indigo', 'green', 'orange', 'pink'].map((color) => (
+                                  <button
+                                    key={color}
+                                    className={`color-dot ${color}`}
+                                    aria-label={`Set ${color} label`}
+                                    onClick={async () => {
+                                      const token = localStorage.getItem('gtmai-token') ?? '';
+                                      await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                        method: 'PATCH',
+                                        headers: {
+                                          authorization: `Bearer ${token}`,
+                                          'content-type': 'application/json',
+                                        },
+                                        body: JSON.stringify({ colorLabel: color }),
+                                      });
+                                      setMenuColumnId(null);
+                                      await reload();
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              onClick={async () => {
+                                setMenuColumnId(null);
+                                const values = await dialog.prompt({
+                                  title: 'Rename column',
+                                  fields: [
+                                    {
+                                      name: 'name',
+                                      label: 'Column name',
+                                      defaultValue: column.name,
                                     },
-                                    body: JSON.stringify({ colorLabel: color }),
-                                  });
-                                  setMenuColumnId(null);
-                                  await reload();
-                                }}
-                              />
-                            ))}
+                                  ],
+                                  confirmLabel: 'Rename column',
+                                });
+                                if (!values?.name) return;
+                                const name = values.name;
+                                const token = localStorage.getItem('gtmai-token') ?? '';
+                                await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                  method: 'PATCH',
+                                  headers: {
+                                    authorization: `Bearer ${token}`,
+                                    'content-type': 'application/json',
+                                  },
+                                  body: JSON.stringify({ name }),
+                                });
+                                await reload();
+                              }}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              className="danger"
+                              onClick={async () => {
+                                setMenuColumnId(null);
+                                const confirmed = await dialog.confirm({
+                                  title: `Delete ${column.name}?`,
+                                  description: 'This column and its values will be removed.',
+                                  confirmLabel: 'Delete column',
+                                  danger: true,
+                                });
+                                if (!confirmed) return;
+                                const token = localStorage.getItem('gtmai-token') ?? '';
+                                await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                  method: 'DELETE',
+                                  headers: { authorization: `Bearer ${token}` },
+                                });
+                                await reload();
+                              }}
+                            >
+                              Delete
+                            </button>
                           </div>
-                          <button
-                            onClick={async () => {
-                              const name = window.prompt('Rename column', column.name);
-                              if (!name) return;
-                              const token = localStorage.getItem('gtmai-token') ?? '';
-                              await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                method: 'PATCH',
-                                headers: {
-                                  authorization: `Bearer ${token}`,
-                                  'content-type': 'application/json',
-                                },
-                                body: JSON.stringify({ name }),
-                              });
-                              await reload();
-                            }}
-                          >
-                            Rename
-                          </button>
-                          <button
-                            onClick={async () => {
-                              if (!window.confirm(`Delete ${column.name}?`)) return;
-                              const token = localStorage.getItem('gtmai-token') ?? '';
-                              await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                method: 'DELETE',
-                                headers: { authorization: `Bearer ${token}` },
-                              });
-                              setMenuColumnId(null);
-                              await reload();
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const row = table.rows[virtualRow.index]!;
+            <tbody>
+              {(() => {
+                const virtualRows = rowVirtualizer.getVirtualItems();
+                const paddingTop = virtualRows[0]?.start ?? 0;
+                const paddingBottom =
+                  rowVirtualizer.getTotalSize() - (virtualRows.at(-1)?.end ?? 0);
                 return (
-                  <tr
-                    key={row.id}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      transform: `translateY(${virtualRow.start}px)`,
-                      width: '100%',
-                    }}
-                  >
-                    <td className="row-num">
-                      <input
-                        type="checkbox"
-                        checked={selectedRows.includes(row.id)}
-                        onChange={(event) =>
-                          setSelectedRows((current) =>
-                            event.target.checked
-                              ? [...current, row.id]
-                              : current.filter((id) => id !== row.id),
-                          )
-                        }
-                      />
-                    </td>
-                    {table.columns.map((column) => {
-                      const cell = row.cells.find((item) => item.columnId === column.id);
-                      const editable = column.kind === 'input';
+                  <>
+                    {paddingTop > 0 && (
+                      <tr aria-hidden="true">
+                        <td colSpan={table.columns.length + 1} style={{ height: paddingTop }} />
+                      </tr>
+                    )}
+                    {virtualRows.map((virtualRow) => {
+                      const row = table.rows[virtualRow.index]!;
                       return (
-                        <td
-                          key={column.id}
-                          onClick={() =>
-                            cell &&
-                            setSelected({ ...cell, rowId: row.id, provenance: cell.provenance })
-                          }
-                        >
-                          {editable ? (
+                        <tr key={row.id}>
+                          <td className="row-num">
                             <input
-                              className="cell-input"
-                              defaultValue={
-                                cell?.value == null ? '' : displayValue(cell.value, column)
-                              }
+                              type="checkbox"
+                              checked={selectedRows.includes(row.id)}
                               onChange={(event) =>
-                                scheduleCellUpdate(row.id, column, event.target.value)
+                                setSelectedRows((current) =>
+                                  event.target.checked
+                                    ? [...current, row.id]
+                                    : current.filter((id) => id !== row.id),
+                                )
                               }
                             />
-                          ) : !cell ? null : cell.status === 'skipped' ? (
-                            <span className="status skipped" title={cell.error ?? 'Skipped'}>
-                              skipped
-                            </span>
-                          ) : cell.status === 'done' ? (
-                            <span title={JSON.stringify(cell.value)}>
-                              {displayValue(cell.value, column)}
-                            </span>
-                          ) : (
-                            <span className={`status ${cell.status}`}>
-                              {cell.status === 'error' ? (cell.error ?? 'error') : cell.status}
-                            </span>
-                          )}
-                        </td>
+                          </td>
+                          {table.columns.map((column) => {
+                            const cell = row.cells.find((item) => item.columnId === column.id);
+                            const editable = column.kind === 'input';
+                            return (
+                              <td
+                                key={column.id}
+                                onClick={() =>
+                                  cell &&
+                                  setSelected({
+                                    ...cell,
+                                    rowId: row.id,
+                                    provenance: cell.provenance,
+                                  })
+                                }
+                              >
+                                {editable ? (
+                                  <input
+                                    className="cell-input"
+                                    defaultValue={
+                                      cell?.value == null ? '' : displayValue(cell.value, column)
+                                    }
+                                    onChange={(event) =>
+                                      scheduleCellUpdate(row.id, column, event.target.value)
+                                    }
+                                  />
+                                ) : !cell ? null : cell.status === 'skipped' ? (
+                                  <span className="status skipped" title={cell.error ?? 'Skipped'}>
+                                    skipped
+                                  </span>
+                                ) : cell.status === 'done' ? (
+                                  <span className="cell-value" title={JSON.stringify(cell.value)}>
+                                    {displayValue(cell.value, column)}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={`status ${cell.status}`}
+                                    title={cell.error ?? cell.status}
+                                  >
+                                    {cell.status === 'error'
+                                      ? (cell.error ?? 'error')
+                                      : cell.status === 'running'
+                                        ? 'running…'
+                                        : cell.status}
+                                  </span>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
                       );
                     })}
-                  </tr>
+                    {paddingBottom > 0 && (
+                      <tr aria-hidden="true">
+                        <td colSpan={table.columns.length + 1} style={{ height: paddingBottom }} />
+                      </tr>
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </tbody>
           </table>
         </div>
@@ -606,281 +871,9 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
         )}
       </section>
       {adding && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h3>{selectedColumn ? 'Edit column' : 'Add a column'}</h3>
-            <p className="muted">Step {step + 1} of 3 · configure a live column.</p>
-            <label>
-              Column name
-              <input value={columnName} onChange={(event) => setColumnName(event.target.value)} />
-            </label>
-            {step === 0 && (
-              <div className="picker-grid">
-                {(
-                  [
-                    'input',
-                    'enrichment',
-                    'waterfall',
-                    'agent',
-                    'formula',
-                    'http',
-                    'function',
-                  ] as ColumnKind[]
-                ).map((value) => (
-                  <button
-                    key={value}
-                    className={`picker ${kind === value ? 'selected' : ''}`}
-                    onClick={() => setKind(value)}
-                  >
-                    {value}
-                    <strong>{value === 'input' ? 'Manual values' : 'Configure action'}</strong>
-                  </button>
-                ))}
-              </div>
-            )}
-            {step === 1 && (
-              <>
-                <label>
-                  Type
-                  <select
-                    value={columnType}
-                    onChange={(event) => setColumnType(event.target.value)}
-                  >
-                    <option>text</option>
-                    <option>email</option>
-                    <option>json</option>
-                    <option>url</option>
-                  </select>
-                </label>
-                <label>
-                  Provider
-                  <select
-                    value={provider}
-                    onChange={(event) => {
-                      setProvider(event.target.value);
-                      setAction('');
-                    }}
-                  >
-                    <option value="mock">Mock</option>
-                    {[...new Set(catalog.map((item) => item.provider))]
-                      .filter((item) => item !== 'mock')
-                      .map((item) => (
-                        <option key={item}>{item}</option>
-                      ))}
-                  </select>
-                </label>
-                {kind !== 'formula' && kind !== 'input' && (
-                  <label>
-                    Action
-                    <select value={action} onChange={(event) => setAction(event.target.value)}>
-                      {actions.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} · {item.category}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
-                {kind === 'waterfall' && (
-                  <>
-                    <label>
-                      Accept rule
-                      <select value={accept} onChange={(event) => setAccept(event.target.value)}>
-                        <option value="any">Any result</option>
-                        <option value="verified-email-only">Verified email only</option>
-                      </select>
-                    </label>
-                    <div className="waterfall-list">
-                      {waterfallSteps.map((item, index) => (
-                        <div
-                          className="waterfall-step"
-                          key={`${item.provider}-${item.action}-${index}`}
-                        >
-                          <strong>
-                            {index + 1}. {item.provider} / {item.action}
-                          </strong>
-                          <button
-                            className="icon-button"
-                            disabled={index === 0}
-                            onClick={() =>
-                              setWaterfallSteps((steps) => {
-                                const next = [...steps];
-                                [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
-                                return next;
-                              })
-                            }
-                          >
-                            ↑
-                          </button>
-                          <button
-                            className="icon-button"
-                            disabled={index === waterfallSteps.length - 1}
-                            onClick={() =>
-                              setWaterfallSteps((steps) => {
-                                const next = [...steps];
-                                [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
-                                return next;
-                              })
-                            }
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        className="button"
-                        onClick={() =>
-                          setWaterfallSteps((steps) => [
-                            ...steps,
-                            { provider, action, input: fuzzyInputMapping() },
-                          ])
-                        }
-                      >
-                        + Add provider step
-                      </button>
-                    </div>
-                  </>
-                )}
-                {kind === 'formula' && (
-                  <>
-                    <label>
-                      Formula
-                      <textarea
-                        value={expression}
-                        onChange={(event) => setExpression(event.target.value)}
-                      />
-                    </label>
-                    <button className="button" onClick={() => void previewFormula()}>
-                      Preview against row 1
-                    </button>
-                    <p className="muted">
-                      Functions: if, lower, upper, trim, concat, contains, len, coalesce
-                    </p>
-                  </>
-                )}
-                {kind === 'agent' && (
-                  <>
-                    <label>
-                      Prompt
-                      <textarea
-                        value={prompt}
-                        onChange={(event) => setPrompt(event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Output fields
-                      <textarea defaultValue={'answer: string\nsummary: string'} />
-                    </label>
-                    <label>
-                      Model
-                      <select>
-                        <option>gpt-4o-mini</option>
-                        <option>claude-3-5-haiku-latest</option>
-                      </select>
-                    </label>
-                    <button className="button" onClick={() => void previewAgent()}>
-                      Test on first 3 rows
-                    </button>
-                    {agentPreview && <pre className="preview-value">{agentPreview}</pre>}
-                  </>
-                )}
-                {kind === 'function' && (
-                  <>
-                    <label className="field-label">
-                      Function ID
-                      <input
-                        value={String(
-                          (selectedColumn?.config as Record<string, unknown> | undefined)
-                            ?.functionId ?? '',
-                        )}
-                        readOnly={Boolean(selectedColumn)}
-                      />
-                    </label>
-                    <label className="field-label">
-                      Input bindings JSON
-                      <textarea defaultValue="{}" />
-                    </label>
-                  </>
-                )}
-                {kind === 'http' && (
-                  <>
-                    <label>
-                      URL
-                      <input value={httpUrl} onChange={(event) => setHttpUrl(event.target.value)} />
-                    </label>
-                    <label>
-                      Headers
-                      <textarea
-                        value={httpHeaders}
-                        onChange={(event) => setHttpHeaders(event.target.value)}
-                        placeholder='{"Authorization":"Bearer {{API key}}"}'
-                      />
-                    </label>
-                    <label>
-                      Body
-                      <textarea
-                        value={httpBody}
-                        onChange={(event) => setHttpBody(event.target.value)}
-                      />
-                    </label>
-                    <label>
-                      JSON path
-                      <input
-                        value={httpOutputPath}
-                        onChange={(event) => setHttpOutputPath(event.target.value)}
-                        placeholder="data.email"
-                      />
-                    </label>
-                  </>
-                )}
-                {kind !== 'input' && (
-                  <div className="binding-menu">
-                    <span className="muted">Insert binding:</span>
-                    {table?.columns.slice(0, 6).map((column) => (
-                      <button
-                        className="icon-button"
-                        key={column.id}
-                        onClick={() =>
-                          kind === 'formula'
-                            ? setExpression((value) => `${value}{{${column.name}}}`)
-                            : setPrompt((value) => `${value}{{${column.name}}}`)
-                        }
-                      >
-                        {column.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-            {step === 2 && (
-              <>
-                <label>
-                  Color label
-                  <select
-                    value={colorLabel}
-                    onChange={(event) => setColorLabel(event.target.value)}
-                  >
-                    <option>indigo</option>
-                    <option>green</option>
-                    <option>orange</option>
-                    <option>pink</option>
-                  </select>
-                </label>
-                <label>
-                  Run condition
-                  <input
-                    value={runCondition}
-                    onChange={(event) => setRunCondition(event.target.value)}
-                    placeholder="optional condition"
-                  />
-                </label>
-                <p className="muted">
-                  Bindings are supported with {'{{Column name}}'} in action inputs and prompts.
-                </p>
-              </>
-            )}
-            <div className="modal-actions">
+        <ModalShell
+          footer={
+            <>
               <button className="button" onClick={() => setAdding(false)}>
                 Cancel
               </button>
@@ -898,73 +891,493 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                   {selectedColumn ? 'Save column' : 'Create column'}
                 </button>
               )}
+            </>
+          }
+        >
+          <h3>{selectedColumn ? 'Edit column' : 'Add a column'}</h3>
+          <p className="muted">Step {step + 1} of 3 · configure a live column.</p>
+          <label>
+            Column name
+            <input value={columnName} onChange={(event) => setColumnName(event.target.value)} />
+          </label>
+          {step === 0 && (
+            <div className="picker-grid">
+              {(
+                [
+                  'input',
+                  'enrichment',
+                  'waterfall',
+                  'agent',
+                  'formula',
+                  'http',
+                  'function',
+                ] as ColumnKind[]
+              ).map((value) => (
+                <button
+                  key={value}
+                  className={`picker ${kind === value ? 'selected' : ''}`}
+                  onClick={() => setKind(value)}
+                >
+                  {value}
+                  <strong>{value === 'input' ? 'Manual values' : 'Configure action'}</strong>
+                </button>
+              ))}
             </div>
-          </div>
-        </div>
-      )}
-      {importOpen && (
-        <div className="modal-backdrop">
-          <div className="modal">
-            <h3>Import CSV</h3>
-            <p className="muted">Paste CSV or upload a file, then map headers to columns.</p>
-            <input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setCsvFile(file);
-                if (!file) return;
-                void file.text().then((text) => {
-                  setCsv(text);
-                  setCsvHeaders(
-                    text
-                      .split(/\r?\n/)[0]
-                      ?.split(',')
-                      .map((value) => value.trim()) ?? [],
-                  );
-                });
-              }}
-            />
-            <textarea
-              className="csv-input"
-              value={csv}
-              onChange={(event) => setCsv(event.target.value)}
-              placeholder="First name,Last name\nAda,Lovelace"
-            />
-            {csvHeaders.length > 0 && (
-              <div className="mapping-list">
-                {csvHeaders.map((header) => (
-                  <label key={header}>
-                    {header}
-                    <select
-                      value={mapping[header] ?? header}
-                      onChange={(event) =>
-                        setMapping((current) => ({ ...current, [header]: event.target.value }))
-                      }
-                    >
-                      <option value={header}>{header} (new/input)</option>
-                      {table.columns
-                        .filter((column) => column.kind === 'input')
-                        .map((column) => (
-                          <option key={column.id} value={column.name}>
-                            {column.name}
-                          </option>
-                        ))}
+          )}
+          {step === 1 && (
+            <>
+              <label>
+                Type
+                <select value={columnType} onChange={(event) => setColumnType(event.target.value)}>
+                  <option>text</option>
+                  <option>email</option>
+                  <option>json</option>
+                  <option>url</option>
+                </select>
+              </label>
+              <label>
+                Provider
+                <select
+                  value={provider}
+                  onChange={(event) => {
+                    setProvider(event.target.value);
+                    setAction('');
+                  }}
+                >
+                  <option value="mock">Mock</option>
+                  {[...new Set(catalog.map((item) => item.provider))]
+                    .filter((item) => item !== 'mock')
+                    .map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                </select>
+              </label>
+              {kind !== 'formula' && kind !== 'input' && (
+                <label>
+                  Action
+                  <select value={action} onChange={(event) => setAction(event.target.value)}>
+                    {actions.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {item.category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {kind === 'waterfall' && (
+                <>
+                  <label>
+                    Accept rule
+                    <select value={accept} onChange={(event) => setAccept(event.target.value)}>
+                      <option value="any">Any result</option>
+                      <option value="verified-email-only">Verified email only</option>
                     </select>
                   </label>
-                ))}
-              </div>
-            )}
-            <div className="modal-actions">
+                  <div className="waterfall-list">
+                    {waterfallSteps.map((item, index) => (
+                      <div
+                        className="waterfall-step"
+                        key={`${item.provider}-${item.action}-${index}`}
+                      >
+                        <strong>
+                          {index + 1}. {item.provider} / {item.action}
+                        </strong>
+                        <button
+                          className="icon-button"
+                          disabled={index === 0}
+                          onClick={() =>
+                            setWaterfallSteps((steps) => {
+                              const next = [...steps];
+                              [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
+                              return next;
+                            })
+                          }
+                        >
+                          ↑
+                        </button>
+                        <button
+                          className="icon-button"
+                          disabled={index === waterfallSteps.length - 1}
+                          onClick={() =>
+                            setWaterfallSteps((steps) => {
+                              const next = [...steps];
+                              [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
+                              return next;
+                            })
+                          }
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="button"
+                      onClick={() =>
+                        setWaterfallSteps((steps) => [
+                          ...steps,
+                          { provider, action, input: fuzzyInputMapping() },
+                        ])
+                      }
+                    >
+                      + Add provider step
+                    </button>
+                  </div>
+                </>
+              )}
+              {kind === 'formula' && (
+                <>
+                  <label>
+                    Formula
+                    <textarea
+                      value={expression}
+                      onChange={(event) => setExpression(event.target.value)}
+                    />
+                  </label>
+                  <button className="button" onClick={() => void previewFormula()}>
+                    Preview against row 1
+                  </button>
+                  <p className="muted">
+                    Functions: if, lower, upper, trim, concat, contains, len, coalesce
+                  </p>
+                </>
+              )}
+              {kind === 'agent' && (
+                <>
+                  <label>
+                    Prompt
+                    <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} />
+                  </label>
+                  <label>
+                    Output fields
+                    <textarea defaultValue={'answer: string\nsummary: string'} />
+                  </label>
+                  <label>
+                    Model
+                    <select>
+                      <option>gpt-4o-mini</option>
+                      <option>claude-3-5-haiku-latest</option>
+                    </select>
+                  </label>
+                  <button className="button" onClick={() => void previewAgent()}>
+                    Test on first 3 rows
+                  </button>
+                  {agentPreview && <pre className="preview-value">{agentPreview}</pre>}
+                </>
+              )}
+              {kind === 'function' && (
+                <>
+                  <label className="field-label">
+                    Function ID
+                    <input
+                      value={String(
+                        (selectedColumn?.config as Record<string, unknown> | undefined)
+                          ?.functionId ?? '',
+                      )}
+                      readOnly={Boolean(selectedColumn)}
+                    />
+                  </label>
+                  <label className="field-label">
+                    Input bindings JSON
+                    <textarea defaultValue="{}" />
+                  </label>
+                </>
+              )}
+              {kind === 'http' && (
+                <>
+                  <label>
+                    URL
+                    <input value={httpUrl} onChange={(event) => setHttpUrl(event.target.value)} />
+                  </label>
+                  <label>
+                    Headers
+                    <textarea
+                      value={httpHeaders}
+                      onChange={(event) => setHttpHeaders(event.target.value)}
+                      placeholder='{"Authorization":"Bearer {{API key}}"}'
+                    />
+                  </label>
+                  <label>
+                    Body
+                    <textarea
+                      value={httpBody}
+                      onChange={(event) => setHttpBody(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    JSON path
+                    <input
+                      value={httpOutputPath}
+                      onChange={(event) => setHttpOutputPath(event.target.value)}
+                      placeholder="data.email"
+                    />
+                  </label>
+                </>
+              )}
+              {kind !== 'input' && (
+                <div className="binding-menu">
+                  <span className="muted">Insert binding:</span>
+                  {table?.columns.slice(0, 6).map((column) => (
+                    <button
+                      className="icon-button"
+                      key={column.id}
+                      onClick={() =>
+                        kind === 'formula'
+                          ? setExpression((value) => `${value}{{${column.name}}}`)
+                          : setPrompt((value) => `${value}{{${column.name}}}`)
+                      }
+                    >
+                      {column.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {step === 2 && (
+            <>
+              <label>
+                Color label
+                <select value={colorLabel} onChange={(event) => setColorLabel(event.target.value)}>
+                  <option>indigo</option>
+                  <option>green</option>
+                  <option>orange</option>
+                  <option>pink</option>
+                </select>
+              </label>
+              <label>
+                Run condition
+                <input
+                  value={runCondition}
+                  onChange={(event) => setRunCondition(event.target.value)}
+                  placeholder="optional condition"
+                />
+              </label>
+              <p className="muted">
+                Bindings are supported with {'{{Column name}}'} in action inputs and prompts.
+              </p>
+            </>
+          )}
+        </ModalShell>
+      )}
+      {importOpen && (
+        <ModalShell
+          onClose={() => setImportOpen(false)}
+          footer={
+            <>
               <button className="button" onClick={() => setImportOpen(false)}>
                 Cancel
               </button>
               <button className="button primary" onClick={() => void importCsv()}>
                 Import
               </button>
+            </>
+          }
+        >
+          <h3>Import CSV</h3>
+          <p className="muted">Paste CSV or upload a file, then map headers to columns.</p>
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              setCsvFile(file);
+              if (!file) return;
+              void file.text().then((text) => {
+                setCsv(text);
+                setCsvHeaders(
+                  text
+                    .split(/\r?\n/)[0]
+                    ?.split(',')
+                    .map((value) => value.trim()) ?? [],
+                );
+              });
+            }}
+          />
+          <textarea
+            className="csv-input"
+            value={csv}
+            onChange={(event) => setCsv(event.target.value)}
+            placeholder="First name,Last name\nAda,Lovelace"
+          />
+          {csvHeaders.length > 0 && (
+            <div className="mapping-list">
+              {csvHeaders.map((header) => (
+                <label key={header}>
+                  {header}
+                  <select
+                    value={mapping[header] ?? header}
+                    onChange={(event) =>
+                      setMapping((current) => ({ ...current, [header]: event.target.value }))
+                    }
+                  >
+                    <option value={header}>{header} (new/input)</option>
+                    {table.columns
+                      .filter((column) => column.kind === 'input')
+                      .map((column) => (
+                        <option key={column.id} value={column.name}>
+                          {column.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              ))}
             </div>
+          )}
+        </ModalShell>
+      )}
+      {sourceOpen && (
+        <ModalShell
+          onClose={() => setSourceOpen(false)}
+          footer={
+            <>
+              <button className="button" onClick={() => setSourceOpen(false)}>
+                Cancel
+              </button>
+              <button className="button primary" onClick={() => void importSource()}>
+                Import companies
+              </button>
+            </>
+          }
+        >
+          <h3>Import from source</h3>
+          <p className="muted">Search a provider and append matching companies as new rows.</p>
+          <label>
+            Search action
+            <select
+              value={sourceActionId}
+              onChange={(event) => {
+                setSourceActionId(event.target.value);
+                setSourceInput({ limit: '25' });
+              }}
+            >
+              {catalog
+                .filter((item) => item.category === 'search' && sourceActionIds.has(item.id))
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.provider} · {item.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          {(sourceFields[sourceActionId] ?? []).map((field) => (
+            <label key={field.name}>
+              {field.label}
+              {field.required && ' *'}
+              <input
+                type={field.type ?? 'text'}
+                value={sourceInput[field.name] ?? ''}
+                required={field.required}
+                onChange={(event) =>
+                  setSourceInput((current) => ({
+                    ...current,
+                    [field.name]: event.target.value,
+                  }))
+                }
+              />
+              {field.hint && <span className="muted">{field.hint}</span>}
+            </label>
+          ))}
+        </ModalShell>
+      )}
+      {peopleOpen && (
+        <ModalShell
+          onClose={() => setPeopleOpen(false)}
+          footer={
+            <>
+              <button className="button" onClick={() => setPeopleOpen(false)}>
+                Cancel
+              </button>
+              <button className="button primary" onClick={() => void fanoutPeople()}>
+                Find people
+              </button>
+            </>
+          }
+        >
+          <h3>Find people</h3>
+          <p className="muted">Turn company rows into a People table.</p>
+          <label>
+            Search action
+            <select
+              value={peopleActionId}
+              onChange={(event) => {
+                setPeopleActionId(event.target.value);
+                setPeopleInput({ limit: '10' });
+              }}
+            >
+              {peopleActions.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.provider} · {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Domain binding
+            <input value={peopleDomain} onChange={(event) => setPeopleDomain(event.target.value)} />
+          </label>
+          {(peopleFields[peopleActionId] ?? []).map((field) => (
+            <label key={field.name}>
+              {field.label}
+              <input
+                type={field.type ?? 'text'}
+                value={peopleInput[field.name] ?? ''}
+                onChange={(event) =>
+                  setPeopleInput((current) => ({ ...current, [field.name]: event.target.value }))
+                }
+              />
+            </label>
+          ))}
+          <div className="radio-list">
+            <label className="choice-row">
+              <input
+                type="radio"
+                checked={peopleScope === 'selected'}
+                onChange={() => setPeopleScope('selected')}
+              />
+              Selected rows ({selectedRows.length})
+            </label>
+            <label className="choice-row">
+              <input
+                type="radio"
+                checked={peopleScope === 'all'}
+                onChange={() => setPeopleScope('all')}
+              />
+              All rows
+            </label>
           </div>
-        </div>
+          <div className="carry-list">
+            <strong>Carry columns</strong>
+            {table.columns
+              .filter(
+                (column) =>
+                  ['input', 'formula'].includes(column.kind) &&
+                  !['Company', 'Domain'].includes(column.name),
+              )
+              .map((column) => (
+                <label className="choice-row" key={column.id}>
+                  <input
+                    type="checkbox"
+                    checked={peopleCarry.includes(column.name)}
+                    onChange={(event) =>
+                      setPeopleCarry((current) =>
+                        event.target.checked
+                          ? [...current, column.name]
+                          : current.filter((name) => name !== column.name),
+                      )
+                    }
+                  />
+                  {column.name}
+                </label>
+              ))}
+          </div>
+          <label>
+            New table name
+            <input
+              value={peopleTableName}
+              onChange={(event) => setPeopleTableName(event.target.value)}
+            />
+          </label>
+        </ModalShell>
       )}
       {message && <div className="toast">{message}</div>}
       {selected && (
@@ -973,8 +1386,10 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
             ×
           </button>
           <div className="eyebrow">CELL DETAIL</div>
-          <h3>{selected.value === undefined ? selected.status : 'Cell value'}</h3>
-          <pre className="json-value">{JSON.stringify(selected.value, null, 2)}</pre>
+          <h3>{selected.status === 'skipped' ? 'Cell skipped' : 'Cell value'}</h3>
+          <pre className="json-value">
+            {selected.status === 'skipped' ? '—' : JSON.stringify(selected.value, null, 2)}
+          </pre>
           <div className="detail-row">
             <span>Status</span>
             <strong>{selected.status}</strong>

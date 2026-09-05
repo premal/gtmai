@@ -15,12 +15,16 @@ import type { Queue } from 'bullmq';
 import type { FastifyRequest } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
 import { Prisma } from '@gtmai/db';
-import { runAgent } from '@gtmai/providers';
+import { providers, runAgent } from '@gtmai/providers';
+import { builtInTemplates, resolveBindingsDeep } from '@gtmai/shared';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { decryptCredentials } from '../common/crypto';
+import { debitCredits } from '../common/credits';
 import { PrismaService } from '../prisma/prisma.service';
+import { instantiateTableTemplate, type TableTemplateDefinition } from '../templates/instantiate';
+import { createRowWithValues } from './row-helper';
 
 const tableBody = z.object({ name: z.string().min(1) });
 const columnBody = z.object({
@@ -44,6 +48,21 @@ export class TablesController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @InjectQueue('cells') private readonly queue: Queue,
   ) {}
+
+  @Get()
+  list(@Req() request: Request) {
+    return this.prisma.table.findMany({
+      where: { workspaceId: request.user.workspaceId },
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { rows: true, columns: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
 
   @Get(':id')
   async get(@Param('id') id: string, @Req() request: Request) {
@@ -138,35 +157,202 @@ export class TablesController {
     if (!table) throw new Error('Table not found');
     const input = z.object({ values: z.record(z.unknown()).default({}) }).parse(body);
     const position = await this.prisma.row.count({ where: { tableId } });
-    const row = await this.prisma.row.create({ data: { tableId, position } });
     const columns = await this.prisma.column.findMany({ where: { tableId } });
-    await this.prisma.$transaction(
-      columns.map((column) => {
-        const value = input.values[column.name];
-        if (column.kind === 'input') {
-          return this.prisma.cell.create({
-            data: {
-              rowId: row.id,
-              columnId: column.id,
-              value: value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue),
-              status: 'done',
-            },
-          });
-        }
-        return this.prisma.cell.create({
-          data:
-            value === undefined
-              ? { rowId: row.id, columnId: column.id, status: 'skipped' }
-              : {
-                  rowId: row.id,
-                  columnId: column.id,
-                  value: value as Prisma.InputJsonValue,
-                  status: 'done',
-                },
-        });
-      }),
+    const values = Object.fromEntries(
+      columns.map((column) => [column.id, input.values[column.name]]),
     );
-    return row;
+    return createRowWithValues(this.prisma, tableId, columns, values, position);
+  }
+
+  @Post(':id/source')
+  async importSource(@Param('id') tableId: string, @Body() body: unknown, @Req() request: Request) {
+    const input = z
+      .object({
+        provider: z.string().min(1),
+        action: z.string().min(1),
+        input: z.record(z.unknown()),
+        mapping: z.record(z.string()).optional(),
+      })
+      .parse(body);
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      include: { columns: true },
+    });
+    if (!table) throw new Error('Table not found');
+    const provider = providers.find((item) => item.id === input.provider);
+    const action = provider?.actions.find((item) => item.id === input.action);
+    if (!provider || !action || action.category !== 'search') {
+      throw new Error(`Unknown search action: ${input.provider}/${input.action}`);
+    }
+    const connection = await this.prisma.connection.findFirst({
+      where: { workspaceId: request.user.workspaceId, provider: input.provider },
+    });
+    if (!connection)
+      throw new Error(`No connection for ${input.provider} — add one in Connections`);
+    const result = await action.run(input.input, {
+      credentials: decryptCredentials(connection.encryptedCredentials),
+      fetch,
+      logger: { info: () => undefined, error: () => undefined },
+    });
+    if (!result.found) throw new Error(result.reason ?? 'Source search failed');
+    const data = result.data as {
+      companies?: Record<string, unknown>[];
+      total?: number;
+    };
+    const companies = Array.isArray(data.companies) ? data.companies : [];
+    const defaults: Record<string, string> = {
+      Company: 'name',
+      Domain: 'domain',
+      Industry: 'industry',
+      Employees: 'employees',
+      Country: 'country',
+    };
+    const mapping = input.mapping ?? {};
+    const columns = table.columns;
+    const position = await this.prisma.row.count({ where: { tableId } });
+    for (const [index, company] of companies.entries()) {
+      const values = Object.fromEntries(
+        columns.map((column) => {
+          const sourceKey = mapping[column.name] ?? defaults[column.name];
+          return [column.id, sourceKey ? company[sourceKey] : undefined];
+        }),
+      );
+      await createRowWithValues(this.prisma, tableId, columns, values, position + index);
+    }
+    return { imported: companies.length, total: data.total ?? companies.length };
+  }
+
+  @Post(':id/fanout')
+  async fanout(@Param('id') tableId: string, @Body() body: unknown, @Req() request: Request) {
+    const input = z
+      .object({
+        provider: z.string().min(1),
+        action: z.string().min(1),
+        input: z.record(z.unknown()),
+        rowIds: z.array(z.string()).optional(),
+        carry: z.array(z.string()).default([]),
+        target: z.object({ tableId: z.string().optional(), name: z.string().optional() }),
+      })
+      .parse(body);
+    const source = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      include: {
+        columns: true,
+        rows: { orderBy: { position: 'asc' }, include: { cells: { include: { column: true } } } },
+      },
+    });
+    if (!source) throw new Error('Table not found');
+    const provider = providers.find((item) => item.id === input.provider);
+    const action = provider?.actions.find((item) => item.id === input.action);
+    if (!provider || !action || action.category !== 'search' || action.sourceKind !== 'people') {
+      throw new Error(`Unknown people search action: ${input.provider}/${input.action}`);
+    }
+    const connection = await this.prisma.connection.findFirst({
+      where: { workspaceId: request.user.workspaceId, provider: input.provider },
+    });
+    if (!connection) {
+      throw new Error(`No connection for ${input.provider} — add one in Connections`);
+    }
+    const targetTemplate = builtInTemplates.find((item) => item.id === 'builtin-people-outreach');
+    if (!input.target.tableId && !targetTemplate) throw new Error('People template not found');
+    const target = input.target.tableId
+      ? await this.prisma.table.findFirst({
+          where: { id: input.target.tableId, workspaceId: request.user.workspaceId },
+        })
+      : (
+          await instantiateTableTemplate(
+            this.prisma,
+            request.user.workspaceId,
+            input.target.name ?? `${source.name} — people`,
+            targetTemplate?.definition as unknown as TableTemplateDefinition,
+          )
+        ).table;
+    if (!target) throw new Error('Target table not found');
+    let targetColumns = await this.prisma.column.findMany({
+      where: { tableId: target.id },
+      orderBy: { position: 'asc' },
+    });
+    const required = [
+      'First name',
+      'Last name',
+      'Title',
+      'Seniority',
+      'Department',
+      'LinkedIn',
+      'Email',
+      'Company',
+      'Domain',
+    ];
+    for (const name of [...required, ...input.carry]) {
+      if (targetColumns.some((column) => column.name === name)) continue;
+      const position = targetColumns.length;
+      const created = await this.prisma.column.create({
+        data: { tableId: target.id, name, type: 'text', kind: 'input', config: {}, position },
+      });
+      targetColumns = [...targetColumns, created];
+    }
+    const rows = input.rowIds
+      ? source.rows.filter((row) => input.rowIds?.includes(row.id))
+      : source.rows;
+    const credentials = decryptCredentials(connection.encryptedCredentials);
+    let imported = 0;
+    const errors: { rowId: string; message: string }[] = [];
+    let position = await this.prisma.row.count({ where: { tableId: target.id } });
+    for (const row of rows) {
+      const sourceValues = Object.fromEntries(
+        row.cells.map((cell) => [cell.column.name, cell.value]),
+      );
+      try {
+        const result = await action.run(resolveBindingsDeep(input.input, sourceValues), {
+          credentials,
+          fetch,
+          logger: { info: () => undefined, error: () => undefined },
+        });
+        if (!result.found) throw new Error(result.reason ?? 'People search failed');
+        const people = Array.isArray((result.data as { people?: unknown[] }).people)
+          ? ((result.data as { people: unknown[] }).people ?? [])
+          : [];
+        for (const personValue of people) {
+          const person = personValue as Record<string, unknown>;
+          const company =
+            person.company && typeof person.company === 'object'
+              ? (person.company as Record<string, unknown>)
+              : {};
+          const valuesByName: Record<string, unknown> = {
+            'First name': person.firstName,
+            'Last name': person.lastName,
+            Title: person.title,
+            Seniority: person.seniority,
+            Department: person.department,
+            LinkedIn: person.linkedinUrl,
+            Email: person.email,
+            Company: company.name ?? sourceValues.Company,
+            Domain: company.domain ?? sourceValues.Domain,
+            ...Object.fromEntries(input.carry.map((name) => [name, sourceValues[name]])),
+          };
+          const values = Object.fromEntries(
+            targetColumns.map((column) => [column.id, valuesByName[column.name]]),
+          );
+          await createRowWithValues(this.prisma, target.id, targetColumns, values, position++);
+          imported += 1;
+        }
+        await debitCredits(this.prisma, {
+          workspaceId: request.user.workspaceId,
+          tableId: target.id,
+          provider: input.provider,
+          credits: action.creditCost,
+          reason: 'people fanout',
+          refType: 'fanout',
+          refId: row.id,
+        });
+      } catch (error) {
+        errors.push({
+          rowId: row.id,
+          message: error instanceof Error ? error.message : 'People search failed',
+        });
+      }
+    }
+    return { tableId: target.id, imported, sourceRows: rows.length, errors };
   }
 
   @Post(':id/import')
@@ -354,11 +540,15 @@ export class TablesController {
         create: { rowId: row.id, columnId, status: 'queued' },
         update: { status: 'queued', error: null },
       });
-      await this.queue.add('cell', {
-        rowId: row.id,
-        columnId,
-        workspaceId: request.user.workspaceId,
-      });
+      await this.queue.add(
+        'cell',
+        {
+          rowId: row.id,
+          columnId,
+          workspaceId: request.user.workspaceId,
+        },
+        { attempts: 3, backoff: { type: 'exponential', delay: 10_000 } },
+      );
       queued += 1;
     }
     return { queued };
@@ -379,11 +569,15 @@ export class TablesController {
         create: { rowId, columnId: column.id, status: 'queued' },
         update: { status: 'queued', error: null },
       });
-      await this.queue.add('cell', {
-        rowId,
-        columnId: column.id,
-        workspaceId: request.user.workspaceId,
-      });
+      await this.queue.add(
+        'cell',
+        {
+          rowId,
+          columnId: column.id,
+          workspaceId: request.user.workspaceId,
+        },
+        { attempts: 3, backoff: { type: 'exponential', delay: 10_000 } },
+      );
     }
     return { queued: columns.length };
   }

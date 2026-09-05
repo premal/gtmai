@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { SignOutFooter } from './auth';
+import { AppNav } from './app-nav';
+import { useDialog } from './components/prompt-dialog';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Table = { id: string; name: string; _count: { rows: number }; columns: { name: string }[] };
@@ -11,6 +12,7 @@ export default function Home() {
   const [workspace, setWorkspace] = useState('');
   const [tables, setTables] = useState<Table[]>([]);
   const [search, setSearch] = useState('');
+  const dialog = useDialog();
 
   useEffect(() => {
     const saved = localStorage.getItem('gtmai-token');
@@ -48,8 +50,13 @@ export default function Home() {
   }
 
   async function renameTable(table: Table): Promise<void> {
-    const name = window.prompt('Table name', table.name);
-    if (!name) return;
+    const values = await dialog.prompt({
+      title: 'Rename table',
+      fields: [{ name: 'name', label: 'Table name', defaultValue: table.name }],
+      confirmLabel: 'Rename table',
+    });
+    if (!values?.name) return;
+    const name = values.name;
     await fetch(`${api}/tables/${table.id}`, {
       method: 'PATCH',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
@@ -69,27 +76,7 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">G</span>
-          <strong>GTM AI</strong>
-        </div>
-        <div className="workspace-pill">⌘ Demo Workspace</div>
-        <nav>
-          <a className="active" href="/">
-            ▦ Tables
-          </a>
-          <a href="/connections">⌁ Connections</a>
-          <a href="/credits">◈ Credits</a>
-          <a href="/audiences">◎ Audiences</a>
-          <a href="/signals">◌ Signals</a>
-          <a href="/workflows">⌘ Workflows</a>
-          <a href="/functions">ƒ Functions</a>
-          <a href="/templates">▤ Templates</a>
-          <a href="/settings">⚙ Settings</a>
-        </nav>
-        <SignOutFooter />
-      </aside>
+      <AppNav />
       <section className="content">
         <header className="topbar">
           <div>
@@ -116,8 +103,8 @@ export default function Home() {
             <strong>Demo</strong>
           </div>
           <div>
-            <span className="metric-label">Plan</span>
-            <strong>Phase 1</strong>
+            <span className="metric-label">Rows</span>
+            <strong>{tables.reduce((total, table) => total + table._count.rows, 0)}</strong>
           </div>
         </div>
         <div className="table-list">

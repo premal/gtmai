@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
+import { useDialog } from '../components/prompt-dialog';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Definition = { id: string; name: string; type: string; _count: { events: number } };
@@ -18,6 +19,7 @@ export default function SignalsPage() {
   const [events, setEvents] = useState<SignalEvent[]>([]);
   const [pollingId, setPollingId] = useState<string | null>(null);
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
+  const dialog = useDialog();
   async function load() {
     const headers = { authorization: `Bearer ${token}` };
     const [definitionResponse, eventResponse] = await Promise.all([
@@ -31,13 +33,17 @@ export default function SignalsPage() {
     if (token) void load();
   }, [token]);
   async function create() {
-    const name = window.prompt('Signal name', 'Job changes');
-    if (!name) return;
+    const values = await dialog.prompt({
+      title: 'New signal',
+      fields: [{ name: 'name', label: 'Signal name', defaultValue: 'Job changes' }],
+      confirmLabel: 'Create signal',
+    });
+    if (!values?.name) return;
     await fetch(`${api}/signals/definitions`, {
       method: 'POST',
       headers: { ...{ authorization: `Bearer ${token}` }, 'content-type': 'application/json' },
       body: JSON.stringify({
-        name,
+        name: values.name,
         type: 'job_change',
         config: { provider: 'mock', action: 'mock.jobChanges', schedule: 'daily' },
       }),
@@ -59,7 +65,7 @@ export default function SignalsPage() {
   }
   return (
     <main className="app-shell">
-      <Phase2Nav active="signals" />
+      <AppNav active="signals" />
       <section className="content">
         <header className="topbar">
           <div>

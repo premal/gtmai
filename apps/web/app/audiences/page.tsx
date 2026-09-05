@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { AppNav } from '../app-nav';
+import { useDialog } from '../components/prompt-dialog';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type AudienceTab = 'companies' | 'contacts' | 'segments';
@@ -58,6 +59,7 @@ export default function AudiencesPage() {
   const workspace =
     typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-workspace') ?? '');
   const selectedTable = tables.find((table) => table.id === importTableId);
+  const dialog = useDialog();
   function signalSummary(payload: unknown) {
     if (!payload || typeof payload !== 'object') return 'Signal received';
     const entries = Object.entries(payload as Record<string, unknown>).filter(
@@ -87,10 +89,24 @@ export default function AudiencesPage() {
   }, [q, tab, filter, token]);
 
   async function create() {
-    const name = window.prompt(
-      tab === 'companies' ? 'Company name' : tab === 'contacts' ? 'Contact email' : 'Segment name',
-    );
-    if (!name) return;
+    const values = await dialog.prompt({
+      title:
+        tab === 'companies' ? 'New company' : tab === 'contacts' ? 'New contact' : 'New segment',
+      fields: [
+        {
+          name: 'name',
+          label:
+            tab === 'companies'
+              ? 'Company name'
+              : tab === 'contacts'
+                ? 'Contact email'
+                : 'Segment name',
+        },
+      ],
+      confirmLabel: 'Create',
+    });
+    if (!values?.name) return;
+    const name = values.name;
     const payload =
       tab === 'companies'
         ? { name, domain: name.toLowerCase().replace(/\s+/g, '') + '.example.com' }
@@ -200,12 +216,16 @@ export default function AudiencesPage() {
   }
 
   async function createTableFromSegment(id: string) {
-    const name = window.prompt('New table name', 'Segment export');
-    if (!name) return;
+    const values = await dialog.prompt({
+      title: 'Export segment',
+      fields: [{ name: 'name', label: 'New table name', defaultValue: 'Segment export' }],
+      confirmLabel: 'Create table',
+    });
+    if (!values?.name) return;
     const response = await fetch(`${api}/audiences/export/table`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ name, segmentId: id }),
+      body: JSON.stringify({ name: values.name, segmentId: id }),
     });
     const result = (await response.json()) as { tableId?: string; message?: string };
     if (!response.ok) {
@@ -219,7 +239,7 @@ export default function AudiencesPage() {
 
   return (
     <main className="app-shell">
-      <Phase2Nav active="audiences" />
+      <AppNav active="audiences" />
       <section className="content">
         <header className="topbar">
           <div>

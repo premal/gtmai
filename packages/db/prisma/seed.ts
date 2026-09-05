@@ -1,4 +1,4 @@
-import { createCipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
@@ -351,6 +351,183 @@ async function main(): Promise<void> {
   const workflowRunner = await import('../../../apps/worker/src/workflows');
   await workflowRunner.executeWorkflowRun(run.id, workspace.id);
   await workflowRunner.closeWorkflowResources();
+  const previousSequence = await db.sequence.findFirst({
+    where: { workspaceId: workspace.id, name: 'Signal follow-up sequence' },
+    select: { id: true },
+  });
+  await db.campaign.deleteMany({
+    where: {
+      workspaceId: workspace.id,
+      OR: [
+        { name: 'Signal follow-up campaign' },
+        ...(previousSequence ? [{ sequenceId: previousSequence.id }] : []),
+      ],
+    },
+  });
+  await db.sequence.deleteMany({
+    where: { workspaceId: workspace.id, name: 'Signal follow-up sequence' },
+  });
+  await db.inbox.deleteMany({ where: { workspaceId: workspace.id, name: 'Demo mock inbox' } });
+  const inbox = await db.inbox.create({
+    data: {
+      workspaceId: workspace.id,
+      name: 'Demo mock inbox',
+      config: { provider: 'mock', from: 'demo@gtmai.dev' },
+    },
+  });
+  const sequence = await db.sequence.create({
+    data: {
+      workspaceId: workspace.id,
+      inboxId: inbox.id,
+      name: 'Signal follow-up sequence',
+      steps: {
+        create: [
+          {
+            position: 1,
+            delayHours: 0,
+            subjectTemplate: 'Quick idea for {{company.name}}',
+            bodyTemplate: 'Hi {{contact.firstName}}, noticed {{company.name}} is growing.',
+          },
+          {
+            position: 2,
+            delayHours: 24,
+            subjectTemplate: 'Following up, {{contact.firstName}}',
+            bodyTemplate: 'Would a short conversation be useful?',
+          },
+        ],
+      },
+    },
+    include: { steps: true },
+  });
+  const campaign = await db.campaign.create({
+    data: {
+      workspaceId: workspace.id,
+      sequenceId: sequence.id,
+      name: 'Signal follow-up campaign',
+      status: 'active',
+      enrollments: {
+        create: importedContacts
+          .slice(0, 3)
+          .map((contact) => ({ contactId: contact.id, status: 'active' })),
+      },
+    },
+    include: { enrollments: true },
+  });
+  const firstMessage = await db.message.create({
+    data: {
+      enrollmentId: campaign.enrollments[0]!.id,
+      direction: 'outbound',
+      subject: 'Quick idea',
+      body: 'Hello',
+      status: 'sent',
+      sentAt: new Date(),
+      stepPosition: 1,
+    },
+  });
+  const repliedMessage = await db.message.create({
+    data: {
+      enrollmentId: campaign.enrollments[1]!.id,
+      direction: 'outbound',
+      subject: 'Quick idea',
+      body: 'Hello',
+      status: 'sent',
+      sentAt: new Date(),
+      stepPosition: 1,
+    },
+  });
+  await db.reply.create({
+    data: {
+      messageId: repliedMessage.id,
+      body: 'Interested — tell me more!',
+      receivedAt: new Date(),
+    },
+  });
+  await db.enrollment.update({
+    where: { id: campaign.enrollments[1]!.id },
+    data: { status: 'replied' },
+  });
+  void firstMessage;
+  await db.adAudience.deleteMany({
+    where: { workspaceId: workspace.id, name: 'Demo synced audience' },
+  });
+  const adAudience = await db.adAudience.create({
+    data: {
+      workspaceId: workspace.id,
+      name: 'Demo synced audience',
+      segmentId: segment.id,
+      config: { segmentId: segment.id },
+      platforms: ['mock'],
+    },
+  });
+  await db.adPlatformSync.create({
+    data: {
+      audienceId: adAudience.id,
+      platform: 'mock',
+      status: 'synced',
+      matched: aiContacts.length,
+      uploaded: aiContacts.length,
+      externalId: 'mock-seeded',
+      syncedAt: new Date(),
+    },
+  });
+  await db.crmSyncJob.deleteMany({
+    where: { workspaceId: workspace.id, name: 'Demo CRM mock sync' },
+  });
+  const crmJob = await db.crmSyncJob.create({
+    data: {
+      workspaceId: workspace.id,
+      name: 'Demo CRM mock sync',
+      source: { kind: 'segment', id: segment.id },
+      destination: {
+        provider: 'mock',
+        object: 'contact',
+        fieldMapping: { email: 'email', firstname: 'firstName' },
+        upsertKey: 'email',
+      },
+      lastRunAt: new Date(),
+      lastStats: { matched: aiContacts.length, synced: aiContacts.length, skipped: 0 },
+    },
+  });
+  if (aiContacts[0])
+    await db.crmSyncRecord.create({
+      data: {
+        workspaceId: workspace.id,
+        jobId: crmJob.id,
+        externalKey: aiContacts[0].email ?? aiContacts[0].id,
+        data: { email: aiContacts[0].email, firstname: aiContacts[0].firstName },
+      },
+    });
+  await db.crmSyncRun.create({
+    data: {
+      jobId: crmJob.id,
+      status: 'completed',
+      stats: { matched: aiContacts.length, synced: aiContacts.length, skipped: 0 },
+      startedAt: new Date(Date.now() - 60_000),
+      completedAt: new Date(),
+    },
+  });
+  await db.apiKey.deleteMany({ where: { workspaceId: workspace.id, name: 'Seed CLI key' } });
+  const seededKey = `gtm_${randomBytes(24).toString('base64url')}`;
+  await db.apiKey.create({
+    data: {
+      workspaceId: workspace.id,
+      name: 'Seed CLI key',
+      prefix: seededKey.slice(0, 12),
+      hash: createHash('sha256').update(seededKey).digest('hex'),
+    },
+  });
+  console.log(`Seed API key (shown once): ${seededKey}`);
+  await db.creditBudget.upsert({
+    where: {
+      workspaceId_scope_period: { workspaceId: workspace.id, scope: 'workspace', period: 'daily' },
+    },
+    update: { limit: 500 },
+    create: { workspaceId: workspace.id, scope: 'workspace', period: 'daily', limit: 500 },
+  });
+  await db.usageSnapshot.deleteMany({ where: { workspaceId: workspace.id, tableId: null } });
+  await db.usageSnapshot.create({
+    data: { workspaceId: workspace.id, period: new Date(), credits: 0 },
+  });
   const oldFunction = await db.function.findFirst({
     where: { workspaceId: workspace.id, name: 'Normalize company name' },
   });

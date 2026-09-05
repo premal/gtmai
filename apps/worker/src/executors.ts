@@ -142,7 +142,12 @@ export async function executeWaterfall(
       continue;
     }
     attempted = true;
-    const current = await runProviderAction(item.provider, item.action, input, workspaceId);
+    let current: { result: ActionResult<unknown>; action: ProviderAction; provider: string };
+    try {
+      current = await runProviderAction(item.provider, item.action, input, workspaceId);
+    } catch {
+      continue;
+    }
     if (acceptsWaterfallResult(current.result, config.accept)) {
       return {
         result: current.result,
@@ -183,7 +188,7 @@ export async function executeAgent(
     agentProvider,
     typeof config.model === 'string' ? config.model : undefined,
   );
-  return { result: { found: true, data: agent }, provider: agentProvider, creditsUsed: 0 };
+  return { result: { found: true, data: agent }, provider: agentProvider, creditsUsed: 5 };
 }
 
 export async function executeHttp(

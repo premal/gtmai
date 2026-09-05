@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { useSearchParams } from 'next/navigation';
+import { AppNav } from '../app-nav';
+import { useDialog } from '../components/prompt-dialog';
 import { WorkflowEditor, type EditorGraph } from '../../components/workflow-editor';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -32,7 +34,9 @@ export default function FunctionsPage() {
     { input: '{"name":"Globex"}', expected: 'Globex' },
   ]);
   const [results, setResults] = useState<TestResult[]>([]);
+  const searchParams = useSearchParams();
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
+  const dialog = useDialog();
   async function load() {
     const response = await fetch(`${api}/functions`, {
       headers: { authorization: `Bearer ${token}` },
@@ -42,6 +46,11 @@ export default function FunctionsPage() {
   useEffect(() => {
     if (token) void load();
   }, [token]);
+  useEffect(() => {
+    const requestedId = searchParams.get('id');
+    const item = items.find((candidate) => candidate.id === requestedId);
+    if (item) select(item);
+  }, [items, searchParams]);
   function select(item: FunctionItem) {
     setSelected(item);
     const program = item.versions[0]?.program;
@@ -60,12 +69,16 @@ export default function FunctionsPage() {
       );
   }
   async function create() {
-    const name = window.prompt('Function name', 'Normalize company name');
-    if (!name) return;
+    const values = await dialog.prompt({
+      title: 'New function',
+      fields: [{ name: 'name', label: 'Function name', defaultValue: 'Normalize company name' }],
+      confirmLabel: 'Create function',
+    });
+    if (!values?.name) return;
     await fetch(`${api}/functions`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name: values.name }),
     });
     await load();
   }
@@ -101,7 +114,7 @@ export default function FunctionsPage() {
   }
   return (
     <main className="app-shell">
-      <Phase2Nav active="functions" />
+      <AppNav active="functions" />
       <section className="content wide">
         <header className="topbar">
           <div>

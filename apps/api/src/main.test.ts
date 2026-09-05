@@ -116,6 +116,21 @@ integration('api smoke', () => {
         (cell) => columnNameById.get(cell.columnId) === 'Last name' && cell.value === 'Hopper',
       ),
     ).toBe(true);
+    const unknownSource = await instance.inject({
+      method: 'POST',
+      url: `/tables/${table.id}/source`,
+      headers: { authorization: `Bearer ${auth.token}` },
+      payload: {
+        provider: 'unknown-provider',
+        action: 'unknown.search',
+        input: {},
+      },
+    });
+    expect(unknownSource.statusCode).toBe(400);
+    expect(unknownSource.json()).toMatchObject({
+      statusCode: 400,
+      message: 'Unknown search action: unknown-provider/unknown.search',
+    });
     await app.close();
   });
 

@@ -1,13 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Phase2Nav } from '../phase2-nav';
+import { useRouter } from 'next/navigation';
+import { AppNav } from '../app-nav';
+import { useToast } from '../components/toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Template = { id: string; name: string; kind: string; definition: unknown };
 
 export default function TemplatesPage() {
   const [items, setItems] = useState<Template[]>([]);
+  const router = useRouter();
+  const { toast } = useToast();
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   useEffect(() => {
     if (token)
@@ -21,12 +25,20 @@ export default function TemplatesPage() {
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: '{}',
     });
+    if (!response.ok) {
+      toast('Unable to use template', { kind: 'error' });
+      return;
+    }
     const result = (await response.json()) as { kind: string; id: string };
-    window.alert(`Created ${result.kind}: ${result.id}`);
+    toast(`Created ${item.name}`);
+    if (result.kind === 'table') router.push(`/tables/${result.id}`);
+    else if (result.kind === 'workflow') router.push(`/workflows/${result.id}`);
+    else if (result.kind === 'function') router.push(`/functions?id=${result.id}`);
+    else router.push('/templates');
   }
   return (
     <main className="app-shell">
-      <Phase2Nav active="templates" />
+      <AppNav active="templates" />
       <section className="content">
         <header className="topbar">
           <div>

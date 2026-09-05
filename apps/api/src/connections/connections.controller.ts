@@ -50,13 +50,14 @@ export class ConnectionsController {
         id: action.id,
         name: action.name,
         category: action.category,
+        sourceKind: action.sourceKind,
         creditCost: action.creditCost,
       })),
     }));
   }
 
   @Post()
-  create(@Body() body: unknown, @Req() request: Request) {
+  async create(@Body() body: unknown, @Req() request: Request) {
     const input = z
       .object({
         provider: z.string().min(1),
@@ -64,7 +65,7 @@ export class ConnectionsController {
         credentials: z.record(z.string()),
       })
       .parse(body);
-    return this.prisma.connection.create({
+    return await this.prisma.connection.create({
       data: {
         workspaceId: request.user.workspaceId,
         createdById: request.user.id,
@@ -86,16 +87,21 @@ export class ConnectionsController {
     const action = provider?.actions[0];
     if (!provider || !action) throw new Error(`Unknown provider ${connection.provider}`);
     const credentials = decryptCredentials(connection.encryptedCredentials);
-    const result = await action.run(
-      provider.id === 'mock'
-        ? { firstName: 'Connection', lastName: 'Test', domain: 'example.com' }
-        : {},
-      {
-        credentials,
-        fetch,
-        logger: { info: () => undefined, error: () => undefined },
-      },
-    );
+    const input =
+      provider.id === 'llm'
+        ? {
+            prompt:
+              'Return only this JSON shape for a connection test: {"answer":"ok","fields":{},"sources":[],"reasoning":""}.',
+            provider: 'openai',
+          }
+        : provider.id === 'mock'
+          ? { firstName: 'Connection', lastName: 'Test', domain: 'example.com' }
+          : {};
+    const result = await action.run(input, {
+      credentials,
+      fetch,
+      logger: { info: () => undefined, error: () => undefined },
+    });
     return {
       ok: result.found,
       provider: connection.provider,
