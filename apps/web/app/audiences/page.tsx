@@ -144,8 +144,12 @@ export default function AudiencesPage() {
       .then((response) => response.json() as Promise<AudienceTable[]>)
       .then((data) => {
         setTables(data);
-        setImportTableId((current) => current || data[0]?.id || '');
-        if (data[0]) setImportMapping(detectMapping(data[0].columns));
+        const nextId = data.some((table) => table.id === importTableId)
+          ? importTableId
+          : (data[0]?.id ?? '');
+        setImportTableId(nextId);
+        const nextTable = data.find((table) => table.id === nextId);
+        if (nextTable) setImportMapping(detectMapping(nextTable.columns));
       });
   }, [importOpen, workspace, token]);
 
@@ -162,14 +166,22 @@ export default function AudiencesPage() {
       body: JSON.stringify({ mapping: importMapping }),
     });
     const result = (await response.json()) as {
-      contacts?: number;
-      companies?: number;
-      updated?: number;
+      contactsCreated?: number;
+      contactsUpdated?: number;
+      companiesCreated?: number;
+      companiesUpdated?: number;
+      skipped?: number;
+      message?: string;
     };
     setImporting(false);
+    if (!response.ok) {
+      setMessage(`Import failed: ${result.message ?? 'Unable to import table'}`);
+      setMessageLink('');
+      return;
+    }
     setImportOpen(false);
     setMessage(
-      `Imported ${result.contacts ?? 0} contacts, ${result.companies ?? 0} companies (${result.updated ?? 0} updated)`,
+      `Imported ${result.contactsCreated ?? 0} new contacts, ${result.contactsUpdated ?? 0} updated · ${result.companiesCreated ?? 0} new companies, ${result.companiesUpdated ?? 0} updated${result.skipped ? ` · ${result.skipped} skipped` : ''}`,
     );
     setMessageLink('');
     setTab('contacts');
@@ -195,7 +207,12 @@ export default function AudiencesPage() {
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ name, segmentId: id }),
     });
-    const result = (await response.json()) as { tableId?: string };
+    const result = (await response.json()) as { tableId?: string; message?: string };
+    if (!response.ok) {
+      setMessage(`Create table failed: ${result.message ?? 'Unable to export segment'}`);
+      setMessageLink('');
+      return;
+    }
     setMessage('Created table');
     setMessageLink(result.tableId ? `/tables/${result.tableId}` : '');
   }

@@ -166,7 +166,13 @@ integration('api smoke', () => {
       payload: { mapping: { email: 'Email', firstName: 'First name', domain: 'Domain' } },
     });
     expect(imported.statusCode).toBe(201);
-    expect(imported.json()).toMatchObject({ contacts: 1, companies: 1 });
+    expect(imported.json()).toMatchObject({
+      contactsCreated: 1,
+      contactsUpdated: 0,
+      companiesCreated: 1,
+      companiesUpdated: 0,
+      skipped: 0,
+    });
     const importedAgain = await instance.inject({
       method: 'POST',
       url: `/audiences/import/table/${table.id}`,
@@ -174,7 +180,13 @@ integration('api smoke', () => {
       payload: { mapping: { email: 'Email', firstName: 'First name', domain: 'Domain' } },
     });
     expect(importedAgain.statusCode).toBe(201);
-    expect(importedAgain.json()).toMatchObject({ contacts: 1, companies: 1, updated: 2 });
+    expect(importedAgain.json()).toMatchObject({
+      contactsCreated: 0,
+      contactsUpdated: 1,
+      companiesCreated: 0,
+      companiesUpdated: 1,
+      skipped: 0,
+    });
     const contacts = await instance.inject({
       method: 'GET',
       url: '/audiences/contacts?limit=100',
@@ -197,6 +209,22 @@ integration('api smoke', () => {
       headers,
     });
     expect(refreshed.json()).toMatchObject({ count: 1 });
+    const exported = await instance.inject({
+      method: 'POST',
+      url: '/audiences/export/table',
+      headers,
+      payload: { name: 'Imported export', segmentId: segmentBody.id },
+    });
+    expect(exported.statusCode).toBe(201);
+    const exportedBody = exported.json() as { tableId: string; rows: number };
+    expect(exportedBody.rows).toBe(1);
+    const exportedTable = await instance.inject({
+      method: 'GET',
+      url: `/tables/${exportedBody.tableId}`,
+      headers,
+    });
+    expect(exportedTable.statusCode).toBe(200);
+    expect(exportedTable.json().rows).toHaveLength(1);
     const workflow = await instance.inject({
       method: 'POST',
       url: '/workflows',

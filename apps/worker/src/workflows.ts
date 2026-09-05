@@ -31,6 +31,18 @@ const json = (value: unknown) => value as Prisma.InputJsonValue;
 type WorkflowJob = { runId: string; workspaceId: string; resumeFrom?: string };
 type NodeState = 'done' | 'error' | 'skipped';
 
+async function publishWorkflowEvent(
+  workflowId: string,
+  runId: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const message = JSON.stringify({ runId, ...payload });
+  await Promise.all([
+    publisher.publish(`workflow:${runId}`, message),
+    publisher.publish(`workflow:${workflowId}`, message),
+  ]);
+}
+
 function bindingValues(outputs: Values): Values {
   const values: Values = { ...outputs };
   for (const [nodeId, value] of Object.entries(outputs)) {
@@ -263,7 +275,7 @@ export async function executeWorkflowRun(
       await executorDb.stepRun.create({
         data: { workflowRunId: run.id, nodeId, status: 'skipped', input: json({}) },
       });
-      await publisher.publish(`workflow:${run.id}`, JSON.stringify({ nodeId, status: 'skipped' }));
+      await publishWorkflowEvent(run.workflow.id, run.id, { nodeId, status: 'skipped' });
       continue;
     }
     const context = bindingValues(outputs);
@@ -271,7 +283,7 @@ export async function executeWorkflowRun(
     const step = await executorDb.stepRun.create({
       data: { workflowRunId: run.id, nodeId, status: 'running', input: json(input) },
     });
-    await publisher.publish(`workflow:${run.id}`, JSON.stringify({ nodeId, status: 'started' }));
+    await publishWorkflowEvent(run.workflow.id, run.id, { nodeId, status: 'started' });
     try {
       if (node.type === 'delay') {
         await executorDb.stepRun.update({
@@ -287,7 +299,7 @@ export async function executeWorkflowRun(
           { runId: run.id, workspaceId, resumeFrom: node.id },
           { delay: Math.max(0, Number(input.ms ?? 0)) },
         );
-        await publisher.publish(`workflow:${run.id}`, JSON.stringify({ nodeId, status: 'done' }));
+        await publishWorkflowEvent(run.workflow.id, run.id, { nodeId, status: 'done' });
         return;
       }
       const result = await executeWorkflowNode(node.type, input, context, workspaceId);
@@ -309,10 +321,12 @@ export async function executeWorkflowRun(
           },
         });
       }
-      await publisher.publish(
-        `workflow:${run.id}`,
-        JSON.stringify({ nodeId, status: 'done', output: result.output, credits: result.credits }),
-      );
+      await publishWorkflowEvent(run.workflow.id, run.id, {
+        nodeId,
+        status: 'done',
+        output: result.output,
+        credits: result.credits,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Workflow step failed';
       states.set(nodeId, 'error');
@@ -322,10 +336,11 @@ export async function executeWorkflowRun(
         where: { id: step.id },
         data: { status: 'error', error: message },
       });
-      await publisher.publish(
-        `workflow:${run.id}`,
-        JSON.stringify({ nodeId, status: 'error', error: message }),
-      );
+      await publishWorkflowEvent(run.workflow.id, run.id, {
+        nodeId,
+        status: 'error',
+        error: message,
+      });
     }
   }
   const status = terminalError ? 'error' : 'done';
@@ -338,10 +353,7 @@ export async function executeWorkflowRun(
       completedAt: new Date(),
     },
   });
-  await publisher.publish(
-    `workflow:${run.id}`,
-    JSON.stringify({ status, output: outputs, credits }),
-  );
+  await publishWorkflowEvent(run.workflow.id, run.id, { status, output: outputs, credits });
 }
 
 export async function runWorkflow(job: Job<WorkflowJob>): Promise<void> {

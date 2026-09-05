@@ -51,6 +51,20 @@ function inferType(value: unknown): string {
   return 'text';
 }
 
+export function readMappedValue(value: unknown, field: string): unknown {
+  if (value === null || value === undefined) return undefined;
+  if (typeof value !== 'object' || Array.isArray(value)) return value;
+  const object = value as Record<string, unknown>;
+  return Object.prototype.hasOwnProperty.call(object, field) ? object[field] : undefined;
+}
+
+function readMappedString(value: unknown, field: string): string | undefined {
+  const resolved = readMappedValue(value, field);
+  if (typeof resolved !== 'string' && typeof resolved !== 'number') return undefined;
+  const result = String(resolved).trim();
+  return result || undefined;
+}
+
 function parseFilter(value: string | undefined): Filter | undefined {
   if (!value) return undefined;
   return filterSchema.parse(JSON.parse(value));
@@ -245,9 +259,17 @@ export class AudiencesController {
       input.mapping[key] ||
       table.columns.find((column) => column.name.toLowerCase() === key.toLowerCase())?.name ||
       detectColumnName(table.columns, key);
-    let contacts = 0;
-    let updated = 0;
-    const companyKeys = new Set<string>();
+    let contactsCreated = 0;
+    let contactsUpdated = 0;
+    let companiesCreated = 0;
+    let companiesUpdated = 0;
+    let skipped = 0;
+    const companyCache = new Map<string, string>();
+    const mappedColumns = new Set(
+      ['email', 'firstName', 'lastName', 'companyName', 'domain']
+        .map(resolveColumn)
+        .filter((name): name is string => Boolean(name)),
+    );
     for (const row of table.rows) {
       const values = new Map(
         row.cells.map((cell) => [
@@ -256,79 +278,82 @@ export class AudiencesController {
         ]),
       );
       const get = (key: string) => values.get(resolveColumn(key) ?? '');
-      const email = String(get('email') ?? '').trim() || undefined;
-      const domain =
-        String(get('domain') ?? get('website') ?? '')
-          .trim()
-          .replace(/^https?:\/\//, '')
-          .split('/')[0] || undefined;
+      const email = readMappedString(get('email'), 'email')?.toLowerCase();
+      if (!email) {
+        skipped++;
+        continue;
+      }
+      const firstName = readMappedString(get('firstName'), 'firstName');
+      const lastName = readMappedString(get('lastName'), 'lastName');
+      const companyName = readMappedString(get('companyName'), 'companyName');
+      const rawDomain = readMappedString(get('domain'), 'domain');
+      const domain = rawDomain?.replace(/^https?:\/\//, '').split('/')[0];
       let companyId: string | undefined;
       if (domain) {
         const domainKey = domain.toLowerCase();
-        const existing = await this.prisma.company.findFirst({
-          where: {
-            workspaceId: request.user.workspaceId,
-            OR: [{ domainKey }, { domain: { equals: domain, mode: 'insensitive' } }],
-          },
-        });
-        const company = existing
-          ? await this.prisma.company.update({
-              where: { id: existing.id },
-              data: {
-                name: String(get('companyName') ?? domain),
-                domain,
-                domainKey,
-                data: json({ importedFrom: table.name }),
-              },
-            })
-          : await this.prisma.company.create({
-              data: {
-                workspaceId: request.user.workspaceId,
-                name: String(get('companyName') ?? domain),
-                domain,
-                domainKey,
-                data: json({ importedFrom: table.name }),
-              },
-            });
-        if (existing) updated++;
-        companyId = company.id;
-        companyKeys.add(domainKey);
-      }
-      if (email) {
-        const firstName = String(get('firstName') ?? '').trim();
-        const lastName = String(get('lastName') ?? '').trim();
-        const emailKey = email.toLowerCase();
-        const mapped: Prisma.ContactUpdateInput = {
-          email,
-          emailKey,
-          data: json(Object.fromEntries(values)),
-        };
-        if (firstName) mapped.firstName = firstName;
-        if (lastName) mapped.lastName = lastName;
-        if (companyId) mapped.company = { connect: { id: companyId } };
-        const existing = await this.prisma.contact.findFirst({
-          where: {
-            workspaceId: request.user.workspaceId,
-            OR: [{ emailKey }, { email: { equals: email, mode: 'insensitive' } }],
-          },
-        });
-        if (existing) {
-          await this.prisma.contact.update({ where: { id: existing.id }, data: mapped });
-          updated++;
-        } else {
-          await this.prisma.contact.create({
-            data: {
-              workspace: { connect: { id: request.user.workspaceId } },
-              email,
-              emailKey,
-              ...(firstName ? { firstName } : {}),
-              ...(lastName ? { lastName } : {}),
-              ...(companyId ? { company: { connect: { id: companyId } } } : {}),
-              data: json(Object.fromEntries(values)),
+        companyId = companyCache.get(domainKey);
+        if (!companyId) {
+          const existing = await this.prisma.company.findFirst({
+            where: {
+              workspaceId: request.user.workspaceId,
+              OR: [{ domainKey }, { domain: { equals: domain, mode: 'insensitive' } }],
             },
           });
+          const company = existing
+            ? await this.prisma.company.update({
+                where: { id: existing.id },
+                data: {
+                  name: companyName ?? domain,
+                  domain,
+                  domainKey,
+                  data: json({ importedFrom: table.name }),
+                },
+              })
+            : await this.prisma.company.create({
+                data: {
+                  workspaceId: request.user.workspaceId,
+                  name: companyName ?? domain,
+                  domain,
+                  domainKey,
+                  data: json({ importedFrom: table.name }),
+                },
+              });
+          if (existing) companiesUpdated++;
+          else companiesCreated++;
+          companyId = company.id;
+          companyCache.set(domainKey, company.id);
         }
-        contacts++;
+      }
+      const mapped: Prisma.ContactUpdateInput = {
+        email,
+        emailKey: email,
+        data: json(Object.fromEntries([...values].filter(([key]) => !mappedColumns.has(key)))),
+      };
+      if (firstName) mapped.firstName = firstName;
+      if (lastName) mapped.lastName = lastName;
+      if (companyId) mapped.company = { connect: { id: companyId } };
+      const existing = await this.prisma.contact.findFirst({
+        where: {
+          workspaceId: request.user.workspaceId,
+          OR: [{ emailKey: email }, { email: { equals: email, mode: 'insensitive' } }],
+        },
+      });
+      if (existing) {
+        await this.prisma.contact.update({ where: { id: existing.id }, data: mapped });
+        contactsUpdated++;
+      } else {
+        await this.prisma.contact.create({
+          data: {
+            workspace: { connect: { id: request.user.workspaceId } },
+            email,
+            emailKey: email,
+            ...(firstName ? { firstName } : {}),
+            ...(lastName ? { lastName } : {}),
+            ...(companyId ? { company: { connect: { id: companyId } } } : {}),
+            data: mapped.data ?? json({}),
+          },
+        });
+        contactsCreated++;
       }
       for (const [key, value] of values) {
         await this.prisma.fieldDefinition.upsert({
@@ -338,7 +363,14 @@ export class AudiencesController {
         });
       }
     }
-    return { contacts, companies: companyKeys.size, updated, rows: table.rows.length };
+    return {
+      contactsCreated,
+      contactsUpdated,
+      companiesCreated,
+      companiesUpdated,
+      skipped,
+      rows: table.rows.length,
+    };
   }
 
   @Post('export/table')
@@ -359,52 +391,49 @@ export class AudiencesController {
       },
       take: 1000,
     });
-    const table = await this.prisma.table.create({
-      data: { workspaceId: request.user.workspaceId, name: input.name },
-    });
-    const fields = [
-      'email',
-      'firstName',
-      'lastName',
-      ...new Set(
-        contacts.flatMap((contact) => Object.keys((contact.data as Record<string, unknown>) ?? {})),
-      ),
-    ];
-    await this.prisma.$transaction(
-      fields.map((name, position) =>
-        this.prisma.column.create({
-          data: {
-            tableId: table.id,
-            name,
-            type: name === 'email' ? 'email' : 'text',
-            kind: 'input',
-            config: {},
-            position,
-          },
-        }),
-      ),
-    );
-    const columns = await this.prisma.column.findMany({ where: { tableId: table.id } });
-    for (const [position, contact] of contacts.entries()) {
-      const row = await this.prisma.row.create({ data: { tableId: table.id, position } });
-      const data = { ...contact, ...(contact.data as Record<string, unknown>) } as Record<
-        string,
-        unknown
-      >;
-      await this.prisma.$transaction(
-        columns.map((column) =>
-          this.prisma.cell.create({
+    const tableId = await this.prisma.$transaction(async (tx) => {
+      const table = await tx.table.create({
+        data: { workspaceId: request.user.workspaceId, name: input.name },
+      });
+      const fieldNames = new Set(['email', 'firstName', 'lastName']);
+      contacts.forEach((contact) => {
+        Object.keys((contact.data as Record<string, unknown>) ?? {}).forEach((name) =>
+          fieldNames.add(name),
+        );
+      });
+      const columns = [];
+      for (const [position, name] of [...fieldNames].entries()) {
+        columns.push(
+          await tx.column.create({
             data: {
-              rowId: row.id,
-              columnId: column.id,
-              value: json(data[column.name] ?? null),
-              status: 'done',
+              tableId: table.id,
+              name,
+              type: name === 'email' ? 'email' : 'text',
+              kind: 'input',
+              config: {},
+              position,
             },
           }),
-        ),
-      );
-    }
-    return { tableId: table.id, rows: contacts.length };
+        );
+      }
+      for (const [position, contact] of contacts.entries()) {
+        const row = await tx.row.create({ data: { tableId: table.id, position } });
+        const data = { ...contact, ...(contact.data as Record<string, unknown>) } as Record<
+          string,
+          unknown
+        >;
+        await tx.cell.createMany({
+          data: columns.map((column) => ({
+            rowId: row.id,
+            columnId: column.id,
+            value: json(data[column.name] ?? null),
+            status: 'done',
+          })),
+        });
+      }
+      return table.id;
+    });
+    return { tableId, rows: contacts.length };
   }
 
   @Get('segments')

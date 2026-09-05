@@ -18,6 +18,7 @@ export default function WorkflowsPage() {
   const [items, setItems] = useState<Workflow[]>([]);
   const [selected, setSelected] = useState<Workflow | null>(null);
   const [runs, setRuns] = useState<unknown[]>([]);
+  const [message, setMessage] = useState('');
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   async function load() {
     const response = await fetch(`${api}/workflows`, {
@@ -32,11 +33,22 @@ export default function WorkflowsPage() {
   }, [token]);
   useEffect(() => {
     if (!selected) return;
-    void fetch(`${api}/workflows/${selected.id}/runs`, {
-      headers: { authorization: `Bearer ${token}` },
-    })
-      .then((response) => response.json())
-      .then(setRuns);
+    const loadRuns = () =>
+      fetch(`${api}/workflows/${selected.id}/runs`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+        .then((response) => response.json())
+        .then(setRuns);
+    void loadRuns();
+    const stream = new EventSource(
+      `${api}/workflows/${selected.id}/events?token=${encodeURIComponent(token)}`,
+    );
+    stream.onmessage = () => {
+      void loadRuns();
+      void load();
+    };
+    stream.onerror = () => stream.close();
+    return () => stream.close();
   }, [selected, token]);
   async function create() {
     const response = await fetch(`${api}/workflows`, {
@@ -58,12 +70,17 @@ export default function WorkflowsPage() {
   }
   async function run() {
     if (!selected) return;
-    await fetch(`${api}/workflows/${selected.id}/run`, {
+    const response = await fetch(`${api}/workflows/${selected.id}/run`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: '{}',
     });
-    setRuns((current) => current);
+    if (!response.ok) {
+      setMessage('Unable to queue workflow run');
+      return;
+    }
+    setMessage('Run queued');
+    await load();
   }
   return (
     <main className="app-shell">
@@ -133,6 +150,7 @@ export default function WorkflowsPage() {
             <div className="empty-state">Create a workflow to start.</div>
           )}
         </div>
+        {message && <div className="toast">{message}</div>}
       </section>
     </main>
   );

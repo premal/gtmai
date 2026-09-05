@@ -183,6 +183,44 @@ export class WorkflowsController {
     });
     request.raw.socket?.on('close', () => void subscriber.quit());
   }
+
+  @Get(':id/events')
+  async workflowEvents(
+    @Req() request: Request,
+    @Param('id') id: string,
+    @Res() reply: FastifyReply,
+  ) {
+    const query = request.query as { token?: string };
+    if (query.token) {
+      try {
+        request.user = this.jwt.verify<AuthUser>(query.token);
+      } catch {
+        reply.code(401).send({ message: 'Unauthorized' });
+        return;
+      }
+    }
+    const workflow = await this.prisma.workflow.findFirst({
+      where: { id, workspaceId: request.user.workspaceId },
+    });
+    if (!workflow) {
+      reply.code(404).send({ message: 'Workflow not found' });
+      return;
+    }
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      'content-type': 'text/event-stream',
+      'cache-control': 'no-cache',
+      connection: 'keep-alive',
+      'access-control-allow-origin': 'http://localhost:3000',
+    });
+    reply.raw.write(': ok\n\n');
+    const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+    await subscriber.subscribe(`workflow:${id}`);
+    subscriber.on('message', (_channel, message) => {
+      reply.raw.write(`data: ${message}\n\n`);
+    });
+    request.raw.socket?.on('close', () => void subscriber.quit());
+  }
 }
 
 @Controller('workflows/hooks')
