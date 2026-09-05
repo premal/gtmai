@@ -847,7 +847,8 @@ export function TableWorkspace({
           )}
           {!activeView && (
             <span className="muted">
-              Edit filters, sorts, and hidden columns after saving a view.
+              Default view shows everything — adding a filter, sort, or hidden column saves a new
+              view.
             </span>
           )}
           {viewMenu === 'filter' && (
