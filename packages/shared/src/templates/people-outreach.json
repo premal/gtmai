@@ -74,7 +74,7 @@
         "name": "Best email",
         "kind": "formula",
         "type": "email",
-        "config": { "expression": "coalesce({{Work email}}, {{Email}})" }
+        "config": { "expression": "coalesce(get({{Work email}}, \"email\"), {{Email}})" }
       },
       {
         "name": "Personalization",
