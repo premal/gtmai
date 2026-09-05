@@ -187,6 +187,12 @@ export class TablesController {
     const connection = await this.prisma.connection.findFirst({
       where: { workspaceId: request.user.workspaceId, provider: input.provider },
     });
+    console.log(
+      'fanout-connection-lookup',
+      request.user.workspaceId,
+      input.provider,
+      connection?.id ?? null,
+    );
     if (!connection)
       throw new Error(`No connection for ${input.provider} — add one in Connections`);
     const result = await action.run(input.input, {

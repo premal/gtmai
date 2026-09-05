@@ -65,7 +65,7 @@ export class ConnectionsController {
         credentials: z.record(z.string()),
       })
       .parse(body);
-    return await this.prisma.connection.create({
+    const connection = await this.prisma.connection.create({
       data: {
         workspaceId: request.user.workspaceId,
         createdById: request.user.id,
@@ -75,6 +75,8 @@ export class ConnectionsController {
       },
       select: { id: true, provider: true, name: true, createdAt: true },
     });
+    console.log('connection-created', request.user.workspaceId, request.user.id, connection);
+    return connection;
   }
 
   @Post(':id/test')
