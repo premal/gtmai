@@ -73,8 +73,8 @@ describe('people fanout', () => {
         target: { name: 'People' },
       },
     });
-    expect(fanout.statusCode).toBe(201);
     expect(fanout.json()).toMatchObject({ imported: 4, sourceRows: 2, errors: [] });
+    expect(fanout.statusCode).toBe(201);
     const target = fanout.json() as { tableId: string };
     const targetResponse = await instance.inject({
       method: 'GET',
