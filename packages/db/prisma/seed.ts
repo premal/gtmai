@@ -351,8 +351,18 @@ async function main(): Promise<void> {
   const workflowRunner = await import('../../../apps/worker/src/workflows');
   await workflowRunner.executeWorkflowRun(run.id, workspace.id);
   await workflowRunner.closeWorkflowResources();
+  const previousSequence = await db.sequence.findFirst({
+    where: { workspaceId: workspace.id, name: 'Signal follow-up sequence' },
+    select: { id: true },
+  });
   await db.campaign.deleteMany({
-    where: { workspaceId: workspace.id, name: 'Signal follow-up campaign' },
+    where: {
+      workspaceId: workspace.id,
+      OR: [
+        { name: 'Signal follow-up campaign' },
+        ...(previousSequence ? [{ sequenceId: previousSequence.id }] : []),
+      ],
+    },
   });
   await db.sequence.deleteMany({
     where: { workspaceId: workspace.id, name: 'Signal follow-up sequence' },
@@ -487,6 +497,15 @@ async function main(): Promise<void> {
         data: { email: aiContacts[0].email, firstname: aiContacts[0].firstName },
       },
     });
+  await db.crmSyncRun.create({
+    data: {
+      jobId: crmJob.id,
+      status: 'completed',
+      stats: { matched: aiContacts.length, synced: aiContacts.length, skipped: 0 },
+      startedAt: new Date(Date.now() - 60_000),
+      completedAt: new Date(),
+    },
+  });
   await db.apiKey.deleteMany({ where: { workspaceId: workspace.id, name: 'Seed CLI key' } });
   const seededKey = `gtm_${randomBytes(24).toString('base64url')}`;
   await db.apiKey.create({
