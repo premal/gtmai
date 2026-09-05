@@ -13,7 +13,11 @@ type Connection = {
   usedInColumns: number;
   createdBy: { name: string; email: string };
 };
-type Provider = { id: string; name: string; auth: { fields: { key: string; label: string }[] } };
+type Provider = {
+  id: string;
+  name: string;
+  auth: { fields: { key: string; label: string; secret?: boolean; optional?: boolean }[] };
+};
 
 export default function ConnectionsPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -21,7 +25,9 @@ export default function ConnectionsPage() {
   const [open, setOpen] = useState(false);
   const [provider, setProvider] = useState('mock');
   const [name, setName] = useState('Mock connection');
-  const [apiKey, setApiKey] = useState('demo-mock-key');
+  const [credentials, setCredentials] = useState<Record<string, string>>({
+    apiKey: 'demo-mock-key',
+  });
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   const { toast } = useToast();
@@ -39,10 +45,17 @@ export default function ConnectionsPage() {
   }, []);
 
   async function create(): Promise<void> {
+    const selected = providers.find((item) => item.id === provider);
+    const fields = selected?.auth.fields ?? [];
+    const bodyCredentials = Object.fromEntries(
+      fields
+        .filter((field) => credentials[field.key] || !field.optional)
+        .map((field) => [field.key, credentials[field.key] ?? '']),
+    );
     await fetch(`${api}/connections`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ provider, name, credentials: { apiKey } }),
+      body: JSON.stringify({ provider, name, credentials: bodyCredentials }),
     });
     setOpen(false);
     await load();
@@ -105,7 +118,14 @@ export default function ConnectionsPage() {
             <h3>Add connection</h3>
             <label>
               Provider
-              <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+              <select
+                value={provider}
+                onChange={(event) => {
+                  const nextProvider = event.target.value;
+                  setProvider(nextProvider);
+                  setCredentials(nextProvider === 'mock' ? { apiKey: 'demo-mock-key' } : {});
+                }}
+              >
                 {providers.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -117,14 +137,22 @@ export default function ConnectionsPage() {
               Name
               <input value={name} onChange={(event) => setName(event.target.value)} />
             </label>
-            <label>
-              API key
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-              />
-            </label>
+            {(providers.find((item) => item.id === provider)?.auth.fields ?? []).map((field) => (
+              <label key={field.key}>
+                {field.label}
+                {field.optional && <span className="muted"> (optional)</span>}
+                <input
+                  type={field.secret === false ? 'text' : 'password'}
+                  value={credentials[field.key] ?? ''}
+                  onChange={(event) =>
+                    setCredentials((current) => ({
+                      ...current,
+                      [field.key]: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ))}
             <div className="modal-actions">
               <button className="button" onClick={() => setOpen(false)}>
                 Cancel

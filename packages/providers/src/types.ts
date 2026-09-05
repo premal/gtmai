@@ -28,6 +28,9 @@ export type ProviderAction<I = unknown, O = unknown> = {
 export type Provider = {
   id: string;
   name: string;
-  auth: { type: 'apiKey'; fields: { key: string; label: string; secret: true }[] };
+  auth: {
+    type: 'apiKey';
+    fields: { key: string; label: string; secret: true; optional?: boolean }[];
+  };
   actions: ProviderAction<unknown, unknown>[];
 };

@@ -86,16 +86,21 @@ export class ConnectionsController {
     const action = provider?.actions[0];
     if (!provider || !action) throw new Error(`Unknown provider ${connection.provider}`);
     const credentials = decryptCredentials(connection.encryptedCredentials);
-    const result = await action.run(
-      provider.id === 'mock'
-        ? { firstName: 'Connection', lastName: 'Test', domain: 'example.com' }
-        : {},
-      {
-        credentials,
-        fetch,
-        logger: { info: () => undefined, error: () => undefined },
-      },
-    );
+    const input =
+      provider.id === 'llm'
+        ? {
+            prompt:
+              'Return only this JSON shape for a connection test: {"answer":"ok","fields":{},"sources":[],"reasoning":""}.',
+            provider: 'openai',
+          }
+        : provider.id === 'mock'
+          ? { firstName: 'Connection', lastName: 'Test', domain: 'example.com' }
+          : {};
+    const result = await action.run(input, {
+      credentials,
+      fetch,
+      logger: { info: () => undefined, error: () => undefined },
+    });
     return {
       ok: result.found,
       provider: connection.provider,

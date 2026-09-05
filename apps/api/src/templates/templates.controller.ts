@@ -63,22 +63,60 @@ export class TemplatesController {
     const name = input.name ?? saved.name;
     if (saved.kind === 'table') {
       const definition = saved.definition as {
-        columns?: Array<{ name: string; kind?: string; type?: string }>;
+        columns?: Array<{
+          name: string;
+          kind?: string;
+          type?: string;
+          config?: Record<string, unknown>;
+        }>;
+        rows?: Array<Record<string, unknown>>;
       };
       const table = await this.prisma.table.create({
         data: { workspaceId: request.user.workspaceId, name },
       });
+      const columns = [];
       for (const [position, column] of (definition.columns ?? []).entries()) {
-        await this.prisma.column.create({
-          data: {
-            tableId: table.id,
-            name: column.name,
-            kind: (column.kind ?? 'input') as 'input',
-            type: (column.type ?? 'text') as 'text',
-            config: {},
-            position,
-          },
-        });
+        columns.push(
+          await this.prisma.column.create({
+            data: {
+              tableId: table.id,
+              name: column.name,
+              kind: (column.kind ?? 'input') as 'input',
+              type: (column.type ?? 'text') as 'text',
+              config: json(column.config ?? {}),
+              position,
+            },
+          }),
+        );
+      }
+      for (const [position, values] of (definition.rows ?? []).entries()) {
+        const row = await this.prisma.row.create({ data: { tableId: table.id, position } });
+        await this.prisma.$transaction(
+          columns.map((column) => {
+            const value = values[column.name];
+            if (column.kind === 'input') {
+              return this.prisma.cell.create({
+                data: {
+                  rowId: row.id,
+                  columnId: column.id,
+                  value: value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue),
+                  status: 'done',
+                },
+              });
+            }
+            return this.prisma.cell.create({
+              data:
+                value === undefined
+                  ? { rowId: row.id, columnId: column.id, status: 'skipped' }
+                  : {
+                      rowId: row.id,
+                      columnId: column.id,
+                      value: value as Prisma.InputJsonValue,
+                      status: 'done',
+                    },
+            });
+          }),
+        );
       }
       return { kind: 'table', id: table.id };
     }

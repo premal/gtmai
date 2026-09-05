@@ -31,4 +31,42 @@ describe('agent loop', () => {
     expect(result.sources).toContain('https://example.com/ada');
     expect(client.complete).toHaveBeenCalledTimes(3);
   });
+
+  it('normalizes incomplete and top-level finish payloads', async () => {
+    const incomplete = await runAgentWithClient(
+      'Find Ada',
+      {
+        credentials: {},
+        fetch: vi.fn() as unknown as typeof fetch,
+        logger: { info: () => undefined, error: () => undefined },
+      },
+      { complete: vi.fn(async () => JSON.stringify({ tool: 'finish', result: { answer: 'ok' } })) },
+    );
+    expect(incomplete).toMatchObject({
+      answer: 'ok',
+      fields: {},
+      sources: [],
+      reasoning: '',
+    });
+
+    const topLevel = await runAgentWithClient(
+      'Find Clay',
+      {
+        credentials: {},
+        fetch: vi.fn() as unknown as typeof fetch,
+        logger: { info: () => undefined, error: () => undefined },
+      },
+      {
+        complete: vi.fn(async () =>
+          JSON.stringify({ fields: { uses_clay: 'likely' }, answer: 'Uses Clay.' }),
+        ),
+      },
+    );
+    expect(topLevel).toMatchObject({
+      answer: 'Uses Clay.',
+      fields: { uses_clay: 'likely' },
+      sources: [],
+      reasoning: '',
+    });
+  });
 });

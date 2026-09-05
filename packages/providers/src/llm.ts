@@ -10,10 +10,10 @@ const input = z.object({
   schema: z.record(z.unknown()).optional(),
 });
 const output = z.object({
-  answer: z.string(),
-  fields: z.record(z.unknown()),
-  sources: z.array(z.string()),
-  reasoning: z.string(),
+  answer: z.string().default(''),
+  fields: z.record(z.unknown()).default({}),
+  sources: z.array(z.string()).default([]),
+  reasoning: z.string().default(''),
 });
 export type AgentResult = z.infer<typeof output>;
 export type AgentMessage = { role: 'system' | 'user' | 'tool'; content: string };
@@ -56,7 +56,18 @@ async function structuredChat(
 export const llmProvider: Provider = {
   id: 'llm',
   name: 'LLM',
-  auth: { type: 'apiKey', fields: [{ key: 'apiKey', label: 'API key', secret: true }] },
+  auth: {
+    type: 'apiKey',
+    fields: [
+      { key: 'apiKey', label: 'API key', secret: true },
+      {
+        key: 'tavilyApiKey',
+        label: 'Tavily API key (optional — web search; falls back to DuckDuckGo)',
+        secret: true,
+        optional: true,
+      },
+    ],
+  },
   actions: [
     {
       id: 'llm.chat',
@@ -125,19 +136,34 @@ export async function webSearch(
   };
 }
 
-function parseToolMessage(value: string): {
+type AgentPayload = {
+  answer?: unknown;
+  fields?: unknown;
+  sources?: unknown;
+  reasoning?: unknown;
+};
+
+function parseToolMessage(value: string): AgentPayload & {
   tool?: 'web_search' | 'fetch_page' | 'finish';
   arguments?: Record<string, string>;
-  result?: AgentResult;
+  result?: AgentPayload;
+  raw?: string;
 } {
   try {
-    return JSON.parse(value) as {
+    const parsed = JSON.parse(value) as AgentPayload & {
       tool?: 'web_search' | 'fetch_page' | 'finish';
       arguments?: Record<string, string>;
-      result?: AgentResult;
+      result?: AgentPayload;
     };
+    if (
+      !parsed.tool &&
+      ('answer' in parsed || 'fields' in parsed || 'sources' in parsed || 'reasoning' in parsed)
+    ) {
+      return { ...parsed, tool: 'finish' };
+    }
+    return parsed;
   } catch {
-    return { tool: 'finish', result: { answer: value, fields: {}, sources: [], reasoning: '' } };
+    return { tool: 'finish', raw: value };
   }
 }
 
@@ -150,7 +176,7 @@ export async function runAgentWithClient(
     {
       role: 'system',
       content:
-        'You are a research agent. Respond only as JSON: {"tool":"web_search"|"fetch_page"|"finish","arguments":{},"result":{}}. Finish result must contain answer, fields, sources, reasoning.',
+        'You are a research agent. Respond only as JSON: {"tool":"web_search"|"fetch_page"|"finish","arguments":{},"result":{}}. Finish result must contain answer, fields, sources, and reasoning; never omit those keys, even when a field is empty.',
     },
     { role: 'user', content: prompt },
   ];
@@ -158,10 +184,31 @@ export async function runAgentWithClient(
   for (let step = 0; step < 8; step += 1) {
     const message = parseToolMessage(await client.complete(messages));
     if (message.tool === 'finish') {
-      return output.parse({
-        ...(message.result ?? { answer: '', fields: {}, reasoning: '' }),
-        sources: [...new Set([...(message.result?.sources ?? []), ...sources])],
-      });
+      if (message.raw !== undefined) {
+        return { answer: message.raw, fields: {}, sources, reasoning: 'unparsed' };
+      }
+      const topLevelPayload =
+        'answer' in message ||
+        'fields' in message ||
+        'sources' in message ||
+        'reasoning' in message;
+      const result = message.result ?? (topLevelPayload ? message : {});
+      const resultSources = Array.isArray(result.sources)
+        ? result.sources.filter((source): source is string => typeof source === 'string')
+        : [];
+      try {
+        return output.parse({
+          ...result,
+          sources: [...new Set([...resultSources, ...sources])],
+        });
+      } catch {
+        return {
+          answer: message.raw ?? '',
+          fields: {},
+          sources,
+          reasoning: 'unparsed',
+        };
+      }
     }
     if (message.tool === 'web_search') {
       const result = await webSearch(message.arguments?.query ?? prompt, context);
