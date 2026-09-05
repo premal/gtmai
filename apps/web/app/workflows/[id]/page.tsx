@@ -20,6 +20,7 @@ type Run = { id: string; status: string; output?: unknown; steps?: Step[] };
 export default function WorkflowEditorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [selectedStep, setSelectedStep] = useState<Step | null>(null);
@@ -35,13 +36,16 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   async function load() {
     const headers = { authorization: `Bearer ${token}` };
     const [workflowResponse, runsResponse] = await Promise.all([
-      fetch(`${api}/workflows`, { headers }),
+      fetch(`${api}/workflows/${id}`, { headers }),
       fetch(`${api}/workflows/${id}/runs`, { headers }),
     ]);
-    if (workflowResponse.ok)
-      setWorkflow(
-        ((await workflowResponse.json()) as Workflow[]).find((item) => item.id === id) ?? null,
-      );
+    if (workflowResponse.status === 404) {
+      setNotFound(true);
+      setWorkflow(null);
+    } else if (workflowResponse.ok) {
+      setNotFound(false);
+      setWorkflow((await workflowResponse.json()) as Workflow);
+    }
     if (runsResponse.ok) setRuns((await runsResponse.json()) as Run[]);
   }
   async function loadRuns() {
@@ -52,6 +56,17 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   }
   useEffect(() => {
     if (token) void load();
+  }, [token, id]);
+  useEffect(() => {
+    if (!token || !id) return;
+    const stream = new EventSource(
+      `${api}/workflows/${id}/events?token=${encodeURIComponent(token)}`,
+    );
+    stream.onmessage = () => {
+      void loadRuns();
+    };
+    stream.onerror = () => stream.close();
+    return () => stream.close();
   }, [token, id]);
 
   async function validate(): Promise<{ errors: string[]; warnings: string[] }> {
@@ -131,6 +146,18 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
     return typeof node?.config?.label === 'string' ? node.config.label : nodeId;
   };
 
+  if (notFound)
+    return (
+      <main className="app-shell">
+        <Phase2Nav active="workflows" />
+        <section className="content empty-state">
+          <h2>Workflow not found</h2>
+          <a className="button" href="/workflows">
+            Back to workflows
+          </a>
+        </section>
+      </main>
+    );
   if (!workflow)
     return (
       <main className="app-shell">

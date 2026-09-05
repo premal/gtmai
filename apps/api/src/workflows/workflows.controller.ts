@@ -9,6 +9,7 @@ import {
   Post,
   Req,
   Res,
+  NotFoundException,
   UseGuards,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -58,6 +59,16 @@ export class WorkflowsController {
       data: { workspaceId: request.user.workspaceId, name: input.name, graph: json(input.graph) },
       include: { _count: { select: { runs: true } } },
     });
+  }
+
+  @Get(':id')
+  async get(@Req() request: Request, @Param('id') id: string) {
+    const workflow = await this.prisma.workflow.findFirst({
+      where: { id, workspaceId: request.user.workspaceId },
+      include: { _count: { select: { runs: true } } },
+    });
+    if (!workflow) throw new NotFoundException('Workflow not found');
+    return workflow;
   }
 
   @Patch(':id')
