@@ -1,6 +1,7 @@
 import { Prisma } from '@gtmai/db';
 import { createRowWithValues } from '../tables/row-helper';
 import type { PrismaService } from '../prisma/prisma.service';
+import { getOrCreateDefaultWorkbook } from '../common/workbooks';
 
 export type TableTemplateDefinition = {
   columns?: Array<{
@@ -19,8 +20,15 @@ export async function instantiateTableTemplate(
   workspaceId: string,
   name: string,
   definition: TableTemplateDefinition,
+  workbookId?: string,
 ) {
-  const table = await prisma.table.create({ data: { workspaceId, name } });
+  const workbook = workbookId
+    ? await prisma.workbook.findFirstOrThrow({ where: { id: workbookId, workspaceId } })
+    : await getOrCreateDefaultWorkbook(prisma, workspaceId);
+  const position = await prisma.table.count({ where: { workbookId: workbook.id } });
+  const table = await prisma.table.create({
+    data: { workspaceId, workbookId: workbook.id, name, position },
+  });
   const columns = [];
   for (const [position, column] of (definition.columns ?? []).entries()) {
     columns.push(

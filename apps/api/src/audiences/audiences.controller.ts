@@ -12,8 +12,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Prisma } from '@gtmai/db';
-import { z } from 'zod';
 import { compileFilterPredicate, filterSchema, type Filter } from '@gtmai/shared';
+import { z } from 'zod';
+import { applyView, loadView } from '../tables/view-helper';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
@@ -249,12 +250,23 @@ export class AudiencesController {
     @Param('tableId') tableId: string,
     @Body() body: unknown,
   ) {
-    const input = z.object({ mapping: z.record(z.string()).default({}) }).parse(body);
+    const input = z
+      .object({ mapping: z.record(z.string()).default({}), viewId: z.string().optional() })
+      .parse(body);
     const table = await this.prisma.table.findFirst({
       where: { id: tableId, workspaceId: request.user.workspaceId },
       include: { columns: true, rows: { include: { cells: true } } },
     });
     if (!table) throw new Error('Table not found');
+    let rows = table.rows;
+    if (input.viewId) {
+      const { definition } = await loadView(this.prisma, {
+        viewId: input.viewId,
+        tableId,
+        workspaceId: request.user.workspaceId,
+      });
+      rows = applyView(definition, table.columns, table.rows);
+    }
     const resolveColumn = (key: string): string | undefined =>
       input.mapping[key] ||
       table.columns.find((column) => column.name.toLowerCase() === key.toLowerCase())?.name ||
@@ -270,7 +282,7 @@ export class AudiencesController {
         .map(resolveColumn)
         .filter((name): name is string => Boolean(name)),
     );
-    for (const row of table.rows) {
+    for (const row of rows) {
       const values = new Map(
         row.cells.map((cell) => [
           table.columns.find((column) => column.id === cell.columnId)?.name ?? '',
@@ -392,8 +404,21 @@ export class AudiencesController {
       take: 1000,
     });
     const tableId = await this.prisma.$transaction(async (tx) => {
+      const workbook =
+        (await tx.workbook.findFirst({
+          where: { workspaceId: request.user.workspaceId },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        })) ??
+        (await tx.workbook.create({
+          data: { workspaceId: request.user.workspaceId, name: 'Default workbook', position: 0 },
+        }));
       const table = await tx.table.create({
-        data: { workspaceId: request.user.workspaceId, name: input.name },
+        data: {
+          workspaceId: request.user.workspaceId,
+          workbookId: workbook.id,
+          name: input.name,
+          position: await tx.table.count({ where: { workbookId: workbook.id } }),
+        },
       });
       const fieldNames = new Set(['email', 'firstName', 'lastName']);
       contacts.forEach((contact) => {

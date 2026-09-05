@@ -13,7 +13,7 @@ export function AppNav({
 }) {
   const pathname = usePathname();
   const links: [string, string, string?][] = [
-    ['tables', '▦ Tables', '/'],
+    ['tables', '▤ Workbooks', '/'],
     ['audiences', '◎ Audiences'],
     ['sequences', '✉ Sequences'],
     ['campaigns', '➜ Campaigns'],

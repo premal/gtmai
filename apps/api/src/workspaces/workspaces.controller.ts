@@ -5,6 +5,7 @@ import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { WorkspaceScopedGuard } from '../common/workspace-scoped.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { getOrCreateDefaultWorkbook } from '../common/workbooks';
 
 @Controller('workspaces')
 @UseGuards(JwtAuthGuard, WorkspaceScopedGuard)
@@ -21,14 +22,18 @@ export class WorkspacesController {
   }
 
   @Post(':workspaceId/tables')
-  createTable(
+  async createTable(
     @Param('workspaceId') workspaceId: string,
     @Body() body: unknown,
     @Req() request: FastifyRequest & { user: AuthUser },
   ) {
     if (workspaceId !== request.user.workspaceId) throw new Error('Workspace access denied');
     const input = z.object({ name: z.string().min(1) }).parse(body);
-    return this.prisma.table.create({ data: { workspaceId, name: input.name } });
+    const workbook = await getOrCreateDefaultWorkbook(this.prisma, workspaceId);
+    const position = await this.prisma.table.count({ where: { workbookId: workbook.id } });
+    return this.prisma.table.create({
+      data: { workspaceId, workbookId: workbook.id, name: input.name, position },
+    });
   }
 
   @Patch(':workspaceId')
