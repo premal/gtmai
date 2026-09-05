@@ -54,7 +54,7 @@ export default function AdsPage() {
   return (
     <main className="app-shell">
       <Phase2Nav active="ads" />
-      <section className="content">
+      <section className="content wide">
         <header className="topbar">
           <div>
             <div className="eyebrow">ACTIVATION</div>
@@ -70,35 +70,37 @@ export default function AdsPage() {
             + Create audience
           </button>
         </header>
-        <div className="table-list">
+        <div className="page-stack">
           {items.map((item) => (
-            <div className="table-card" key={item.id}>
-              <strong>{item.name}</strong>
-              <span>
-                {item.platforms.join(', ')}{' '}
-                {item.segmentId
-                  ? `· ${segments.find((segment) => segment.id === item.segmentId)?.name ?? 'segment'}`
-                  : ''}
-              </span>
-              <div>
-                {item.syncs.map((syncItem) => (
-                  <div className="panel" key={syncItem.platform}>
-                    <div className="list-row">
-                      <strong>{syncItem.platform}</strong>
-                      <span className={`chip ${syncItem.status === 'failed' ? 'negative' : ''}`}>
-                        {syncItem.status}
-                      </span>
-                      <span>
-                        {syncItem.matched} matched · {syncItem.uploaded} uploaded ·{' '}
-                        {syncItem.syncedAt ? new Date(syncItem.syncedAt).toLocaleString() : '—'}
-                      </span>
-                    </div>
-                    {syncItem.error && <p className="negative">{syncItem.error}</p>}
-                  </div>
-                ))}
+            <div className="card" key={item.id}>
+              <div className="card-header">
+                <div>
+                  <h3>{item.name}</h3>
+                  <p className="muted">
+                    {item.platforms.join(', ')}{' '}
+                    {item.segmentId
+                      ? `· ${segments.find((segment) => segment.id === item.segmentId)?.name ?? 'segment'}`
+                      : ''}
+                  </p>
+                </div>
                 <button className="button" onClick={() => void sync(item.id)}>
                   Sync now
                 </button>
+              </div>
+              <div>
+                {item.syncs.map((syncItem) => (
+                  <div className="list-row" key={syncItem.platform}>
+                    <strong>{syncItem.platform}</strong>
+                    <span className={`chip ${syncItem.status === 'failed' ? 'negative' : ''}`}>
+                      {syncItem.status}
+                    </span>
+                    <span className="muted">
+                      {syncItem.matched} matched · {syncItem.uploaded} uploaded ·{' '}
+                      {syncItem.syncedAt ? new Date(syncItem.syncedAt).toLocaleString() : '—'}
+                    </span>
+                    {syncItem.error && <span className="negative">{syncItem.error}</span>}
+                  </div>
+                ))}
               </div>
             </div>
           ))}

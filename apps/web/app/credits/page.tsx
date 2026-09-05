@@ -46,14 +46,14 @@ export default function CreditsPage() {
   return (
     <main className="app-shell">
       <Phase2Nav active="credits" />
-      <section className="content">
+      <section className="content wide">
         <header className="topbar">
           <div>
             <div className="eyebrow">USAGE</div>
             <h2>Credits & budgets</h2>
           </div>
         </header>
-        <div className="grid-2">
+        <div className="split-grid">
           <section className="panel">
             <h3>Create budget</h3>
             <label>
@@ -127,7 +127,10 @@ export default function CreditsPage() {
             {budgets.map((budget) => (
               <div className="list-row" key={budget.id}>
                 <span>
-                  <strong>{budget.scope}</strong> · {budget.limit} credits / {budget.period}
+                  <strong>{budget.scope}</strong>
+                  <small className="muted">
+                    {budget.limit} credits / {budget.period}
+                  </small>
                 </span>
                 <button className="button" onClick={() => void remove(budget.id)}>
                   Delete
@@ -145,7 +148,7 @@ export default function CreditsPage() {
               <div className="list-row" key={alert.id}>
                 <span className="chip">{alert.type}</span>
                 <span>{alert.message}</span>
-                <small>{new Date(alert.createdAt).toLocaleString()}</small>
+                <small className="muted">{new Date(alert.createdAt).toLocaleString()}</small>
               </div>
             ))
           )}

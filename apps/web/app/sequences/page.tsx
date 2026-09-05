@@ -127,7 +127,7 @@ export default function SequencesPage() {
   return (
     <main className="app-shell">
       <Phase2Nav active="sequences" />
-      <section className="content">
+      <section className="content wide">
         <header className="topbar">
           <div>
             <div className="eyebrow">OUTBOUND</div>
@@ -137,12 +137,12 @@ export default function SequencesPage() {
             + New sequence
           </button>
         </header>
-        <div className="split-layout">
-          <div className="table-list">
+        <div className="split-grid">
+          <div className="panel page-stack">
             {items.map((item) => (
-              <button className="table-card" key={item.id} onClick={() => setSelected(item)}>
+              <button className="table-card-link" key={item.id} onClick={() => setSelected(item)}>
                 <strong>{item.name}</strong>
-                <span>
+                <span className="muted">
                   {item.steps.length} steps · {item._count?.campaigns ?? 0} campaigns
                 </span>
               </button>
@@ -160,7 +160,7 @@ export default function SequencesPage() {
                 />
                 <div className="step-list">
                   {selected.steps.map((step, index) => (
-                    <div className="panel" key={step.id ?? `${step.position}-${index}`}>
+                    <div className="card" key={step.id ?? `${step.position}-${index}`}>
                       <div className="list-row">
                         <strong>Step {index + 1}</strong>
                         <span className="chip">Position {step.position}</span>
