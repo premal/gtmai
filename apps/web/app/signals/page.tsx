@@ -16,6 +16,7 @@ type SignalEvent = {
 export default function SignalsPage() {
   const [definitions, setDefinitions] = useState<Definition[]>([]);
   const [events, setEvents] = useState<SignalEvent[]>([]);
+  const [pollingId, setPollingId] = useState<string | null>(null);
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   async function load() {
     const headers = { authorization: `Bearer ${token}` };
@@ -43,6 +44,19 @@ export default function SignalsPage() {
     });
     void load();
   }
+  async function poll(definition: Definition) {
+    setPollingId(definition.id);
+    try {
+      const response = await fetch(`${api}/signals/definitions/${definition.id}/poll`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Poll failed');
+      await load();
+    } finally {
+      setPollingId(null);
+    }
+  }
   return (
     <main className="app-shell">
       <Phase2Nav active="signals" />
@@ -69,14 +83,10 @@ export default function SignalsPage() {
                 </div>
                 <button
                   className="button"
-                  onClick={() =>
-                    fetch(`${api}/signals/definitions/${definition.id}/poll`, {
-                      method: 'POST',
-                      headers: { authorization: `Bearer ${token}` },
-                    })
-                  }
+                  disabled={pollingId === definition.id}
+                  onClick={() => void poll(definition)}
                 >
-                  Poll now
+                  {pollingId === definition.id ? 'Polling…' : 'Poll now'}
                 </button>
               </div>
             ))}

@@ -23,6 +23,7 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [selectedStep, setSelectedStep] = useState<Step | null>(null);
+  const [editMode, setEditMode] = useState(true);
   const [message, setMessage] = useState('');
   const [validation, setValidation] = useState<{ errors: string[]; warnings: string[] }>({
     errors: [],
@@ -85,6 +86,8 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   }
   function selectRun(run: Run) {
     setSelectedRun(run);
+    setSelectedStep(null);
+    setEditMode(false);
     void fetch(`${api}/workflows/runs/${run.id}`, { headers: { authorization: `Bearer ${token}` } })
       .then((response) => (response.ok ? (response.json() as Promise<Run>) : run))
       .then(setSelectedRun);
@@ -149,6 +152,13 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
         <WorkflowEditor
           graph={workflow.graph}
           statuses={statuses}
+          runSelected={Boolean(selectedRun)}
+          editMode={editMode}
+          onEdit={() => setEditMode(true)}
+          onNodeSelect={(nodeId) => {
+            const step = selectedRun?.steps?.find((item) => item.nodeId === nodeId);
+            if (step) setSelectedStep(step);
+          }}
           onChange={(graph) => {
             setWorkflow({ ...workflow, graph });
             setDirty(true);

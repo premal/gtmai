@@ -141,7 +141,15 @@ export class AudiencesController {
       where,
       orderBy: { id: 'desc' },
       take: input.limit + 1,
-      include: { company: true, signalEvents: { orderBy: { occurredAt: 'desc' }, take: 5 } },
+      include: {
+        company: true,
+        _count: { select: { signalEvents: true } },
+        signalEvents: {
+          orderBy: { occurredAt: 'desc' },
+          take: 20,
+          include: { definition: { select: { name: true, type: true } } },
+        },
+      },
     });
     const filter = parseFilter(input.filter);
     const filtered = filter ? rows.filter(compileFilterPredicate(filter)) : rows;

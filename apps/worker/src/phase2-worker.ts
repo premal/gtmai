@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
 import Redis from 'ioredis';
 import { PrismaClient, Prisma } from '@gtmai/db';
@@ -9,6 +10,20 @@ const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
 });
 const workflowQueue = new Queue('workflows', { connection: redis });
+
+function resultDedupeKey(
+  scope: 'contact' | 'company',
+  entityId: string,
+  result: { raw?: unknown },
+  payload: unknown,
+) {
+  const raw = result.raw as { seed?: unknown } | undefined;
+  const payloadHash =
+    typeof raw?.seed === 'string'
+      ? raw.seed
+      : createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  return `${scope}:${entityId}:${payloadHash}`;
+}
 
 async function pollSignal(job: Job<{ definitionId: string; workspaceId: string }>) {
   const definition = await db.signalDefinition.findFirst({
@@ -29,9 +44,15 @@ async function pollSignal(job: Job<{ definitionId: string; workspaceId: string }
       job.data.workspaceId,
     );
     if (!current.result.found) continue;
+    const dedupeKey = resultDedupeKey('contact', contact.id, current.result, current.result.data);
+    const existing = await db.signalEvent.findUnique({
+      where: { definitionId_dedupeKey: { definitionId: definition.id, dedupeKey } },
+    });
+    if (existing) continue;
     const event = await db.signalEvent.create({
       data: {
         definitionId: definition.id,
+        dedupeKey,
         contactId: contact.id,
         payload: current.result.data as Prisma.InputJsonValue,
         occurredAt: new Date(),
@@ -56,9 +77,15 @@ async function pollSignal(job: Job<{ definitionId: string; workspaceId: string }
       job.data.workspaceId,
     );
     if (!current.result.found) continue;
+    const dedupeKey = resultDedupeKey('company', company.id, current.result, current.result.data);
+    const existing = await db.signalEvent.findUnique({
+      where: { definitionId_dedupeKey: { definitionId: definition.id, dedupeKey } },
+    });
+    if (existing) continue;
     const event = await db.signalEvent.create({
       data: {
         definitionId: definition.id,
+        dedupeKey,
         companyId: company.id,
         payload: current.result.data as Prisma.InputJsonValue,
         occurredAt: new Date(),

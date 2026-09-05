@@ -260,6 +260,7 @@ model SignalDefinition {
 model SignalEvent {
   id String @id @default(cuid())
   definitionId String
+  dedupeKey String
   contactId String?
   companyId String?
   payload Json
@@ -268,6 +269,7 @@ model SignalEvent {
   contact Contact? @relation(fields: [contactId], references: [id])
   company Company? @relation(fields: [companyId], references: [id])
   @@index([definitionId, occurredAt])
+  @@unique([definitionId, dedupeKey])
   @@index([contactId, occurredAt])
   @@index([companyId, occurredAt])
 }

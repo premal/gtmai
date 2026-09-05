@@ -825,6 +825,7 @@ h3 {
   position: relative;
   min-height: 360px;
   overflow: hidden;
+  touch-action: none;
   border: 1px dashed #d8dced;
   border-radius: 8px;
   background: radial-gradient(#e8eaf4 1px, transparent 1px);
@@ -977,7 +978,38 @@ h3 {
   flex: 1;
   min-height: 520px;
   height: max(520px, calc(100vh - 300px));
+  overflow: hidden;
+}
+.canvas-graph {
+  position: absolute;
+  inset: 0;
   transform-origin: 0 0;
+}
+.signal-timeline {
+  margin-top: 20px;
+}
+.signal-timeline h4 {
+  margin-bottom: 10px;
+}
+.signal-timeline-item {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid #edf0f5;
+  padding: 12px 0;
+}
+.signal-timeline-item > span {
+  color: #78859a;
+  font-size: 12px;
+}
+.signal-timeline-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.signal-timeline-meta time {
+  color: #8a95a8;
+  font-size: 11px;
 }
 .edge-layer {
   position: absolute;

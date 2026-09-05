@@ -230,4 +230,9 @@ export async function executeHttp(
   };
 }
 
-export const executorDb = db;
+export const executorDb: PrismaClient = db;
+
+export async function closeExecutorResources(): Promise<void> {
+  await db.$disconnect();
+  await redis.quit();
+}

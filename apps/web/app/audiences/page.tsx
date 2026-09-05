@@ -13,7 +13,13 @@ type AudienceItem = {
   firstName?: string;
   lastName?: string;
   company?: { name?: string; domain?: string };
-  _count?: { contacts: number; signalEvents: number; memberships?: number };
+  signalEvents?: Array<{
+    id: string;
+    occurredAt: string;
+    payload: unknown;
+    definition?: { name?: string; type?: string };
+  }>;
+  _count?: { contacts?: number; signalEvents?: number; memberships?: number };
 };
 type FilterRow = { field: string; op: string; value: string };
 
@@ -37,6 +43,18 @@ export default function AudiencesPage() {
         : '',
     [filterRow],
   );
+  function signalSummary(payload: unknown) {
+    if (!payload || typeof payload !== 'object') return 'Signal received';
+    const entries = Object.entries(payload as Record<string, unknown>).filter(
+      ([key]) => !['hash', 'source'].includes(key),
+    );
+    return entries.length
+      ? entries
+          .slice(0, 2)
+          .map(([key, value]) => `${key}: ${String(value)}`)
+          .join(' · ')
+      : 'Signal received';
+  }
 
   async function load() {
     if (!token) return;
@@ -194,11 +212,11 @@ export default function AudiencesPage() {
               <strong>{item.name ?? `${item.firstName ?? ''} ${item.lastName ?? ''}`}</strong>
               <span>{item.domain ?? item.email ?? item.company?.domain ?? '—'}</span>
               <span>
-                {item._count
-                  ? tab === 'segments'
-                    ? `${item._count.memberships ?? 0} members`
-                    : `${item._count.contacts} contacts · ${item._count.signalEvents} signals`
-                  : '—'}
+                {tab === 'segments'
+                  ? `${item._count?.memberships ?? 0} members`
+                  : tab === 'companies'
+                    ? `${item._count?.contacts ?? 0} contacts · ${item._count?.signalEvents ?? 0} signals`
+                    : `${item._count?.signalEvents ?? 0} signals`}
               </span>
               {tab === 'segments' && (
                 <span className="row-actions">
@@ -227,7 +245,27 @@ export default function AudiencesPage() {
             </button>
             <div className="eyebrow">AUDIENCE RECORD</div>
             <h3>{selected.name ?? selected.email ?? 'Contact'}</h3>
-            <pre>{JSON.stringify(selected, null, 2)}</pre>
+            <div className="signal-timeline">
+              <h4>Signals</h4>
+              {selected.signalEvents?.length ? (
+                selected.signalEvents.map((event) => (
+                  <div className="signal-timeline-item" key={event.id}>
+                    <div className="signal-timeline-meta">
+                      <span className="chip">{event.definition?.type ?? 'signal'}</span>
+                      <time>{new Date(event.occurredAt).toLocaleString()}</time>
+                    </div>
+                    <strong>{event.definition?.name ?? 'Signal event'}</strong>
+                    <span>{signalSummary(event.payload)}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-state">No signals for this contact.</div>
+              )}
+            </div>
+            <details>
+              <summary>Record data</summary>
+              <pre>{JSON.stringify(selected, null, 2)}</pre>
+            </details>
           </aside>
         )}
         {message && <div className="toast">{message}</div>}

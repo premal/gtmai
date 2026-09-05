@@ -382,7 +382,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
       <section className="content wide">
         <header className="topbar">
           <div>
-            <div className="eyebrow">TABLE / PROSPECTS</div>
+            <div className="eyebrow">TABLE / {table.name.toUpperCase()}</div>
             <h2>{table.name}</h2>
           </div>
           <div className="toolbar">

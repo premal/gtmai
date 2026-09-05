@@ -264,6 +264,7 @@ async function main(): Promise<void> {
   await db.signalEvent.createMany({
     data: importedContacts.slice(0, 5).map((contact, index) => ({
       definitionId: signal.id,
+      dedupeKey: `seed:contact:${contact.id}`,
       contactId: contact.id,
       payload: { type: 'job_change', title: `VP Engineering ${index + 1}`, source: 'mock' },
       occurredAt: new Date(Date.now() - index * 86_400_000),
@@ -339,23 +340,17 @@ async function main(): Promise<void> {
   const run = await db.workflowRun.create({
     data: {
       workflowId: workflow.id,
-      status: 'done',
-      input: { signalId: signal.id },
-      output: { imported: true },
-      credits: 1,
-      startedAt: new Date(),
-      completedAt: new Date(),
+      input: {
+        signalId: signal.id,
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        domain: 'analytical.engine',
+      },
     },
   });
-  await db.stepRun.createMany({
-    data: ['trigger', 'enrich', 'condition', 'append', 'webhook'].map((nodeId) => ({
-      workflowRunId: run.id,
-      nodeId,
-      status: nodeId === 'webhook' ? 'skipped' : 'done',
-      input: {},
-      output: {},
-    })),
-  });
+  const workflowRunner = await import('../../../apps/worker/src/workflows');
+  await workflowRunner.executeWorkflowRun(run.id, workspace.id);
+  await workflowRunner.closeWorkflowResources();
   const oldFunction = await db.function.findFirst({
     where: { workspaceId: workspace.id, name: 'Normalize company name' },
   });

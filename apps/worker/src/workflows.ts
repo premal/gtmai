@@ -13,6 +13,7 @@ import {
   executeFormula,
   executeHttp,
   executeWaterfall,
+  closeExecutorResources,
   executorDb,
   type Values,
 } from './executors';
@@ -35,6 +36,13 @@ function bindingValues(outputs: Values): Values {
     if (!value || typeof value !== 'object') continue;
     values[`${nodeId}.output`] = (value as Values).output;
     const output = (value as Values).output;
+    if (nodeId === 'trigger') {
+      const trigger = (output ?? value) as Values;
+      values.trigger = { ...(values.trigger as Values), ...trigger };
+      for (const [key, item] of Object.entries(trigger)) {
+        values[`trigger.${key}`] = item;
+      }
+    }
     if (output && typeof output === 'object') {
       for (const [key, item] of Object.entries(output as Values)) {
         values[`${nodeId}.output.${key}`] = item;
@@ -53,9 +61,14 @@ function bindConfig(config: Values, outputs: Values): Values {
   );
 }
 
-function conditionExpression(expression: string): string {
+function evaluateCondition(expression: string, context: Values): boolean {
   const match = expression.match(/^\s*(\{\{[^}]+}})\s+contains\s+("[^"]*"|'[^']*')\s*$/i);
-  return match ? `contains(${match[1]}, ${match[2]})` : expression;
+  if (match) {
+    const actual = resolveBindings(match[1]!, context);
+    const expected = match[2]!.slice(1, -1);
+    return actual.includes(expected);
+  }
+  return Boolean(executeFormula(expression, context));
 }
 
 async function executeFunction(
@@ -78,12 +91,11 @@ async function executeFunction(
   let credits = 0;
   for (const node of program.nodes ?? []) {
     const context = bindingValues(outputs);
-    const result = await executeWorkflowNode(
-      node.type,
-      bindConfig(node.config, context),
-      context,
-      workspaceId,
-    );
+    const nodeConfig =
+      node.type === 'condition' || node.type === 'formula'
+        ? node.config
+        : bindConfig(node.config, context);
+    const result = await executeWorkflowNode(node.type, nodeConfig, context, workspaceId);
     outputs[node.id] = { output: result.output };
     credits += result.credits;
   }
@@ -123,9 +135,7 @@ async function executeWorkflowNode(
   if (type === 'condition') {
     return {
       output: {
-        value: Boolean(
-          executeFormula(conditionExpression(String(config.expression ?? '')), context),
-        ),
+        value: evaluateCondition(String(config.expression ?? ''), context),
       },
       credits: 0,
     };
@@ -205,9 +215,13 @@ async function executeWorkflowNode(
   throw new Error(`Unsupported workflow node type: ${type}`);
 }
 
-export async function runWorkflow(job: Job<WorkflowJob>): Promise<void> {
+export async function executeWorkflowRun(
+  runId: string,
+  workspaceId: string,
+  resumeFrom?: string,
+): Promise<void> {
   const run = await executorDb.workflowRun.findUnique({
-    where: { id: job.data.runId },
+    where: { id: runId },
     include: { workflow: true },
   });
   if (!run) throw new Error('Workflow run not found');
@@ -218,7 +232,7 @@ export async function runWorkflow(job: Job<WorkflowJob>): Promise<void> {
   const states = new Map<string, NodeState>();
   let credits = run.credits;
   let terminalError = false;
-  const resumeIndex = job.data.resumeFrom ? order.indexOf(job.data.resumeFrom) + 1 : 0;
+  const resumeIndex = resumeFrom ? order.indexOf(resumeFrom) + 1 : 0;
   await executorDb.workflowRun.update({
     where: { id: run.id },
     data: { status: 'running', startedAt: run.startedAt ?? new Date() },
@@ -252,7 +266,10 @@ export async function runWorkflow(job: Job<WorkflowJob>): Promise<void> {
       continue;
     }
     const context = bindingValues(outputs);
-    const input = bindConfig(node.config, context);
+    const input =
+      node.type === 'condition' || node.type === 'formula'
+        ? node.config
+        : bindConfig(node.config, context);
     const step = await executorDb.stepRun.create({
       data: { workflowRunId: run.id, nodeId, status: 'running', input: json(input) },
     });
@@ -269,13 +286,13 @@ export async function runWorkflow(job: Job<WorkflowJob>): Promise<void> {
         });
         await workflowQueue.add(
           'run',
-          { runId: run.id, workspaceId: job.data.workspaceId, resumeFrom: node.id },
+          { runId: run.id, workspaceId, resumeFrom: node.id },
           { delay: Math.max(0, Number(input.ms ?? 0)) },
         );
         await publisher.publish(`workflow:${run.id}`, JSON.stringify({ nodeId, status: 'done' }));
         return;
       }
-      const result = await executeWorkflowNode(node.type, input, context, job.data.workspaceId);
+      const result = await executeWorkflowNode(node.type, input, context, workspaceId);
       credits += result.credits;
       outputs[node.id] = { output: result.output };
       states.set(nodeId, 'done');
@@ -286,7 +303,7 @@ export async function runWorkflow(job: Job<WorkflowJob>): Promise<void> {
       if (result.credits > 0) {
         await executorDb.creditLedger.create({
           data: {
-            workspaceId: job.data.workspaceId,
+            workspaceId,
             delta: -result.credits,
             reason: 'workflow step',
             refType: 'workflowRun',
@@ -327,6 +344,17 @@ export async function runWorkflow(job: Job<WorkflowJob>): Promise<void> {
     `workflow:${run.id}`,
     JSON.stringify({ status, output: outputs, credits }),
   );
+}
+
+export async function runWorkflow(job: Job<WorkflowJob>): Promise<void> {
+  await executeWorkflowRun(job.data.runId, job.data.workspaceId, job.data.resumeFrom);
+}
+
+export async function closeWorkflowResources(): Promise<void> {
+  await workflowQueue.close();
+  await redis.quit();
+  await publisher.quit();
+  await closeExecutorResources();
 }
 
 export function startWorkflowWorker() {

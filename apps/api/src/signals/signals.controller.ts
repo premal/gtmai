@@ -1,7 +1,8 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Body, Controller, Get, Inject, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
-import type { Queue } from 'bullmq';
+import { QueueEvents, type Queue } from 'bullmq';
+import Redis from 'ioredis';
 import { Prisma } from '@gtmai/db';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
@@ -78,7 +79,17 @@ export class SignalsController {
       definitionId: id,
       workspaceId: request.user.workspaceId,
     });
-    return { queued: true, jobId: job.id };
+    const events = new QueueEvents('signals', {
+      connection: new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+        maxRetriesPerRequest: null,
+      }),
+    });
+    try {
+      const result = await job.waitUntilFinished(events, 30_000);
+      return { queued: false, completed: true, jobId: job.id, result };
+    } finally {
+      await events.close();
+    }
   }
 
   @Get('events')
@@ -133,6 +144,7 @@ export class SignalsController {
       .object({
         email: z.string().email().optional(),
         domain: z.string().optional(),
+        dedupeKey: z.string().optional(),
         payload: z.record(z.unknown()).default({}),
         occurredAt: z.coerce.date().optional(),
       })
@@ -147,9 +159,20 @@ export class SignalsController {
           where: { workspaceId: definition.workspaceId, domainKey: input.domain.toLowerCase() },
         })
       : null;
+    const payloadRecord = input.payload as Record<string, unknown>;
+    const dedupeKey =
+      input.dedupeKey ??
+      (typeof payloadRecord.hash === 'string' ? payloadRecord.hash : undefined) ??
+      (typeof payloadRecord.key === 'string' ? payloadRecord.key : undefined) ??
+      createHash('sha256').update(JSON.stringify(input.payload)).digest('hex');
+    const existing = await this.prisma.signalEvent.findUnique({
+      where: { definitionId_dedupeKey: { definitionId, dedupeKey } },
+    });
+    if (existing) return existing;
     return this.prisma.signalEvent.create({
       data: {
         definitionId,
+        dedupeKey,
         ...(contact ? { contactId: contact.id } : {}),
         ...(company ? { companyId: company.id } : {}),
         payload: input.payload as Prisma.InputJsonValue,

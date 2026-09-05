@@ -13,6 +13,13 @@ function fake(
   const domain = String(data.domain ?? 'example.com').replace(/^https?:\/\//, '');
   const first = String(data.firstName ?? 'alex').toLowerCase();
   const last = String(data.lastName ?? 'demo').toLowerCase();
+  const signalAction = action.endsWith('jobChanges') || action.endsWith('funding');
+  if (signalAction && Number.parseInt(seed.slice(0, 2), 16) % 4 !== 0) {
+    return {
+      found: false,
+      reason: 'No deterministic signal for this audience record',
+    };
+  }
   return {
     found: true,
     data: {
