@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../main';
+import { AuthService } from '../auth/auth.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { createWorkspaceWithAdmin } from '../test-helpers';
 
 if (process.env.CI !== 'true') {
   const testEnv = readFileSync(resolve(process.cwd(), '../../.env.test'), 'utf8');
@@ -23,18 +26,18 @@ describe('search', () => {
     const instance = app.getHttpAdapter().getInstance();
     const email = `search-${Date.now()}@gtmai.dev`;
     const otherEmail = `search-other-${Date.now()}@gtmai.dev`;
-    const register = await instance.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: { email, password: 'password123', name: 'Search User' },
-    });
-    const auth = register.json() as { token: string };
-    const otherRegister = await instance.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: { email: otherEmail, password: 'password123', name: 'Other Search User' },
-    });
-    const otherAuth = otherRegister.json() as { token: string };
+    const auth = await createWorkspaceWithAdmin(
+      app.get(PrismaService),
+      app.get(AuthService),
+      email,
+      'Search User',
+    );
+    const otherAuth = await createWorkspaceWithAdmin(
+      app.get(PrismaService),
+      app.get(AuthService),
+      otherEmail,
+      'Other Search User',
+    );
     const headers = { authorization: `Bearer ${auth.token}` };
     const otherHeaders = { authorization: `Bearer ${otherAuth.token}` };
 

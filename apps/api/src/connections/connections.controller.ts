@@ -1,16 +1,28 @@
-import { Body, Controller, Delete, Get, Inject, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Inject,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { providers } from '@gtmai/providers';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
 import { decryptCredentials, encryptCredentials } from '../common/crypto';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { Roles, RolesGuard } from '../common/roles';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Request = FastifyRequest & { user: AuthUser };
 
 @Controller('connections')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class ConnectionsController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
@@ -57,6 +69,7 @@ export class ConnectionsController {
   }
 
   @Post()
+  @Roles('admin')
   async create(@Body() body: unknown, @Req() request: Request) {
     const input = z
       .object({
@@ -78,6 +91,7 @@ export class ConnectionsController {
   }
 
   @Post(':id/test')
+  @Roles('admin')
   async test(@Param('id') id: string, @Req() request: Request) {
     const connection = await this.prisma.connection.findFirst({
       where: { id, workspaceId: request.user.workspaceId },
@@ -112,10 +126,33 @@ export class ConnectionsController {
   }
 
   @Delete(':id')
+  @Roles('admin')
   async remove(@Param('id') id: string, @Req() request: Request) {
     await this.prisma.connection.deleteMany({
       where: { id, workspaceId: request.user.workspaceId },
     });
     return { ok: true };
+  }
+
+  @Patch(':id')
+  @Roles('admin')
+  async update(@Param('id') id: string, @Body() body: unknown, @Req() request: Request) {
+    const input = z
+      .object({ name: z.string().min(1).optional(), credentials: z.record(z.string()).optional() })
+      .parse(body);
+    const connection = await this.prisma.connection.findFirst({
+      where: { id, workspaceId: request.user.workspaceId },
+    });
+    if (!connection) throw new Error('Connection not found');
+    return this.prisma.connection.update({
+      where: { id },
+      data: {
+        ...(input.name === undefined ? {} : { name: input.name }),
+        ...(input.credentials === undefined
+          ? {}
+          : { encryptedCredentials: encryptCredentials(input.credentials) }),
+      },
+      select: { id: true, provider: true, name: true, createdAt: true, updatedAt: true },
+    });
   }
 }

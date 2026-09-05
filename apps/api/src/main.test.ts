@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './main';
+import { AuthService } from './auth/auth.service';
+import { PrismaService } from './prisma/prisma.service';
+import { createWorkspaceWithAdmin } from './test-helpers';
 
 if (process.env.CI !== 'true') {
   const testEnv = readFileSync(resolve(process.cwd(), '../../.env.test'), 'utf8');
@@ -23,13 +26,12 @@ integration('api smoke', () => {
     await app.init();
     const instance = app.getHttpAdapter().getInstance();
     const email = `smoke-${Date.now()}@gtmai.dev`;
-    const register = await instance.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: { email, password: 'password123', name: 'Smoke User' },
-    });
-    expect(register.statusCode).toBe(201);
-    const auth = register.json() as { token: string; workspaceId: string };
+    const auth = await createWorkspaceWithAdmin(
+      app.get(PrismaService),
+      app.get(AuthService),
+      email,
+      'Smoke User',
+    );
     const created = await instance.inject({
       method: 'POST',
       url: `/workspaces/${auth.workspaceId}/tables`,
@@ -140,12 +142,12 @@ integration('api smoke', () => {
     await app.init();
     const instance = app.getHttpAdapter().getInstance();
     const email = `audience-${Date.now()}@gtmai.dev`;
-    const register = await instance.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: { email, password: 'password123', name: 'Audience User' },
-    });
-    const auth = register.json() as { token: string; workspaceId: string };
+    const auth = await createWorkspaceWithAdmin(
+      app.get(PrismaService),
+      app.get(AuthService),
+      email,
+      'Audience User',
+    );
     const headers = { authorization: `Bearer ${auth.token}` };
     const tableResponse = await instance.inject({
       method: 'POST',

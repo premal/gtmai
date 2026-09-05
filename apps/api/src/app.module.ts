@@ -25,6 +25,9 @@ import { FoldersModule } from './folders/folders.module';
 import { WorkbooksModule } from './workbooks/workbooks.module';
 import { TagsModule } from './tags/tags.module';
 import { SearchModule } from './search/search.module';
+import { TeamModule } from './team/team.module';
+import { APP_GUARD } from '@nestjs/core';
+import { RolesGuard } from './common/roles';
 
 function required(name: string): string {
   const value = process.env[name];
@@ -87,7 +90,9 @@ function required(name: string): string {
     WorkbooksModule,
     TagsModule,
     SearchModule,
+    TeamModule,
   ],
   controllers: [FormulaController],
+  providers: [{ provide: APP_GUARD, useClass: RolesGuard }],
 })
 export class AppModule {}

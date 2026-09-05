@@ -5,6 +5,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { assertWorkbookAccess } from '../common/workbook-access';
 import { PrismaService } from '../prisma/prisma.service';
 import { instantiateTableTemplate, type TableTemplateDefinition } from './instantiate';
 
@@ -66,6 +67,9 @@ export class TemplatesController {
     if (!saved) throw new Error('Template not found');
     const name = input.name ?? saved.name;
     if (saved.kind === 'table') {
+      if (input.workbookId) {
+        await assertWorkbookAccess(this.prisma, request.user, input.workbookId);
+      }
       const { table } = await instantiateTableTemplate(
         this.prisma,
         request.user.workspaceId,

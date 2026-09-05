@@ -116,18 +116,25 @@ async function execute(job: Job<CellData>): Promise<void> {
         String(config.provider ?? ''),
       )
     ) {
+      const workbook = await db.table.findUnique({
+        where: { id: column.tableId },
+        select: { workbook: { select: { name: true } } },
+      });
+      const budgetError = workbook?.workbook.name
+        ? `Credit limit reached for workbook ${workbook.workbook.name}`
+        : 'Credit limit reached';
       await db.cell.update({
         where: { id: cell.id },
         data: {
           status: 'skipped',
-          error: 'budget exceeded',
+          error: budgetError,
           creditsUsed: 0,
           durationMs: Date.now() - started,
         },
       });
       await publisher.publish(
         `table:${column.tableId}`,
-        JSON.stringify({ rowId, columnId, status: 'skipped', error: 'budget exceeded' }),
+        JSON.stringify({ rowId, columnId, status: 'skipped', error: budgetError }),
       );
       return;
     }

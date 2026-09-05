@@ -15,6 +15,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { accessibleWorkbookWhere } from '../common/workbook-access';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Request = FastifyRequest & { user: AuthUser };
@@ -39,7 +40,12 @@ export class FoldersController {
   @Get()
   async list(@Req() request: Request) {
     const folders = await this.prisma.folder.findMany({
-      where: { workspaceId: request.user.workspaceId },
+      where: {
+        workspaceId: request.user.workspaceId,
+        ...(request.user.role === 'owner' || request.user.role === 'admin'
+          ? {}
+          : { workbooks: { some: accessibleWorkbookWhere(request.user) } }),
+      },
       include: { tagAssignments: { include: { tag: true } } },
       orderBy: [{ position: 'asc' }, { name: 'asc' }],
     });

@@ -1,16 +1,30 @@
 import { Prisma, PrismaClient } from '@gtmai/db';
 const db = new PrismaClient();
 
-export function budgetMatches(scope: string, tableId?: string, provider?: string) {
+export function budgetMatches(
+  scope: string,
+  tableId?: string,
+  provider?: string,
+  workbookId?: string,
+) {
   return (
     scope === 'workspace' ||
     Boolean(tableId && scope === `table:${tableId}`) ||
+    Boolean(workbookId && scope === `workbook:${workbookId}`) ||
     Boolean(provider && scope === `provider:${provider}`)
   );
 }
 
-export function ledgerScopeFilter(scope: string, tableId?: string, provider?: string) {
+export function ledgerScopeFilter(
+  scope: string,
+  tableId?: string,
+  provider?: string,
+  workbookId?: string,
+) {
   if (scope.startsWith('table:')) return { tableId: tableId ?? scope.slice('table:'.length) };
+  if (scope.startsWith('workbook:')) {
+    return { table: { workbookId: workbookId ?? scope.slice('workbook:'.length) } };
+  }
   if (scope.startsWith('provider:')) {
     return { provider: provider ?? scope.slice('provider:'.length) };
   }
@@ -66,6 +80,10 @@ export async function budgetExceeded(
   provider?: string,
 ) {
   if (estimated <= 0) return false;
+  const workbookId = tableId
+    ? (await db.table.findUnique({ where: { id: tableId }, select: { workbookId: true } }))
+        ?.workbookId
+    : undefined;
   const budgets = await db.creditBudget.findMany({ where: { workspaceId } });
   const now = new Date();
   const periodStart = (period: string) => {
@@ -78,12 +96,12 @@ export async function budgetExceeded(
     return date;
   };
   for (const budget of budgets) {
-    if (!budgetMatches(budget.scope, tableId, provider)) continue;
+    if (!budgetMatches(budget.scope, tableId, provider, workbookId)) continue;
     const spend = await db.creditLedger.aggregate({
       where: {
         workspaceId,
         createdAt: { gte: periodStart(budget.period) },
-        ...ledgerScopeFilter(budget.scope, tableId, provider),
+        ...ledgerScopeFilter(budget.scope, tableId, provider, workbookId),
       },
       _sum: { delta: true },
     });

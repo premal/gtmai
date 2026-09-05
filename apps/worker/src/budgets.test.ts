@@ -16,6 +16,14 @@ describe('budget scope filtering', () => {
     });
   });
 
+  it('limits workbook budgets to the matching workbook ledger rows', () => {
+    expect(budgetMatches('workbook:workbook-1', 'table-1', undefined, 'workbook-1')).toBe(true);
+    expect(budgetMatches('workbook:workbook-1', 'table-1', undefined, 'workbook-2')).toBe(false);
+    expect(ledgerScopeFilter('workbook:workbook-1', 'table-1', undefined, 'workbook-1')).toEqual({
+      table: { workbookId: 'workbook-1' },
+    });
+  });
+
   it('marks work over the remaining budget as exceeded', () => {
     expect(spendExceedsBudget(-9, 2, 10)).toBe(true);
     expect(spendExceedsBudget(-9, 1, 10)).toBe(false);

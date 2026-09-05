@@ -28,6 +28,8 @@ import { instantiateTableTemplate, type TableTemplateDefinition } from '../templ
 import { createRowWithValues } from './row-helper';
 import { applyView, loadView } from './view-helper';
 import { getOrCreateDefaultWorkbook } from '../common/workbooks';
+import { accessibleWorkbookWhere, assertWorkbookAccess } from '../common/workbook-access';
+import { WorkbookResourceGuard } from '../common/workbook-resource.guard';
 
 const tableBody = z.object({
   name: z.string().min(1).optional(),
@@ -49,7 +51,7 @@ type MultipartRequest = Request & {
 };
 
 @Controller('tables')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, WorkbookResourceGuard)
 export class TablesController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -61,7 +63,11 @@ export class TablesController {
     const input = tableBody.required({ name: true }).parse(body);
     const workbook = input.workbookId
       ? await this.prisma.workbook.findFirst({
-          where: { id: input.workbookId, workspaceId: request.user.workspaceId },
+          where: {
+            id: input.workbookId,
+            workspaceId: request.user.workspaceId,
+            ...accessibleWorkbookWhere(request.user),
+          },
         })
       : await getOrCreateDefaultWorkbook(this.prisma, request.user.workspaceId);
     if (!workbook) throw new Error('Workbook not found');
@@ -80,7 +86,10 @@ export class TablesController {
   @Get()
   async list(@Req() request: Request) {
     const tables = await this.prisma.table.findMany({
-      where: { workspaceId: request.user.workspaceId },
+      where: {
+        workspaceId: request.user.workspaceId,
+        workbook: accessibleWorkbookWhere(request.user),
+      },
       include: {
         tagAssignments: { include: { tag: true } },
         _count: { select: { rows: true, columns: true } },
@@ -100,7 +109,11 @@ export class TablesController {
     @Req() request: Request,
   ) {
     const table = await this.prisma.table.findFirst({
-      where: { id, workspaceId: request.user.workspaceId },
+      where: {
+        id,
+        workspaceId: request.user.workspaceId,
+        workbook: accessibleWorkbookWhere(request.user),
+      },
       include: {
         columns: { orderBy: { position: 'asc' } },
         rows: { orderBy: { position: 'asc' }, include: { cells: true } },
@@ -134,9 +147,14 @@ export class TablesController {
       where: { id, workspaceId: request.user.workspaceId },
     });
     if (!table) throw new Error('Table not found');
+    await assertWorkbookAccess(this.prisma, request.user, table.workbookId);
     if (input.workbookId) {
       const workbook = await this.prisma.workbook.findFirst({
-        where: { id: input.workbookId, workspaceId: request.user.workspaceId },
+        where: {
+          id: input.workbookId,
+          workspaceId: request.user.workspaceId,
+          ...accessibleWorkbookWhere(request.user),
+        },
       });
       if (!workbook) throw new Error('Workbook not found');
     }
@@ -152,6 +170,11 @@ export class TablesController {
 
   @Delete(':id')
   async remove(@Param('id') id: string, @Req() request: Request) {
+    const table = await this.prisma.table.findFirst({
+      where: { id, workspaceId: request.user.workspaceId },
+      select: { workbookId: true },
+    });
+    if (table) await assertWorkbookAccess(this.prisma, request.user, table.workbookId);
     await this.prisma.table.deleteMany({ where: { id, workspaceId: request.user.workspaceId } });
     return { ok: true };
   }

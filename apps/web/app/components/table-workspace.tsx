@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { AppNav } from '../app-nav';
 import { useDialog } from './prompt-dialog';
 import { useToast } from './toast';
+import { useMe } from '../auth';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Cell = {
@@ -182,6 +183,8 @@ export function TableWorkspace({
   });
   const dialog = useDialog();
   const { toast } = useToast();
+  const me = useMe();
+  const canEdit = me?.role !== 'viewer';
   const router = useRouter();
   const searchParams = useSearchParams();
   const gridRef = useRef<HTMLDivElement>(null);
@@ -772,39 +775,51 @@ export function TableWorkspace({
             <h2>{table.name}</h2>
           </div>
           <div className="toolbar">
-            <button
-              className="button"
-              onClick={() => {
-                setSelectedColumn(null);
-                setColumnName('New enrichment');
-                setKind('enrichment');
-                setStep(0);
-                setAdding(true);
-              }}
-            >
-              ＋ Add column
-            </button>
-            <button className="button" onClick={() => setSourceOpen(true)}>
-              Import from source
-            </button>
-            <button className="button" onClick={openPeople}>
-              Find people
-            </button>
-            <button className="button" onClick={() => void addRow()}>
-              ＋ Row
-            </button>
-            <button className="button" onClick={() => setImportOpen(true)}>
-              Import CSV
-            </button>
+            {canEdit && (
+              <button
+                className="button"
+                onClick={() => {
+                  setSelectedColumn(null);
+                  setColumnName('New enrichment');
+                  setKind('enrichment');
+                  setStep(0);
+                  setAdding(true);
+                }}
+              >
+                ＋ Add column
+              </button>
+            )}
+            {canEdit && (
+              <button className="button" onClick={() => setSourceOpen(true)}>
+                Import from source
+              </button>
+            )}
+            {canEdit && (
+              <button className="button" onClick={openPeople}>
+                Find people
+              </button>
+            )}
+            {canEdit && (
+              <button className="button" onClick={() => void addRow()}>
+                ＋ Row
+              </button>
+            )}
+            {canEdit && (
+              <button className="button" onClick={() => setImportOpen(true)}>
+                Import CSV
+              </button>
+            )}
             <button className="button" onClick={() => void exportCsv()}>
               Export CSV
             </button>
-            <button
-              className="button primary"
-              onClick={() => table.columns.at(-1) && void run(table.columns.at(-1)!.id)}
-            >
-              ▶ Run column
-            </button>
+            {canEdit && (
+              <button
+                className="button primary"
+                onClick={() => table.columns.at(-1) && void run(table.columns.at(-1)!.id)}
+              >
+                ▶ Run column
+              </button>
+            )}
           </div>
         </header>
         <div className="view-toolbar">
@@ -819,9 +834,11 @@ export function TableWorkspace({
               ))}
             </select>
           </label>
-          <button className="button" onClick={() => void createView()}>
-            ＋ New view
-          </button>
+          {canEdit && (
+            <button className="button" onClick={() => void createView()}>
+              ＋ New view
+            </button>
+          )}
           <button
             className="button"
             onClick={() => setViewMenu(viewMenu === 'filter' ? null : 'filter')}
@@ -840,7 +857,7 @@ export function TableWorkspace({
           >
             Hide columns
           </button>
-          {activeView && (
+          {canEdit && activeView && (
             <>
               <button
                 className="icon-button"
@@ -1030,132 +1047,137 @@ export function TableWorkspace({
                     <span className="column-meta">
                       {column.kind} · {column.type}
                     </span>
-                    <div className="column-actions">
-                      <button className="run-link" onClick={() => void run(column.id)}>
-                        ▶ Run
-                      </button>
-                      <button className="run-link" onClick={() => openColumn(column)}>
-                        ✎ Edit
-                      </button>
-                      <div
-                        className="column-menu-anchor"
-                        ref={menuColumnId === column.id ? menuRef : undefined}
-                      >
-                        <button
-                          className="icon-button"
-                          aria-label={`More actions for ${column.name}`}
-                          onClick={() =>
-                            setMenuColumnId(menuColumnId === column.id ? null : column.id)
-                          }
-                        >
-                          ⋮
+                    {canEdit && (
+                      <div className="column-actions">
+                        <button className="run-link" onClick={() => void run(column.id)}>
+                          ▶ Run
                         </button>
-                        {menuColumnId === column.id && (
-                          <div className="column-menu">
-                            <button
-                              onClick={() => {
-                                setMenuColumnId(null);
-                                void run(column.id, { onlyEmpty: true });
-                              }}
-                            >
-                              Run empty
-                            </button>
-                            <button
-                              onClick={() => {
-                                setMenuColumnId(null);
-                                void run(column.id, { onlyErrored: true });
-                              }}
-                            >
-                              Run errored
-                            </button>
-                            <button
-                              onClick={() => {
-                                setMenuColumnId(null);
-                                openColumn(column);
-                              }}
-                            >
-                              Edit config
-                            </button>
-                            <div className="color-label-row">
-                              <div className="menu-label">Color label</div>
-                              <div className="color-options">
-                                {['indigo', 'green', 'orange', 'pink'].map((color) => (
-                                  <button
-                                    key={color}
-                                    className={`color-dot ${color}`}
-                                    aria-label={`Set ${color} label`}
-                                    onClick={async () => {
-                                      const token = localStorage.getItem('gtmai-token') ?? '';
-                                      await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                        method: 'PATCH',
-                                        headers: {
-                                          authorization: `Bearer ${token}`,
-                                          'content-type': 'application/json',
-                                        },
-                                        body: JSON.stringify({ colorLabel: color }),
-                                      });
-                                      setMenuColumnId(null);
-                                      await reload();
-                                    }}
-                                  />
-                                ))}
+                        <button className="run-link" onClick={() => openColumn(column)}>
+                          ✎ Edit
+                        </button>
+                        <div
+                          className="column-menu-anchor"
+                          ref={menuColumnId === column.id ? menuRef : undefined}
+                        >
+                          <button
+                            className="icon-button"
+                            aria-label={`More actions for ${column.name}`}
+                            onClick={() =>
+                              setMenuColumnId(menuColumnId === column.id ? null : column.id)
+                            }
+                          >
+                            ⋮
+                          </button>
+                          {menuColumnId === column.id && (
+                            <div className="column-menu">
+                              <button
+                                onClick={() => {
+                                  setMenuColumnId(null);
+                                  void run(column.id, { onlyEmpty: true });
+                                }}
+                              >
+                                Run empty
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setMenuColumnId(null);
+                                  void run(column.id, { onlyErrored: true });
+                                }}
+                              >
+                                Run errored
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setMenuColumnId(null);
+                                  openColumn(column);
+                                }}
+                              >
+                                Edit config
+                              </button>
+                              <div className="color-label-row">
+                                <div className="menu-label">Color label</div>
+                                <div className="color-options">
+                                  {['indigo', 'green', 'orange', 'pink'].map((color) => (
+                                    <button
+                                      key={color}
+                                      className={`color-dot ${color}`}
+                                      aria-label={`Set ${color} label`}
+                                      onClick={async () => {
+                                        const token = localStorage.getItem('gtmai-token') ?? '';
+                                        await fetch(
+                                          `${api}/tables/${tableId}/columns/${column.id}`,
+                                          {
+                                            method: 'PATCH',
+                                            headers: {
+                                              authorization: `Bearer ${token}`,
+                                              'content-type': 'application/json',
+                                            },
+                                            body: JSON.stringify({ colorLabel: color }),
+                                          },
+                                        );
+                                        setMenuColumnId(null);
+                                        await reload();
+                                      }}
+                                    />
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                            <button
-                              onClick={async () => {
-                                setMenuColumnId(null);
-                                const values = await dialog.prompt({
-                                  title: 'Rename column',
-                                  fields: [
-                                    {
-                                      name: 'name',
-                                      label: 'Column name',
-                                      defaultValue: column.name,
+                              <button
+                                onClick={async () => {
+                                  setMenuColumnId(null);
+                                  const values = await dialog.prompt({
+                                    title: 'Rename column',
+                                    fields: [
+                                      {
+                                        name: 'name',
+                                        label: 'Column name',
+                                        defaultValue: column.name,
+                                      },
+                                    ],
+                                    confirmLabel: 'Rename column',
+                                  });
+                                  if (!values?.name) return;
+                                  const name = values.name;
+                                  const token = localStorage.getItem('gtmai-token') ?? '';
+                                  await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                    method: 'PATCH',
+                                    headers: {
+                                      authorization: `Bearer ${token}`,
+                                      'content-type': 'application/json',
                                     },
-                                  ],
-                                  confirmLabel: 'Rename column',
-                                });
-                                if (!values?.name) return;
-                                const name = values.name;
-                                const token = localStorage.getItem('gtmai-token') ?? '';
-                                await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                  method: 'PATCH',
-                                  headers: {
-                                    authorization: `Bearer ${token}`,
-                                    'content-type': 'application/json',
-                                  },
-                                  body: JSON.stringify({ name }),
-                                });
-                                await reload();
-                              }}
-                            >
-                              Rename
-                            </button>
-                            <button
-                              className="danger"
-                              onClick={async () => {
-                                setMenuColumnId(null);
-                                const confirmed = await dialog.confirm({
-                                  title: `Delete ${column.name}?`,
-                                  description: 'This column and its values will be removed.',
-                                  confirmLabel: 'Delete column',
-                                  danger: true,
-                                });
-                                if (!confirmed) return;
-                                const token = localStorage.getItem('gtmai-token') ?? '';
-                                await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
-                                  method: 'DELETE',
-                                  headers: { authorization: `Bearer ${token}` },
-                                });
-                                await reload();
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        )}
+                                    body: JSON.stringify({ name }),
+                                  });
+                                  await reload();
+                                }}
+                              >
+                                Rename
+                              </button>
+                              <button
+                                className="danger"
+                                onClick={async () => {
+                                  setMenuColumnId(null);
+                                  const confirmed = await dialog.confirm({
+                                    title: `Delete ${column.name}?`,
+                                    description: 'This column and its values will be removed.',
+                                    confirmLabel: 'Delete column',
+                                    danger: true,
+                                  });
+                                  if (!confirmed) return;
+                                  const token = localStorage.getItem('gtmai-token') ?? '';
+                                  await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
+                                    method: 'DELETE',
+                                    headers: { authorization: `Bearer ${token}` },
+                                  });
+                                  await reload();
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </th>
                 ))}
               </tr>
