@@ -35,6 +35,7 @@ describe('people fanout', () => {
       headers,
       payload: { provider: 'mock', name: 'Mock', credentials: {} },
     });
+    expect(connection.json()).toMatchObject({ provider: 'mock' });
     expect(connection.statusCode).toBe(201);
     const connections = await instance.inject({
       method: 'GET',
