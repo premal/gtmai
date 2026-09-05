@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { AppNav } from '../../app-nav';
+import { useDialog } from '../../components/prompt-dialog';
 import { WorkflowEditor, type EditorGraph } from '../../../components/workflow-editor';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -32,6 +33,7 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   });
   const [dirty, setDirty] = useState(false);
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
+  const dialog = useDialog();
 
   async function load() {
     const headers = { authorization: `Bearer ${token}` };
@@ -95,12 +97,17 @@ export default function WorkflowEditorPage({ params }: { params: Promise<{ id: s
   }
   async function run() {
     if (!workflow) return;
-    const input = window.prompt('Run input JSON', '{}');
-    if (input === null) return;
+    const values = await dialog.prompt({
+      title: 'Run workflow',
+      description: 'Provide workflow input as a JSON object.',
+      fields: [{ name: 'input', label: 'Run input JSON', defaultValue: '{}', multiline: true }],
+      confirmLabel: 'Queue run',
+    });
+    if (!values) return;
     await fetch(`${api}/workflows/${id}/run`, {
       method: 'POST',
       headers: { ...{ authorization: `Bearer ${token}` }, 'content-type': 'application/json' },
-      body: input,
+      body: values.input ?? '{}',
     });
     setMessage('Workflow run queued');
     await load();

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AppNav } from '../app-nav';
+import { useDialog } from '../components/prompt-dialog';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Workflow = {
@@ -20,6 +21,7 @@ export default function WorkflowsPage() {
   const [runs, setRuns] = useState<unknown[]>([]);
   const [message, setMessage] = useState('');
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
+  const dialog = useDialog();
   async function load() {
     const response = await fetch(`${api}/workflows`, {
       headers: { authorization: `Bearer ${token}` },
@@ -73,17 +75,21 @@ export default function WorkflowsPage() {
     const signalTrigger = selected.graph.nodes.some((node) => node.type === 'trigger.signal');
     let input: Record<string, unknown> = {};
     if (signalTrigger) {
-      const value = window.prompt('Signal input JSON', '{ "email": "", "domain": "" }');
-      if (value === null) return;
-      try {
-        const parsed = JSON.parse(value) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-          throw new Error('Input must be a JSON object');
-        input = parsed as Record<string, unknown>;
-      } catch {
-        setMessage('Invalid signal input JSON');
-        return;
-      }
+      const values = await dialog.prompt({
+        title: 'Run signal workflow',
+        description: 'Provide the signal payload as a JSON object.',
+        fields: [
+          {
+            name: 'input',
+            label: 'Signal input JSON',
+            defaultValue: '{ "email": "", "domain": "" }',
+            multiline: true,
+          },
+        ],
+        confirmLabel: 'Queue run',
+      });
+      if (!values) return;
+      input = JSON.parse(values.input ?? '{}') as Record<string, unknown>;
     }
     const response = await fetch(`${api}/workflows/${selected.id}/run`, {
       method: 'POST',

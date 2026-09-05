@@ -159,6 +159,10 @@ h3 {
   border-color: #5146e5;
   color: white;
 }
+.button.primary.danger {
+  background: #c2414b;
+  border-color: #c2414b;
+}
 .toolbar {
   display: flex;
   gap: 8px;
@@ -486,6 +490,7 @@ h3 {
   display: grid;
   place-items: center;
   background: #19213b66;
+  z-index: 90;
 }
 .modal {
   width: 500px;
@@ -615,13 +620,22 @@ h3 {
   font: inherit;
 }
 .toast {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
   padding: 12px 16px;
   border-radius: 8px;
   background: #252c46;
   color: white;
+}
+.toast.error {
+  background: #b91c1c;
+}
+.toast-stack {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 100;
+  display: grid;
+  gap: 8px;
+  width: min(360px, calc(100vw - 48px));
 }
 .settings-card {
   max-width: 700px;

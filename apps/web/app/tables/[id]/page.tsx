@@ -3,6 +3,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppNav } from '../../app-nav';
+import { useDialog } from '../../components/prompt-dialog';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Cell = {
@@ -77,6 +78,7 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
   const [agentPreview, setAgentPreview] = useState('');
   const [menuColumnId, setMenuColumnId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const dialog = useDialog();
   const gridRef = useRef<HTMLDivElement>(null);
   const editTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
@@ -484,8 +486,15 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                           </div>
                           <button
                             onClick={async () => {
-                              const name = window.prompt('Rename column', column.name);
-                              if (!name) return;
+                              const values = await dialog.prompt({
+                                title: 'Rename column',
+                                fields: [
+                                  { name: 'name', label: 'Column name', defaultValue: column.name },
+                                ],
+                                confirmLabel: 'Rename column',
+                              });
+                              if (!values?.name) return;
+                              const name = values.name;
                               const token = localStorage.getItem('gtmai-token') ?? '';
                               await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
                                 method: 'PATCH',
@@ -502,7 +511,13 @@ export default function TablePage({ params }: { params: Promise<{ id: string }> 
                           </button>
                           <button
                             onClick={async () => {
-                              if (!window.confirm(`Delete ${column.name}?`)) return;
+                              const confirmed = await dialog.confirm({
+                                title: `Delete ${column.name}?`,
+                                description: 'This column and its values will be removed.',
+                                confirmLabel: 'Delete column',
+                                danger: true,
+                              });
+                              if (!confirmed) return;
                               const token = localStorage.getItem('gtmai-token') ?? '';
                               await fetch(`${api}/tables/${tableId}/columns/${column.id}`, {
                                 method: 'DELETE',

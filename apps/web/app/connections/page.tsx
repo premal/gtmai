@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AppNav } from '../app-nav';
+import { useToast } from '../components/toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Connection = {
@@ -23,6 +24,7 @@ export default function ConnectionsPage() {
   const [apiKey, setApiKey] = useState('demo-mock-key');
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const { toast } = useToast();
 
   async function load(): Promise<void> {
     const [connectionsResponse, providersResponse] = await Promise.all([
@@ -57,7 +59,10 @@ export default function ConnectionsPage() {
       headers: { ...headers, 'content-type': 'application/json' },
       body: '{}',
     });
-    window.alert(response.ok ? 'Connection test passed' : 'Connection test failed');
+    toast(
+      response.ok ? 'Connection test passed' : 'Connection test failed',
+      response.ok ? undefined : { kind: 'error' },
+    );
   }
 
   return (

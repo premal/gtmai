@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { renderSequenceTemplate } from '@gtmai/shared';
 import { AppNav } from '../app-nav';
+import { useDialog } from '../components/prompt-dialog';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const sampleContact = {
@@ -26,6 +27,7 @@ export default function SequencesPage() {
   const [selected, setSelected] = useState<Sequence | null>(null);
   const [message, setMessage] = useState('');
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
+  const dialog = useDialog();
   async function load() {
     const response = await fetch(`${api}/sequences`, {
       headers: { authorization: `Bearer ${token}` },
@@ -40,13 +42,17 @@ export default function SequencesPage() {
     if (token) void load();
   }, [token]);
   async function create() {
-    const name = window.prompt('Sequence name', 'New outbound sequence');
-    if (!name) return;
+    const values = await dialog.prompt({
+      title: 'New sequence',
+      fields: [{ name: 'name', label: 'Sequence name', defaultValue: 'New outbound sequence' }],
+      confirmLabel: 'Create sequence',
+    });
+    if (!values?.name) return;
     await fetch(`${api}/sequences`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        name,
+        name: values.name,
         steps: [
           {
             position: 1,

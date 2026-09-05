@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AppNav } from '../app-nav';
+import { useToast } from '../components/toast';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Segment = { id: string; name: string };
@@ -46,7 +47,6 @@ export default function CampaignsPage() {
   const [selected, setSelected] = useState<Campaign | null>(null);
   const [drawer, setDrawer] = useState<Enrollment | null>(null);
   const [dialog, setDialog] = useState(false);
-  const [message, setMessage] = useState('');
   const [form, setForm] = useState({
     name: '',
     sequenceId: '',
@@ -56,6 +56,7 @@ export default function CampaignsPage() {
   });
   const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
   const headers = { authorization: `Bearer ${token}` };
+  const { toast } = useToast();
 
   async function load() {
     const [campaignResponse, sequenceResponse, segmentResponse] = await Promise.all([
@@ -64,7 +65,7 @@ export default function CampaignsPage() {
       fetch(`${api}/audiences/segments`, { headers }),
     ]);
     if (!campaignResponse.ok) {
-      setMessage('Unable to load campaigns');
+      toast('Unable to load campaigns', { kind: 'error' });
       return;
     }
     setItems((await campaignResponse.json()) as Campaign[]);
@@ -97,11 +98,11 @@ export default function CampaignsPage() {
       }),
     });
     if (!response.ok) {
-      setMessage((await response.text()) || 'Unable to create campaign');
+      toast((await response.text()) || 'Unable to create campaign', { kind: 'error' });
       return;
     }
     setDialog(false);
-    setMessage('Campaign created');
+    toast('Campaign created');
     await load();
   }
 
@@ -111,11 +112,11 @@ export default function CampaignsPage() {
       headers,
     });
     if (!response.ok) {
-      setMessage((await response.text()) || `Unable to ${verb} campaign`);
+      toast((await response.text()) || `Unable to ${verb} campaign`, { kind: 'error' });
       return;
     }
     if (selected?.id === id) setSelected(null);
-    setMessage(
+    toast(
       verb === 'delete'
         ? 'Campaign deleted'
         : verb === 'start'
@@ -128,7 +129,7 @@ export default function CampaignsPage() {
   async function open(item: Campaign) {
     const response = await fetch(`${api}/campaigns/${item.id}`, { headers });
     if (!response.ok) {
-      setMessage('Unable to load campaign');
+      toast('Unable to load campaign', { kind: 'error' });
       return;
     }
     setSelected((await response.json()) as Campaign);
@@ -150,13 +151,13 @@ export default function CampaignsPage() {
       body: JSON.stringify({ enrollmentId, body: 'Thanks — interested!' }),
     });
     if (!response.ok) {
-      setMessage((await response.text()) || 'Unable to simulate reply');
+      toast((await response.text()) || 'Unable to simulate reply', { kind: 'error' });
       return;
     }
     await load();
     await open(selected);
     setDrawer(null);
-    setMessage('Reply simulated');
+    toast('Reply simulated');
   }
 
   return (
@@ -185,7 +186,6 @@ export default function CampaignsPage() {
             + Create campaign
           </button>
         </header>
-        {message && <div className="toast">{message}</div>}
         <div className="page-stack">
           <div className="card-grid">
             {items.map((item) => (

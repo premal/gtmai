@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AppNav } from './app-nav';
+import { useDialog } from './components/prompt-dialog';
 
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 type Table = { id: string; name: string; _count: { rows: number }; columns: { name: string }[] };
@@ -11,6 +12,7 @@ export default function Home() {
   const [workspace, setWorkspace] = useState('');
   const [tables, setTables] = useState<Table[]>([]);
   const [search, setSearch] = useState('');
+  const dialog = useDialog();
 
   useEffect(() => {
     const saved = localStorage.getItem('gtmai-token');
@@ -48,8 +50,13 @@ export default function Home() {
   }
 
   async function renameTable(table: Table): Promise<void> {
-    const name = window.prompt('Table name', table.name);
-    if (!name) return;
+    const values = await dialog.prompt({
+      title: 'Rename table',
+      fields: [{ name: 'name', label: 'Table name', defaultValue: table.name }],
+      confirmLabel: 'Rename table',
+    });
+    if (!values?.name) return;
+    const name = values.name;
     await fetch(`${api}/tables/${table.id}`, {
       method: 'PATCH',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
