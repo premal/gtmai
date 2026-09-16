@@ -75,7 +75,9 @@ sh_test(
 )
 
 # Integration test: main.test.ts exercises register → table → columns → CSV
-# import against real Postgres + Redis. itest.sh starts ephemeral containers
+# import → audiences → workflow, plus the integrations catalog, provider
+# check() dispatch, and agent preview (stubbed fetch — no real vendor calls),
+# against real Postgres + Redis. itest.sh starts ephemeral containers
 # per target and applies migrations before running vitest.
 sh_test(
     name = "itest",
