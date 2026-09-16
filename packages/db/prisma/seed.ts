@@ -417,7 +417,7 @@ async function main(): Promise<void> {
       },
     },
   });
-  const workflowRunner = await import('../../../apps/worker/src/workflows');
+  const workflowRunner = await import('../../../apps/worker/src/workflows.js');
   await workflowRunner.executeWorkflowRun(run.id, workspace.id);
   await workflowRunner.closeWorkflowResources();
   const previousSequence = await db.sequence.findFirst({
