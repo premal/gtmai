@@ -18,6 +18,7 @@ import { applyView, loadView } from '../tables/view-helper';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { assertWorkbookAccess } from '../common/workbook-access';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Request = FastifyRequest & { user: AuthUser };
@@ -258,6 +259,7 @@ export class AudiencesController {
       include: { columns: true, rows: { include: { cells: true } } },
     });
     if (!table) throw new Error('Table not found');
+    await assertWorkbookAccess(this.prisma, request.user, table.workbookId);
     let rows = table.rows;
     if (input.viewId) {
       const { definition } = await loadView(this.prisma, {

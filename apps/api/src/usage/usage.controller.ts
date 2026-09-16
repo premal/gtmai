@@ -17,6 +17,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { Roles } from '../common/roles';
 import { PrismaService } from '../prisma/prisma.service';
 type Request = FastifyRequest & { user: AuthUser };
 const json = (value: unknown) => value as Prisma.InputJsonValue;
@@ -28,14 +29,40 @@ export class UsageController {
     @InjectQueue('usage') private readonly queue: Queue,
   ) {}
   @Get('budgets')
-  budgets(@Req() request: Request) {
-    return this.prisma.creditBudget.findMany({
+  async budgets(@Req() request: Request) {
+    const budgets = await this.prisma.creditBudget.findMany({
       where: { workspaceId: request.user.workspaceId },
       orderBy: { scope: 'asc' },
     });
+    return Promise.all(
+      budgets.map(async (budget) => {
+        if (budget.scope.startsWith('table:')) {
+          const table = await this.prisma.table.findFirst({
+            where: {
+              id: budget.scope.slice('table:'.length),
+              workspaceId: request.user.workspaceId,
+            },
+            select: { name: true },
+          });
+          return { ...budget, label: table?.name ?? budget.scope };
+        }
+        if (budget.scope.startsWith('workbook:')) {
+          const workbook = await this.prisma.workbook.findFirst({
+            where: {
+              id: budget.scope.slice('workbook:'.length),
+              workspaceId: request.user.workspaceId,
+            },
+            select: { name: true },
+          });
+          return { ...budget, label: workbook?.name ?? budget.scope };
+        }
+        return { ...budget, label: budget.scope };
+      }),
+    );
   }
   @Post('budgets')
-  createBudget(@Req() request: Request, @Body() body: unknown) {
+  @Roles('admin')
+  async createBudget(@Req() request: Request, @Body() body: unknown) {
     const input = z
       .object({
         scope: z.string().min(1),
@@ -43,6 +70,21 @@ export class UsageController {
         period: z.enum(['daily', 'monthly']),
       })
       .parse(body);
+    if (input.scope.startsWith('table:')) {
+      const table = await this.prisma.table.findFirst({
+        where: { id: input.scope.slice('table:'.length), workspaceId: request.user.workspaceId },
+        select: { id: true },
+      });
+      if (!table) throw new Error('Table not found');
+    } else if (input.scope.startsWith('workbook:')) {
+      const workbook = await this.prisma.workbook.findFirst({
+        where: { id: input.scope.slice('workbook:'.length), workspaceId: request.user.workspaceId },
+        select: { id: true },
+      });
+      if (!workbook) throw new Error('Workbook not found');
+    } else if (input.scope !== 'workspace' && !input.scope.startsWith('provider:')) {
+      throw new Error('Invalid budget scope');
+    }
     return this.prisma.creditBudget.upsert({
       where: {
         workspaceId_scope_period: {
@@ -56,6 +98,7 @@ export class UsageController {
     });
   }
   @Delete('budgets/:id')
+  @Roles('admin')
   async deleteBudget(@Req() request: Request, @Param('id') id: string) {
     await this.prisma.creditBudget.deleteMany({
       where: { id, workspaceId: request.user.workspaceId },

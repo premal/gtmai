@@ -2528,4 +2528,9 @@ a {
     font-size: 10px;
     pointer-events: none;
   }
+  .sidebar-role {
+    display: block;
+    color: var(--color-muted);
+    text-transform: capitalize;
+  }
 } /* @layer components */

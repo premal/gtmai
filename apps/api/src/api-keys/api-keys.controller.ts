@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { Roles } from '../common/roles';
 import { PrismaService } from '../prisma/prisma.service';
 type Request = FastifyRequest & { user: AuthUser };
 @Controller('api-keys')
@@ -19,6 +20,7 @@ export class ApiKeysController {
     });
   }
   @Post()
+  @Roles('admin')
   async create(@Req() request: Request, @Body() body: unknown) {
     const input = z.object({ name: z.string().min(1) }).parse(body);
     const plaintext = `gtm_${randomBytes(24).toString('base64url')}`;
@@ -34,6 +36,7 @@ export class ApiKeysController {
     return { ...created, key: plaintext };
   }
   @Delete(':id')
+  @Roles('admin')
   async remove(@Req() request: Request, @Param('id') id: string) {
     await this.prisma.apiKey.deleteMany({ where: { id, workspaceId: request.user.workspaceId } });
     return { ok: true };

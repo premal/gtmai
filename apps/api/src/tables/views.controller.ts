@@ -18,6 +18,8 @@ import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertWorkbookAccess } from '../common/workbook-access';
+import { WorkbookResourceGuard } from '../common/workbook-resource.guard';
 import type { ViewSort } from './view-helper';
 
 type Request = FastifyRequest & { user: AuthUser };
@@ -33,12 +35,18 @@ const viewBody = z.object({
 });
 
 @Controller('tables/:tableId/views')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, WorkbookResourceGuard)
 export class ViewsController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get()
-  list(@Param('tableId') tableId: string, @Req() request: Request) {
+  async list(@Param('tableId') tableId: string, @Req() request: Request) {
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      select: { workbookId: true },
+    });
+    if (!table) throw new Error('Table not found');
+    await assertWorkbookAccess(this.prisma, request.user, table.workbookId);
     return this.prisma.view.findMany({
       where: { tableId, table: { workspaceId: request.user.workspaceId } },
       orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
@@ -47,6 +55,12 @@ export class ViewsController {
 
   @Post()
   async create(@Param('tableId') tableId: string, @Req() request: Request, @Body() body: unknown) {
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      select: { workbookId: true },
+    });
+    if (!table) throw new Error('Table not found');
+    await assertWorkbookAccess(this.prisma, request.user, table.workbookId);
     const input = viewBody.required({ name: true }).parse(body);
     const columns = await this.getTableColumns(request.user.workspaceId, tableId);
     this.assertColumnReferences(columns, input.filter, input.sort, input.hiddenColumnIds);
@@ -70,6 +84,12 @@ export class ViewsController {
     @Req() request: Request,
     @Body() body: unknown,
   ) {
+    const tableAccess = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      select: { workbookId: true },
+    });
+    if (!tableAccess) throw new Error('Table not found');
+    await assertWorkbookAccess(this.prisma, request.user, tableAccess.workbookId);
     const input = viewBody.parse(body);
     const view = await this.prisma.view.findFirst({
       where: { id: viewId, tableId, table: { workspaceId: request.user.workspaceId } },
@@ -95,6 +115,12 @@ export class ViewsController {
     @Param('viewId') viewId: string,
     @Req() request: Request,
   ) {
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      select: { workbookId: true },
+    });
+    if (!table) throw new Error('Table not found');
+    await assertWorkbookAccess(this.prisma, request.user, table.workbookId);
     const result = await this.prisma.view.deleteMany({
       where: { id: viewId, tableId, table: { workspaceId: request.user.workspaceId } },
     });

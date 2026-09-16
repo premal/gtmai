@@ -59,6 +59,26 @@ async function main(): Promise<void> {
           users: { create: { userId: user.id, role: 'owner' } },
         },
       });
+  const editor = await db.user.upsert({
+    where: { email: 'editor@gtmai.dev' },
+    update: { passwordHash, name: 'Demo Editor' },
+    create: { email: 'editor@gtmai.dev', name: 'Demo Editor', passwordHash },
+  });
+  await db.membership.upsert({
+    where: { workspaceId_userId: { workspaceId: workspace.id, userId: editor.id } },
+    update: { role: 'editor' },
+    create: { workspaceId: workspace.id, userId: editor.id, role: 'editor' },
+  });
+  const viewer = await db.user.upsert({
+    where: { email: 'viewer@gtmai.dev' },
+    update: { passwordHash, name: 'Demo Viewer' },
+    create: { email: 'viewer@gtmai.dev', name: 'Demo Viewer', passwordHash },
+  });
+  await db.membership.upsert({
+    where: { workspaceId_userId: { workspaceId: workspace.id, userId: viewer.id } },
+    update: { role: 'viewer' },
+    create: { workspaceId: workspace.id, userId: viewer.id, role: 'viewer' },
+  });
   const defaultWorkbook =
     (await db.workbook.findFirst({
       where: { workspaceId: workspace.id },

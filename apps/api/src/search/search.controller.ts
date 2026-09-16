@@ -4,6 +4,8 @@ import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { accessibleWorkbookWhere } from '../common/workbook-access';
+import { isAdmin } from '../common/roles';
 
 type Request = FastifyRequest & { user: AuthUser };
 type Tag = { id: string; name: string; color: string | null };
@@ -62,17 +64,23 @@ export class SearchController {
     const where = matches(input.q, tagIds);
     const [folders, workbooks, tables] = await Promise.all([
       this.prisma.folder.findMany({
-        where: { ...scope, ...where },
+        where: {
+          ...scope,
+          ...where,
+          ...(isAdmin(request.user.role)
+            ? {}
+            : { workbooks: { some: accessibleWorkbookWhere(request.user) } }),
+        },
         include: { ...tagInclude, parent: true },
         orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
       }),
       this.prisma.workbook.findMany({
-        where: { ...scope, ...where },
+        where: { ...scope, ...where, ...accessibleWorkbookWhere(request.user) },
         include: { ...tagInclude, folder: true },
         orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
       }),
       this.prisma.table.findMany({
-        where: { ...scope, ...where },
+        where: { ...scope, ...where, workbook: accessibleWorkbookWhere(request.user) },
         include: { ...tagInclude, workbook: { include: { folder: true } } },
         orderBy: [{ updatedAt: 'desc' }, { name: 'asc' }],
       }),

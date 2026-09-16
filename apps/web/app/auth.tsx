@@ -9,7 +9,21 @@ export type AuthUser = {
   id: string;
   email: string;
   name: string;
+  role: 'owner' | 'admin' | 'editor' | 'viewer';
 };
+
+export function isAdminRole(role: AuthUser['role'] | undefined): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+export function useMe(): AuthUser | null {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  useEffect(() => {
+    const token = localStorage.getItem('gtmai-token');
+    if (token) void loadCurrentUser(token).then(setUser);
+  }, []);
+  return user;
+}
 
 export function clearAuth(): void {
   localStorage.removeItem('gtmai-token');
@@ -43,7 +57,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(pathname === '/login');
 
   useEffect(() => {
-    if (pathname === '/login') {
+    if (pathname === '/login' || pathname.startsWith('/invite/')) {
       setReady(true);
       return;
     }
@@ -61,7 +75,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     };
   }, [pathname, router]);
 
-  if (!ready && pathname !== '/login') {
+  if (!ready && pathname !== '/login' && !pathname.startsWith('/invite/')) {
     return <main className="loading">Checking session…</main>;
   }
   return children;
@@ -79,7 +93,10 @@ export function SignOutFooter() {
   return (
     <div className="sidebar-footer">
       <span className="avatar">{(user?.name ?? user?.email ?? 'U').slice(0, 2).toUpperCase()}</span>
-      <span>{user?.email ?? 'Signed in'}</span>
+      <span>
+        {user?.email ?? 'Signed in'}
+        {user?.role && <small className="sidebar-role">{user.role}</small>}
+      </span>
       <button
         className="icon-button"
         onClick={() => {

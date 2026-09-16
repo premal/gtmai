@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AppNav } from '../app-nav';
+import { isAdminRole, useMe } from '../auth';
 import { useDialog } from '../components/prompt-dialog';
 import { useToast } from '../components/toast';
 
@@ -33,14 +34,24 @@ export default function ConnectionsPage() {
   const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
   const { toast } = useToast();
   const dialog = useDialog();
+  const me = useMe();
+  const admin = isAdminRole(me?.role);
 
   async function load(): Promise<void> {
     const [connectionsResponse, providersResponse] = await Promise.all([
       fetch(`${api}/connections`, { headers }),
       fetch(`${api}/connections/catalog`, { headers }),
     ]);
-    setConnections((await connectionsResponse.json()) as Connection[]);
-    setProviders((await providersResponse.json()) as Provider[]);
+    if (!connectionsResponse.ok) {
+      toast(await responseMessage(connectionsResponse, 'Unable to load connections'), {
+        kind: 'error',
+      });
+    } else setConnections((await connectionsResponse.json()) as Connection[]);
+    if (!providersResponse.ok) {
+      toast(await responseMessage(providersResponse, 'Unable to load providers'), {
+        kind: 'error',
+      });
+    } else setProviders((await providersResponse.json()) as Provider[]);
   }
   useEffect(() => {
     void load();
@@ -54,11 +65,15 @@ export default function ConnectionsPage() {
         .filter((field) => credentials[field.key] || !field.optional)
         .map((field) => [field.key, credentials[field.key] ?? '']),
     );
-    await fetch(`${api}/connections`, {
+    const response = await fetch(`${api}/connections`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ provider, name, credentials: bodyCredentials }),
     });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to create connection'), { kind: 'error' });
+      return;
+    }
     setOpen(false);
     await load();
   }
@@ -71,7 +86,11 @@ export default function ConnectionsPage() {
       danger: true,
     });
     if (!confirmed) return;
-    await fetch(`${api}/connections/${id}`, { method: 'DELETE', headers });
+    const response = await fetch(`${api}/connections/${id}`, { method: 'DELETE', headers });
+    if (!response.ok) {
+      toast(await responseMessage(response, 'Unable to delete connection'), { kind: 'error' });
+      return;
+    }
     await load();
   }
 
@@ -96,9 +115,11 @@ export default function ConnectionsPage() {
             <div className="eyebrow">WORKSPACE</div>
             <h2>Connections</h2>
           </div>
-          <button className="button primary" onClick={() => setOpen(true)}>
-            ＋ Add connection
-          </button>
+          {admin && (
+            <button className="button primary" onClick={() => setOpen(true)}>
+              ＋ Add connection
+            </button>
+          )}
         </header>
         <div className="table-list">
           {connections.map((connection) => (
@@ -111,12 +132,16 @@ export default function ConnectionsPage() {
                   {connection.usedInColumns} columns
                 </p>
               </div>
-              <button className="button" onClick={() => void test(connection.id)}>
-                Test
-              </button>
-              <button className="icon-button danger" onClick={() => void remove(connection.id)}>
-                Delete
-              </button>
+              {admin && (
+                <>
+                  <button className="button" onClick={() => void test(connection.id)}>
+                    Test
+                  </button>
+                  <button className="icon-button danger" onClick={() => void remove(connection.id)}>
+                    Delete
+                  </button>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -182,4 +207,13 @@ export default function ConnectionsPage() {
       )}
     </main>
   );
+}
+
+async function responseMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { message?: string };
+    return body.message ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
