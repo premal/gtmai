@@ -5,26 +5,26 @@ Next.js 15 App Router, client-side data fetching against `NEXT_PUBLIC_API_URL`
 
 ## Page map
 
-| Route                           | Shows                                                 |
-| ------------------------------- | ----------------------------------------------------- |
-| `/`                             | workspace home — folder/workbook/table nav tree       |
-| `/tables/[id]`                  | the live grid (SSE-driven cell updates) — core screen |
-| `/workbooks/[id]`               | workbook detail: tables, views, members               |
-| `/audiences`                    | companies/contacts/segments                           |
-| `/signals`                      | signal definitions + event feed                       |
-| `/workflows`, `/workflows/[id]` | workflow list + node-graph editor/run view            |
-| `/functions`, `/functions/[id]` | function registry + version detail                    |
-| `/sequences`                    | outbound sequences + steps                            |
-| `/campaigns`                    | campaigns + enrollments                               |
-| `/ads`                          | ad audiences + sync status                            |
-| `/crm`                          | CRM sync jobs/runs                                    |
-| `/settings`                     | settings directory — cards linking to sub-pages       |
-| `/settings/integrations`        | provider credentials                                  |
-| `/settings/team`                | members, roles, invite links                          |
-| `/templates`                    | built-in table templates                              |
-| `/credits`                      | credit ledger + budgets                               |
-| `/invite/[token]`               | accept a team invite (the only signup path)           |
-| `/login`                        | themed split-screen login — no register               |
+| Route                           | Shows                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------- |
+| `/`                             | workspace home — folder/workbook/table nav tree                                        |
+| `/tables/[id]`                  | the live grid (SSE-driven cell updates) — core screen                                  |
+| `/workbooks/[id]`               | workbook detail: tables, views, members                                                |
+| `/audiences`                    | companies/contacts/segments                                                            |
+| `/signals`                      | signal definitions + event feed                                                        |
+| `/workflows`, `/workflows/[id]` | workflow list + node-graph editor/run view                                             |
+| `/functions`, `/functions/[id]` | function registry + version detail                                                     |
+| `/sequences`                    | outbound sequences + steps                                                             |
+| `/campaigns`                    | campaigns + enrollments                                                                |
+| `/ads`                          | ad audiences + sync status                                                             |
+| `/crm`                          | CRM sync jobs/runs                                                                     |
+| `/settings`                     | settings directory — cards linking to sub-pages                                        |
+| `/settings/integrations`        | provider credentials, cards grouped by provider `group` (ai/enrichment/search/utility) |
+| `/settings/team`                | members, roles, invite links                                                           |
+| `/templates`                    | built-in table templates                                                               |
+| `/credits`                      | credit ledger + budgets                                                                |
+| `/invite/[token]`               | accept a team invite (the only signup path)                                            |
+| `/login`                        | themed split-screen login — no register                                                |
 
 ## Conventions
 
