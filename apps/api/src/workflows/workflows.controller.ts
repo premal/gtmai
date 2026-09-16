@@ -182,7 +182,7 @@ export class WorkflowsController {
       'access-control-allow-origin': 'http://localhost:3000',
     });
     reply.raw.write(': ok\n\n');
-    const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+    const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { family: 0 });
     await subscriber.subscribe(`workflow:${runId}`);
     subscriber.on('message', (_channel, message) => {
       reply.raw.write(`data: ${message}\n\n`);
@@ -225,7 +225,7 @@ export class WorkflowsController {
       'access-control-allow-origin': 'http://localhost:3000',
     });
     reply.raw.write(': ok\n\n');
-    const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+    const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { family: 0 });
     await subscriber.subscribe(`workflow:${id}`);
     subscriber.on('message', (_channel, message) => {
       reply.raw.write(`data: ${message}\n\n`);

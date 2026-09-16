@@ -128,6 +128,13 @@ describe('llm providers', () => {
     [openrouterProvider, 'https://openrouter.ai/api/v1/auth/key', 200, true],
     [cometapiProvider, 'https://api.cometapi.com/v1/models', 200, true],
     [openaiProvider, 'https://api.openai.com/v1/models', 401, false],
+    [anthropicProvider, 'https://api.anthropic.com/v1/models', 401, false],
+    [
+      geminiProvider,
+      'https://generativelanguage.googleapis.com/v1beta/models?key=sk-test',
+      403,
+      false,
+    ],
     [perplexityProvider, 'https://api.perplexity.ai/chat/completions', 403, false],
     [openrouterProvider, 'https://openrouter.ai/api/v1/auth/key', 401, false],
     [cometapiProvider, 'https://api.cometapi.com/v1/models', 401, false],

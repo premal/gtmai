@@ -69,10 +69,15 @@ services needed locally. See `docs/bazel-pilot.md`.
 ## Deploy
 
 ```sh
+fly deploy -c fly.redis.toml   # self-hosted Redis 7 (gtmai-redis) — only if changed
 fly deploy -c fly.api.toml     # release_command runs prisma migrate deploy
 fly deploy -c fly.worker.toml
 fly deploy -c fly.web.toml
 ```
+
+`gtmai-redis` must keep `--bind 0.0.0.0 -::*` in `fly.redis.toml` — fly's
+private network is IPv6-only, so an IPv4-only bind refuses every connection.
+`REDIS_URL` on api/worker points at `redis://default:<pw>@gtmai-redis.internal:6379`.
 
 Env vars: `DATABASE_URL`, `REDIS_URL` (api+worker+seed), `JWT_SECRET`,
 `ENCRYPTION_KEY` (64-hex, credential crypto), `NEXT_PUBLIC_API_URL` (web),

@@ -22,10 +22,11 @@ import { budgetExceeded } from './budgets';
 
 const redis = new (require('ioredis'))(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
+  family: 0,
 }) as import('ioredis').default;
-const publisher = new (require('ioredis'))(
-  process.env.REDIS_URL ?? 'redis://localhost:6379',
-) as import('ioredis').default;
+const publisher = new (require('ioredis'))(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  family: 0,
+}) as import('ioredis').default;
 const workflowQueue = new Queue('workflows', { connection: redis });
 const outboundQueue = new Queue('outbound', { connection: redis });
 const json = (value: unknown) => value as Prisma.InputJsonValue;
