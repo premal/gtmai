@@ -389,7 +389,7 @@ integration('api smoke', () => {
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
     let chatCalls = 0;
-    const fetcher = vi.fn(async (input: unknown) => {
+    const fetcher = vi.fn(async (input: unknown, _init?: RequestInit) => {
       const url =
         typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
       if (url.includes('api.tavily.com')) {
@@ -456,7 +456,7 @@ integration('api smoke', () => {
         String(call[0]).includes('chat/completions'),
       );
       expect(chatCall).toBeDefined();
-      const chatBody = JSON.parse(String((chatCall?.[1] as RequestInit).body)) as {
+      const chatBody = JSON.parse(String(chatCall?.[1]?.body)) as {
         model?: string;
       };
       expect(chatBody.model).toBe('openai/gpt-4o');
