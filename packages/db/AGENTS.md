@@ -1,6 +1,13 @@
 # packages/db
 
-Prisma schema, migrations, and seed. String `cuid()` PKs everywhere.
+Prisma schema, migrations, and seed. String `cuid()` PKs everywhere; the
+full model inventory grouped by domain is in the root `AGENTS.md`.
+
+Key relations: `Workspace → Folder → Workbook → Table → {Column, Row, View}`;
+`Cell` joins `Row × Column` and carries `status`, `value`, `error`,
+`creditsUsed`. `Column.kind` (`ColumnKind` enum) picks the worker executor;
+`Column.config` is JSON matching `shared/schemas.ts`. `Segment.filter` is the
+`shared/filter.ts` DSL. `Workflow.graph` is the `shared/workflows.ts` DAG.
 
 ## Conventions
 
