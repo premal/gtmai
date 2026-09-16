@@ -7,6 +7,7 @@ import { decryptCredentials } from './executors';
 const db = new PrismaClient();
 const connection = {
   url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+  family: 0,
   maxRetriesPerRequest: null,
 };
 const queue = new Queue('outbound', { connection });
