@@ -77,7 +77,7 @@ model Workspace {
   updatedAt        DateTime           @updatedAt
   users            Membership[]
   apiKeys          ApiKey[]
-  connections      Connection[]
+  integrations     Integration[]
   tables           Table[]
   companies        Company[]
   contacts         Contact[]
@@ -113,7 +113,7 @@ model User {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
   memberships        Membership[]
-  createdConnections Connection[]
+  createdIntegrations Integration[]
   invites            Invite[]
   workbookCollaborators WorkbookCollaborator[]
 }
@@ -141,13 +141,16 @@ model ApiKey {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
 
-model Connection {
+model Integration {
   id                   String    @id @default(cuid())
   workspaceId          String
   createdById          String
   provider             String
   name                 String
   encryptedCredentials String
+  lastTestAt           DateTime?
+  lastTestOk           Boolean?
+  lastTestMessage      String?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
   workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)

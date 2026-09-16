@@ -82,15 +82,16 @@ async function executeCrmRunInternal(job: Job<CrmRunJob>) {
     .filter((item) => valueAt(item, destination.upsertKey) !== undefined);
   let credentials: Record<string, string> | undefined;
   if (destination.provider !== 'mock') {
-    const connectionRow = await db.connection.findFirst({
+    const integration = await db.integration.findFirst({
       where: { workspaceId: job.data.workspaceId, provider: destination.provider },
+      orderBy: { createdAt: 'asc' },
     });
-    if (!connectionRow) throw new Error(`No connection for ${destination.provider}`);
-    credentials = decryptCredentials(connectionRow.encryptedCredentials);
+    if (!integration) throw new Error(`No integration for ${destination.provider}`);
+    credentials = decryptCredentials(integration.encryptedCredentials);
   }
   if (destination.provider === 'webhook') {
     const url = credentials?.url;
-    if (!url) throw new Error('Webhook connection requires url');
+    if (!url) throw new Error('Webhook integration requires url');
     await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -98,7 +99,7 @@ async function executeCrmRunInternal(job: Job<CrmRunJob>) {
     });
   } else if (destination.provider === 'hubspot') {
     const token = credentials?.accessToken ?? credentials?.token;
-    if (!token) throw new Error('HubSpot connection requires accessToken');
+    if (!token) throw new Error('HubSpot integration requires accessToken');
     await fetch(`https://api.hubapi.com/crm/v3/objects/${destination.object}/batch/upsert`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

@@ -84,6 +84,14 @@ const sourceFields: Record<string, SourceField[]> = {
     { name: 'maxEmployees', label: 'Maximum employees', type: 'number' },
     { name: 'limit', label: 'Limit', type: 'number' },
   ],
+  'hginsights.searchCompanies': [
+    { name: 'name', label: 'Company name', hint: 'Case-insensitive substring match' },
+    { name: 'domain', label: 'Domain' },
+    { name: 'country', label: 'Country (ISO2)' },
+    { name: 'minEmployees', label: 'Minimum employees', type: 'number' },
+    { name: 'maxEmployees', label: 'Maximum employees', type: 'number' },
+    { name: 'limit', label: 'Limit', type: 'number' },
+  ],
 };
 const sourceActionIds = new Set(Object.keys(sourceFields));
 type PeopleField = { name: string; label: string; type?: 'text' | 'number' };
@@ -627,11 +635,13 @@ export function TableWorkspace({
           field.type === 'number' ? Number(sourceInput[field.name]) : sourceInput[field.name],
         ]),
     );
+    const sourceProvider = catalog.find((item) => item.id === sourceActionId)?.provider;
+    if (!sourceProvider) return;
     const response = await fetch(`${api}/tables/${tableId}/source`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: JSON.stringify({
-        provider: 'theirstack',
+        provider: sourceProvider,
         action: sourceActionId,
         input,
         viewId: activeViewId || undefined,

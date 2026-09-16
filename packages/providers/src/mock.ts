@@ -74,7 +74,10 @@ const action = (
 export const mockProvider: Provider = {
   id: 'mock',
   name: 'Mock',
-  auth: { type: 'apiKey', fields: [{ key: 'apiKey', label: 'API key', secret: true }] },
+  auth: {
+    type: 'apiKey',
+    fields: [{ key: 'apiKey', label: 'API key', secret: true, optional: true }],
+  },
   actions: [
     action('mock.findEmail', 'Find email', 'work_email'),
     action('mock.findPhone', 'Find phone', 'phone'),

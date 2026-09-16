@@ -130,15 +130,15 @@ export class SequencesController {
         inboxId: z.string().optional(),
       })
       .parse(body);
-    const connection = await this.prisma.connection.findFirst({
+    const integration = await this.prisma.integration.findFirst({
       where: {
         workspaceId: request.user.workspaceId,
         provider: { in: ['openai', 'anthropic', 'llm'] },
       },
       orderBy: { createdAt: 'asc' },
     });
-    if (!connection) {
-      throw new Error('No LLM connection — add an OpenAI or Anthropic key in Connections');
+    if (!integration) {
+      throw new Error('No LLM integration — add an OpenAI or Anthropic key in Integrations');
     }
     const messages: AgentMessage[] = [
       {
@@ -159,12 +159,12 @@ export class SequencesController {
       try {
         const raw = await completeChat(
           {
-            credentials: decryptCredentials(connection.encryptedCredentials),
+            credentials: decryptCredentials(integration.encryptedCredentials),
             fetch,
             logger: { info: () => undefined, error: () => undefined },
           },
           messages,
-          connection.provider === 'anthropic' ? 'anthropic' : 'openai',
+          integration.provider === 'anthropic' ? 'anthropic' : 'openai',
         );
         generated = generatedSequence.parse(JSON.parse(raw));
       } catch (error) {

@@ -25,7 +25,6 @@ export function AppNav({
     ['templates', '▤ Templates'],
   ];
   const utilityLinks: [string, string][] = [
-    ['connections', '⌁ Connections'],
     ['credits', '◈ Credits'],
     ['settings', '⚙ Settings'],
   ];

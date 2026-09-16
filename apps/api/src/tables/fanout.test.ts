@@ -34,7 +34,7 @@ describe('people fanout', () => {
     const headers = { authorization: `Bearer ${auth.token}` };
     await instance.inject({
       method: 'POST',
-      url: '/connections',
+      url: '/integrations',
       headers,
       payload: { provider: 'mock', name: 'Mock', credentials: {} },
     });

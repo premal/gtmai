@@ -18,7 +18,7 @@ description: How to run and E2E-test the gtmai monorepo (Next.js web :3000, Nest
 - If Next.js throws `Cannot find module './NNN.js'`, stop the web dev process, run `rm -rf apps/web/.next`, and restart it.
 - Restarting the API may invalidate the browser JWT (401s). Clear localStorage (`gtmai-token`) and log in again as `demo@gtmai.dev / demo1234`.
 - Seed prints a one-time plaintext `gtm_` API key; use it for local CLI checks, but never reuse or store the plaintext in source control.
-- Webhook CRM jobs require a `Connection` with provider `webhook` and encrypted credentials containing `credentials.url`.
+- Webhook CRM jobs require an `Integration` with provider `webhook` and encrypted credentials containing `credentials.url`.
 - Delayed outbound step-2 jobs should be visible in the BullMQ `bull:outbound` delayed set.
 - CLI login includes the API URL: `gtmai login --api-key <key> --url http://localhost:4000`.
 - Build the CLI with `npx pnpm@9 --filter @gtmai/cli build`.
@@ -38,7 +38,7 @@ description: How to run and E2E-test the gtmai monorepo (Next.js web :3000, Nest
 
 ## Known pitfalls
 
-- Connection "Test" result is shown in a native `alert()` dialog — dismiss it before continuing.
+- Integration "Test" result is shown as a toast notification in the bottom-right — it does not block the page.
 - CSV file-upload import sends `mapping` as a multipart field; the API reads mapping only from the JSON body, so the mapping may be ignored (creates new columns). Paste import honours mapping.
 
 ## Devin Secrets Needed

@@ -93,6 +93,24 @@ describe('providers', () => {
     );
   });
 
+  it('apollo check validates the key via the auth health endpoint', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response('{"healthy":true}', { status: 200 }));
+    const result = await apolloProvider.check!(context(fetcher));
+    expect(result).toEqual({ ok: true });
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://api.apollo.io/v1/auth/health',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'x-api-key': 'test-key' }),
+      }),
+    );
+  });
+
+  it('apollo check reports rejected credentials', async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response('nope', { status: 401 }));
+    const result = await apolloProvider.check!(context(fetcher));
+    expect(result).toEqual({ ok: false, message: 'Apollo rejected the API key' });
+  });
+
   it('maps Hunter domain-search people responses', async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(
