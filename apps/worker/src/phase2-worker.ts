@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
 import Redis from 'ioredis';
 import { PrismaClient, Prisma } from '@gtmai/db';
-import { runProviderAction, type Values } from './executors';
+import { runProviderAction } from './executors';
+import { buildSignalTargets, type SignalTarget } from './signal-targets';
 import { runWorkflow } from './workflows';
 import { startOutboundWorker } from './outbound';
 import { startAdsWorker } from './ads';
@@ -30,86 +31,19 @@ function resultDedupeKey(
   return `${scope}:${entityId}:${payloadHash}`;
 }
 
-type SignalTarget = {
-  scope: 'contact' | 'company';
-  entityId: string;
-  input: Values;
-  contactId?: string;
-  companyId?: string;
-};
-
 async function tableSignalTargets(
   tableId: string,
   config: Record<string, unknown>,
 ): Promise<SignalTarget[]> {
-  const columns = await db.column.findMany({ where: { tableId } });
-  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const pick = (configured: unknown, aliases: string[]): string | undefined => {
-    if (typeof configured === 'string' && configured) {
-      const named = columns.find((column) => column.name === configured);
-      if (named) return named.name;
-    }
-    return columns.find((column) => aliases.includes(normalize(column.name)))?.name;
-  };
-  const domainColumn = pick(config.domainColumn, [
-    'domain',
-    'website',
-    'companydomain',
-    'webdomain',
-  ]);
-  const emailColumn = pick(config.emailColumn, ['email', 'workemail', 'emailaddress']);
-  const companyColumn = pick(undefined, ['company', 'companyname', 'account', 'accountname']);
-  const firstColumn = pick(undefined, ['firstname', 'first', 'givenname']);
-  const lastColumn = pick(undefined, ['lastname', 'last', 'familyname', 'surname']);
-  if (!domainColumn && !emailColumn) return [];
+  const columns = await db.column.findMany({ where: { tableId }, select: { name: true } });
+  if (!columns.length) return [];
   const rows = await db.row.findMany({
     where: { tableId },
-    include: { cells: { include: { column: true } } },
+    include: { cells: { include: { column: { select: { name: true } } } } },
     orderBy: { position: 'asc' },
     take: 1000,
   });
-  const seen = new Set<string>();
-  const targets: SignalTarget[] = [];
-  for (const row of rows) {
-    const values = Object.fromEntries(row.cells.map((cell) => [cell.column.name, cell.value]));
-    const domain = domainColumn
-      ? String(values[domainColumn] ?? '')
-          .trim()
-          .replace(/^https?:\/\//, '')
-          .replace(/\/.*$/, '')
-      : '';
-    const email = emailColumn ? String(values[emailColumn] ?? '').trim() : '';
-    if (domain) {
-      const key = `d:${domain.toLowerCase()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        targets.push({
-          scope: 'company',
-          entityId: domain.toLowerCase(),
-          input: {
-            domain,
-            company: companyColumn ? String(values[companyColumn] ?? '') : '',
-          },
-        });
-      }
-    }
-    if (email) {
-      const key = `e:${email.toLowerCase()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        targets.push({
-          scope: 'contact',
-          entityId: email.toLowerCase(),
-          input: {
-            email,
-            firstName: firstColumn ? String(values[firstColumn] ?? '') : '',
-            lastName: lastColumn ? String(values[lastColumn] ?? '') : '',
-          },
-        });
-      }
-    }
-  }
-  return targets;
+  return buildSignalTargets(columns, rows, config);
 }
 
 async function pollSignal(job: Job<{ definitionId: string; workspaceId: string }>) {

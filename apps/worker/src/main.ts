@@ -38,6 +38,11 @@ export function hasMissingInputs(input: Values): boolean {
   );
 }
 
+export function exceedsMaxCost(maxCost: unknown, estimatedCredits: number): boolean {
+  const cap = Number(maxCost);
+  return Number.isFinite(cap) && cap > 0 && estimatedCredits > cap;
+}
+
 const cellJobOptions = {
   attempts: 3,
   backoff: { type: 'exponential' as const, delay: 10_000 },
@@ -110,7 +115,7 @@ async function execute(job: Job<CellData>): Promise<void> {
         (column.kind === 'agent' ? 5 : ['formula', 'input'].includes(column.kind) ? 0 : 1),
     );
     const maxCost = Number(config.maxCost);
-    if (Number.isFinite(maxCost) && maxCost > 0 && estimatedCredits > maxCost) {
+    if (exceedsMaxCost(config.maxCost, estimatedCredits)) {
       const message = `Estimated cost ${estimatedCredits} exceeds max cost ${maxCost}`;
       await db.cell.update({
         where: { id: cell.id },

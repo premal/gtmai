@@ -13,10 +13,13 @@ remains the package manager; the application and tooling are unchanged.
   `typecheck`/`build` wrappers.
 - `packages/db/BUILD.bazel` — `lint` plus local `typecheck`/`build` (needs the
   generated Prisma client).
-- `apps/api/BUILD.bazel` — local `typecheck`/`build` plus `itest`, the API
-  integration test backed by ephemeral Postgres + Redis containers.
-- `apps/worker/BUILD.bazel` — local `unit_main`/`typecheck`/`build` (imports
-  `PrismaClient`, so it needs the generated client).
+- `apps/api/BUILD.bazel` — local `typecheck`/`build` plus one `itest_*`
+  target per integration test file (each backed by its own ephemeral
+  Postgres + Redis containers) and `unit_*` targets for pure tests;
+  `//apps/api:itest` is a `test_suite` over all of them.
+- `apps/worker/BUILD.bazel` — local `unit_<name>` per test file plus
+  `typecheck`/`build` (imports `PrismaClient`, so it needs the generated
+  client).
 - `apps/web/BUILD.bazel` — local `typecheck`/`build` (`next build` writes
   `.next`; no unit tests or lint script today).
 - `tools/bazel/*.sh` — wrappers that cd to the repo root and run pnpm:
@@ -44,7 +47,7 @@ pnpm install            # unchanged — pnpm remains the package manager; Bazel
 - **Hermetic** (run in the Bazel sandbox with Bazel-managed Node 22 and
   lockfile-derived node*modules): `unit*_`in`packages/_`, `lint`.
 - **Semi-hermetic** (declared deps drive selection, execution runs against the
-  real tree via wrappers): `typecheck`, `build`, `unit_main`, `itest`. They are
+  real tree via wrappers): `typecheck`, `build`, `unit_*`, `itest_*`. They are
   tagged `local`/`no-sandbox` and get `PATH`/`HOME`/`DOCKER_HOST` via
   `--test_env` in `.bazelrc`.
 - The generated Prisma client (`node_modules/.prisma`) is the main blocker for
@@ -72,8 +75,9 @@ DRY_RUN=1 scripts/bazel-affected.sh     # print the selection without running
   the change.
 - `//:workspace_config` (lockfile, workspace files, bazel files, wrapper
   scripts) is a dep of every target — touching it runs the full suite.
-- `//apps/api:itest` deps on `//packages/db:prisma` + the `srcs` of
+- `//apps/api:itest_*` targets dep on `//packages/db:prisma` + the `srcs` of
   `db`/`providers`/`shared`, so schema, migration and library changes re-run
-  the API integration test.
+  the API integration tests. Each `src/**/*.test.ts` file is declared in
+  exactly one target's `data`, so editing a test file selects only that test.
 - Unknown/unowned files (deleted files, paths no filegroup claims) fail safe
   to the full suite.

@@ -54,6 +54,10 @@ stores them encrypted; only the worker sees plaintext.
 
 ## Tests
 
-Tests import `./main`, which constructs a `PrismaClient` — needs the
-generated client (the bazel `dbgen.sh` wrapper handles it) but no live
-services; `NODE_ENV=test` keeps `startWorker()` from running.
+Each `src/*.test.ts` has its own `//apps/worker:unit_<name>` bazel target
+(`vitest run <file>` via the `dbgen.sh` wrapper) so `bazel-affected.sh` maps
+a changed test to exactly its target. Tests import `./main`, which constructs
+a `PrismaClient` — needs the generated client but no live services;
+`NODE_ENV=test` keeps `startWorker()` from running. `signal-targets.ts` is
+the pure row→target logic extracted from `pollSignal` so alias/dedupe
+behavior is unit-testable without a database.

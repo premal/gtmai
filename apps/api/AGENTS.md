@@ -51,7 +51,10 @@ them all + `PrismaModule` + `EventsModule`. Swagger UI at `/docs`.
 
 ## Tests
 
-`*.test.ts` next to sources are real integration tests needing Postgres+Redis —
-run them via `bazel test //apps/api:itest` (ephemeral containers, migrations
-applied per run) rather than `pnpm test`. `src/test-helpers.ts` has shared
-register/login/table factories.
+`*.test.ts` files that boot the app are real integration tests needing
+Postgres+Redis — each has its own `//apps/api:itest_<name>` target (ephemeral
+containers, migrations applied per run), and `//apps/api:itest` is a
+`test_suite` over all of them. Pure tests run under `unit_<name>` targets via
+the `dbgen.sh` wrapper. One target per file lets `bazel-affected.sh` rerun
+only the tests that changed — add a target whenever adding a `*.test.ts`.
+`src/test-helpers.ts` has shared register/login/table factories.

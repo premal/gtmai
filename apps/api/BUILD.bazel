@@ -74,17 +74,55 @@ sh_test(
     size = "large",
 )
 
-# Integration test: main.test.ts exercises register → table → columns → CSV
-# import → audiences → workflow, plus the integrations catalog, provider
-# check() dispatch, and agent preview (stubbed fetch — no real vendor calls),
-# against real Postgres + Redis. itest.sh starts ephemeral containers
-# per target and applies migrations before running vitest.
-sh_test(
+# Integration tests: every test file that boots the Nest app needs real
+# Postgres + Redis — itest.sh starts ephemeral containers per target and
+# applies migrations before running vitest on just that file. One target per
+# file keeps bazel-affected.sh precise: editing a test reruns only that test.
+[
+    sh_test(
+        name = "itest_%s" % path.replace("/", "_"),
+        srcs = ["//tools/bazel:itest.sh"],
+        args = ["@gtmai/api", "src/%s.test.ts" % path],
+        data = _DEPS + ["src/%s.test.ts" % path],
+        tags = _LOCAL + ["itest"],
+        size = "large",
+        timeout = "long",
+    )
+    for path in [
+        "main",
+        "metaprompt",
+        "search/search",
+        "tables/fanout",
+        "tables/views",
+    ]
+]
+
+# `bazel test //apps/api:itest` still runs the whole integration suite.
+test_suite(
     name = "itest",
-    srcs = ["//tools/bazel:itest.sh"],
-    args = ["@gtmai/api"],
-    data = _DEPS + ["src/main.test.ts"],
-    tags = _LOCAL + ["itest"],
-    size = "large",
-    timeout = "long",
+    tests = [
+        ":itest_main",
+        ":itest_metaprompt",
+        ":itest_search_search",
+        ":itest_tables_fanout",
+        ":itest_tables_views",
+    ],
 )
+
+# Pure unit tests need workspace dist/ + the generated Prisma client (dbgen
+# wrapper) but no live services.
+[
+    sh_test(
+        name = "unit_%s" % path.replace("/", "_"),
+        srcs = ["//tools/bazel:dbgen.sh"],
+        args = ["--filter", "@gtmai/api", "test", "src/%s.test.ts" % path],
+        data = _DEPS + ["src/%s.test.ts" % path],
+        tags = _LOCAL,
+        size = "medium",
+    )
+    for path in [
+        "audiences/audiences",
+        "functions/functions",
+        "tables/view-helper",
+    ]
+]
