@@ -1,0 +1,19 @@
+common --enable_bzlmod
+common --announce_rc
+
+# Wrapper tests are not hermetic (they run pnpm/tsc/next against the real
+# source tree and need network for Docker/Postgres), so show everything.
+test --test_output=errors
+test --test_verbose_timeout_warnings
+
+# The local (non-hermetic) wrappers need the real user environment: PATH for
+# pnpm/node, HOME for the docker context, DOCKER_HOST for non-standard
+# daemons. rules_js hermetic targets ignore these.
+test --test_env=PATH
+test --test_env=HOME
+test --test_env=DOCKER_HOST
+test --test_env=NEXT_TELEMETRY_DISABLED=1
+
+# Integration targets start ephemeral Postgres/Redis containers; they are
+# long-running and must not be cached across machines.
+test --nocache_test_results

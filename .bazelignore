@@ -1,0 +1,14 @@
+node_modules
+apps/api/node_modules
+apps/web/node_modules
+apps/worker/node_modules
+packages/db/node_modules
+packages/providers/node_modules
+packages/shared/node_modules
+apps/web/.next
+**/dist
+**/.turbo
+bazel-bin
+bazel-out
+bazel-gtmai
+bazel-testlogs

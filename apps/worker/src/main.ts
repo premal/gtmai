@@ -16,8 +16,9 @@ import {
 const db = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
+  family: 0,
 });
-const publisher = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+const publisher = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { family: 0 });
 
 export type CellData = { rowId: string; columnId: string; workspaceId: string };
 type Values = Record<string, unknown>;
