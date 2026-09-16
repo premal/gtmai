@@ -19,8 +19,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec prettier --check .
-      # Bazel covers lint, typecheck, unit tests, builds and the api
-      # integration test (itest.sh boots ephemeral Postgres+Redis itself).
+      # Bazel covers lint, typecheck (incl. seed), unit tests, builds and the
+      # api integration test (itest.sh boots ephemeral Postgres+Redis itself).
       - uses: bazel-contrib/setup-bazel@0.15.0
         with:
           bazelisk-cache: true

@@ -1,0 +1,76 @@
+{
+  "id": "builtin-find-clay-users",
+  "name": "Find companies using Clay",
+  "kind": "table",
+  "definition": {
+    "columns": [
+      { "name": "Company", "kind": "input", "type": "text" },
+      { "name": "Domain", "kind": "input", "type": "text" },
+      {
+        "name": "Clay research",
+        "kind": "agent",
+        "type": "text",
+        "config": {
+          "provider": "openai",
+          "prompt": "Research whether {{Company}} ({{Domain}}) uses Clay.com (the GTM data enrichment / outbound automation tool, clay.com) internally for sales, marketing, RevOps or GTM engineering.\nFirst call fetch_page on https://www.clay.com/customers/{{company slug}} (lowercase company name, spaces→hyphens, e.g. open-ai, vanta, rippling) — if it returns a real customer story mentioning the company, that is definitive evidence (uses_clay=yes, evidence_type=case_study, evidence_url=that page). If that page is missing/404/generic, then use web_search with these queries: \"{{Company}}\" clay.com; \"{{Company}}\" \"Clay\" GTM engineer job; site:linkedin.com \"{{Company}}\" \"Clay\" outbound; \"{{Company}}\" clay.com case study; site:g2.com clay \"{{Company}}\". Use fetch_page to confirm the strongest hit. Ignore unrelated meanings of 'clay' (pottery, Clay County, people named Clay).\nFinish with fields: uses_clay (\"yes\" | \"likely\" | \"no\" | \"unknown\"), evidence_url (the single best URL or \"\"), evidence_quote (short verbatim quote proving it, or \"\"), evidence_type (\"case_study\" | \"job_posting\" | \"review\" | \"social_post\" | \"agency\" | \"other\"), confidence (0-1 number). answer = one sentence summary."
+        }
+      },
+      {
+        "name": "Uses Clay?",
+        "kind": "formula",
+        "type": "text",
+        "config": { "expression": "get({{Clay research}}, \"fields.uses_clay\")" }
+      },
+      {
+        "name": "Evidence URL",
+        "kind": "formula",
+        "type": "url",
+        "config": { "expression": "get({{Clay research}}, \"fields.evidence_url\")" }
+      },
+      {
+        "name": "Confidence",
+        "kind": "formula",
+        "type": "number",
+        "config": { "expression": "get({{Clay research}}, \"fields.confidence\")" }
+      },
+      {
+        "name": "Evidence",
+        "kind": "formula",
+        "type": "text",
+        "config": { "expression": "get({{Clay research}}, \"fields.evidence_quote\")" }
+      }
+    ],
+    "rows": [
+      { "Company": "Anthropic", "Domain": "anthropic.com" },
+      { "Company": "OpenAI", "Domain": "openai.com" },
+      { "Company": "Vanta", "Domain": "vanta.com" },
+      { "Company": "Rippling", "Domain": "rippling.com" },
+      { "Company": "Ramp", "Domain": "ramp.com" },
+      { "Company": "Notion", "Domain": "notion.so" },
+      { "Company": "Verkada", "Domain": "verkada.com" },
+      { "Company": "Intercom", "Domain": "intercom.com" },
+      { "Company": "Canva", "Domain": "canva.com" },
+      { "Company": "Cursor", "Domain": "cursor.com" },
+      { "Company": "Mercury", "Domain": "mercury.com" },
+      { "Company": "Deel", "Domain": "deel.com" },
+      { "Company": "Brex", "Domain": "brex.com" },
+      { "Company": "Gong", "Domain": "gong.io" },
+      { "Company": "Webflow", "Domain": "webflow.com" },
+      { "Company": "Lattice", "Domain": "lattice.com" },
+      { "Company": "Zapier", "Domain": "zapier.com" },
+      { "Company": "Segment", "Domain": "segment.com" },
+      { "Company": "Hex", "Domain": "hex.tech" },
+      { "Company": "dbt Labs", "Domain": "getdbt.com" },
+      { "Company": "Retool", "Domain": "retool.com" },
+      { "Company": "Vercel", "Domain": "vercel.com" },
+      { "Company": "Airtable", "Domain": "airtable.com" },
+      { "Company": "Sendoso", "Domain": "sendoso.com" },
+      { "Company": "Clari", "Domain": "clari.com" },
+      { "Company": "Amplitude", "Domain": "amplitude.com" },
+      { "Company": "Apollo", "Domain": "apollo.io" },
+      { "Company": "Instantly", "Domain": "instantly.ai" },
+      { "Company": "Smartlead", "Domain": "smartlead.ai" },
+      { "Company": "Lemlist", "Domain": "lemlist.com" }
+    ]
+  }
+}

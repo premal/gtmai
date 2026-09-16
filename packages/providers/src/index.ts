@@ -13,6 +13,7 @@ import {
 import { httpProvider } from './http';
 import { llmProvider } from './llm';
 import { mockProvider } from './mock';
+import { theirstackProvider } from './theirstack';
 import type { Provider } from './types';
 export const providers: Provider[] = [
   mockProvider,
@@ -21,6 +22,7 @@ export const providers: Provider[] = [
   datagmaProvider,
   apolloProvider,
   pdlProvider,
+  theirstackProvider,
   httpProvider,
   llmProvider,
 ];

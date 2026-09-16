@@ -29,6 +29,15 @@ describe('formula', () => {
   it('supports column references containing spaces', () => {
     expect(evaluateFormula('upper({{First name}})', { 'First name': 'ada' })).toBe('ADA');
   });
+
+  it('gets dotted object and array paths', () => {
+    expect(
+      evaluateFormula('get({{Result}}, "fields.contacts.0.email")', {
+        Result: { fields: { contacts: [{ email: 'ada@example.com' }] } },
+      }),
+    ).toBe('ada@example.com');
+    expect(evaluateFormula('get({{Result}}, "fields.missing")', { Result: {} })).toBeNull();
+  });
 });
 
 describe('bindings', () => {

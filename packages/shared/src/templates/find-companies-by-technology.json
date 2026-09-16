@@ -1,0 +1,24 @@
+{
+  "id": "builtin-find-companies-by-technology",
+  "name": "Find companies by technology",
+  "kind": "table",
+  "definition": {
+    "columns": [
+      { "name": "Company", "kind": "input", "type": "text", "config": {} },
+      { "name": "Domain", "kind": "input", "type": "text", "config": {} },
+      { "name": "Industry", "kind": "input", "type": "text", "config": {} },
+      { "name": "Employees", "kind": "input", "type": "number", "config": {} },
+      { "name": "Country", "kind": "input", "type": "text", "config": {} },
+      {
+        "name": "Tech stack",
+        "kind": "enrichment",
+        "type": "json",
+        "config": {
+          "provider": "theirstack",
+          "action": "theirstack.companyTechnologies",
+          "input": { "domain": "{{Domain}}" }
+        }
+      }
+    ]
+  }
+}

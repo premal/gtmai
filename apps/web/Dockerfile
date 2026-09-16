@@ -14,7 +14,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm --filter @gtmai/web build
+RUN pnpm --filter @gtmai/web... build
 
 FROM base AS runtime
 COPY --from=build /app /app

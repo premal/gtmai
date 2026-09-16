@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { SignOutFooter } from '../auth';
-
+import { AppNav } from '../app-nav';
 const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+type Budget = { id: string; scope: string; period: string; limit: number };
+type Alert = { id: string; type: string; message: string; createdAt: string };
+type Table = { id: string; name: string };
 type Summary = {
   balance: number;
   byTable: { name: string; spend: number }[];
@@ -22,116 +24,330 @@ type LedgerPage = {
   pages: number;
   total: number;
 };
+type UsageItem = { key: string; spend: number };
+
+function BarList({ items, empty }: { items: UsageItem[]; empty: string }) {
+  const max = Math.max(...items.map((item) => item.spend), 1);
+  if (!items.length) return <p className="empty-state">{empty}</p>;
+  return (
+    <div className="usage-list">
+      {items.map((item) => (
+        <div className="usage-item" key={item.key}>
+          <div className="usage-item-label">
+            <strong>{item.key}</strong>
+            <span>{item.spend} credits</span>
+          </div>
+          <div className="usage-track">
+            <span style={{ width: `${Math.max(4, (item.spend / max) * 100)}%` }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function CreditsPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [ledger, setLedger] = useState<LedgerPage | null>(null);
   const [page, setPage] = useState(1);
+  const [usage, setUsage] = useState<UsageItem[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [tables, setTables] = useState<Table[]>([]);
+  const [scope, setScope] = useState('workspace');
+  const [period, setPeriod] = useState('daily');
+  const [limit, setLimit] = useState(500);
+  const [scopeId, setScopeId] = useState('');
+  const [message, setMessage] = useState('');
+  const token = typeof window === 'undefined' ? '' : (localStorage.getItem('gtmai-token') ?? '');
+  const headers = { authorization: `Bearer ${token}` };
+  async function load() {
+    const workspace = localStorage.getItem('gtmai-workspace');
+    const [
+      summaryResponse,
+      ledgerResponse,
+      usageResponse,
+      budgetResponse,
+      alertResponse,
+      tableResponse,
+    ] = await Promise.all([
+      fetch(`${api}/credits/summary`, { headers }),
+      fetch(`${api}/credits?page=${page}&pageSize=15`, { headers }),
+      fetch(`${api}/usage/summary?groupBy=day`, { headers }),
+      fetch(`${api}/usage/budgets`, { headers }),
+      fetch(`${api}/usage/alerts`, { headers }),
+      fetch(`${api}/workspaces/${workspace}/tables`, { headers }),
+    ]);
+    if (summaryResponse.ok) setSummary((await summaryResponse.json()) as Summary);
+    if (ledgerResponse.ok) setLedger((await ledgerResponse.json()) as LedgerPage);
+    if (usageResponse.ok) setUsage((await usageResponse.json()) as UsageItem[]);
+    if (budgetResponse.ok) setBudgets((await budgetResponse.json()) as Budget[]);
+    if (alertResponse.ok) setAlerts((await alertResponse.json()) as Alert[]);
+    if (tableResponse.ok) setTables((await tableResponse.json()) as Table[]);
+  }
   useEffect(() => {
-    const token = localStorage.getItem('gtmai-token') ?? '';
-    void fetch(`${api}/credits/summary`, { headers: { authorization: `Bearer ${token}` } })
-      .then((response) => response.json() as Promise<Summary>)
-      .then(setSummary);
-    void fetch(`${api}/credits?page=${page}&pageSize=15`, {
-      headers: { authorization: `Bearer ${token}` },
-    })
-      .then((response) => response.json() as Promise<LedgerPage>)
-      .then(setLedger);
-  }, [page]);
-  const values = summary ? Object.values(summary.daily).slice(-30) : [];
-  const max = Math.max(...values, 1);
+    if (token) void load();
+  }, [token, page]);
+  async function create() {
+    const value = scope === 'workspace' ? 'workspace' : `${scope}:${scopeId}`;
+    const existing = budgets.some((budget) => budget.scope === value && budget.period === period);
+    const response = await fetch(`${api}/usage/budgets`, {
+      method: 'POST',
+      headers: { ...headers, 'content-type': 'application/json' },
+      body: JSON.stringify({ scope: value, period, limit: Number(limit) }),
+    });
+    if (!response.ok) {
+      setMessage((await response.text()) || 'Unable to save budget');
+      return;
+    }
+    await load();
+    setMessage(existing ? 'Budget updated' : 'Budget created');
+  }
+  async function remove(id: string) {
+    await fetch(`${api}/usage/budgets/${id}`, { method: 'DELETE', headers });
+    await load();
+  }
+  const dailyItems = Object.entries(summary?.daily ?? {})
+    .slice(-30)
+    .map(([key, spend]) => ({ key, spend }));
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-mark">G</span>
-          <strong>GTM AI</strong>
-        </div>
-        <nav>
-          <a href="/">▦ Tables</a>
-          <a href="/connections">⌁ Connections</a>
-          <a className="active" href="/credits">
-            ◈ Credits
-          </a>
-          <a href="/settings">⚙ Settings</a>
-        </nav>
-        <SignOutFooter />
-      </aside>
-      <section className="content">
+      <AppNav active="credits" />
+      <section className="content wide">
         <header className="topbar">
           <div>
-            <div className="eyebrow">WORKSPACE</div>
-            <h2>Credits</h2>
+            <div className="eyebrow">USAGE</div>
+            <h2>Credits & budgets</h2>
+            <p className="muted">Track spend, manage limits, and catch usage spikes.</p>
           </div>
         </header>
-        <div className="metric-row">
-          <div>
-            <span className="metric-label">Balance</span>
-            <strong>{summary?.balance ?? 0}</strong>
-          </div>
-          <div>
-            <span className="metric-label">Last 30 days</span>
-            <strong>{values.reduce((a, b) => a + b, 0)}</strong>
-          </div>
-        </div>
-        <div className="sparkline">
-          {values.map((value, index) => (
-            <span key={index} style={{ height: `${Math.max(4, (value / max) * 80)}px` }} />
-          ))}
-        </div>
-        <h3>Spend by table</h3>
-        <div className="table-list">
-          {summary?.byTable.map((item) => (
-            <div className="table-card" key={item.name}>
-              <strong>{item.name}</strong>
-              <span className="arrow">{item.spend} credits</span>
+        {message && <div className="toast">{message}</div>}
+        <div className="page-stack">
+          <section className="panel">
+            <div className="card-header">
+              <div>
+                <div className="eyebrow">OVERVIEW</div>
+                <h3>Usage dashboard</h3>
+              </div>
+              <div className="stats">
+                <div className="stat">
+                  <strong>{summary?.balance ?? 0}</strong>
+                  <span>Balance</span>
+                </div>
+                <div className="stat">
+                  <strong>{dailyItems.reduce((total, item) => total + item.spend, 0)}</strong>
+                  <span>Last 30 days</span>
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
-        <h3 className="section-title">Spend by provider</h3>
-        <div className="table-list">
-          {summary?.byProvider.map((item) => (
-            <div className="table-card" key={item.provider}>
-              <strong>{item.provider}</strong>
-              <span className="arrow">{item.spend} credits</span>
-            </div>
-          ))}
-        </div>
-        <h3 className="section-title">Ledger</h3>
-        <div className="ledger-table">
-          <div className="ledger-head">
-            <span>Date</span>
-            <span>Table</span>
-            <span>Reason</span>
-            <span>Delta</span>
+            {dailyItems.length ? (
+              <div className="daily-bars" aria-label="Daily spend for the last 30 days">
+                {dailyItems.map((item) => {
+                  const max = Math.max(...dailyItems.map((value) => value.spend), 1);
+                  return (
+                    <div
+                      className="daily-bar"
+                      key={item.key}
+                      title={`${item.key}: ${item.spend} credits`}
+                    >
+                      <span style={{ height: `${Math.max(4, (item.spend / max) * 100)}%` }} />
+                      <small>{item.key.slice(5)}</small>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="empty-state">No usage recorded yet.</p>
+            )}
+          </section>
+          <div className="split-grid">
+            <section className="panel">
+              <div className="card-header">
+                <h3>Spend by table</h3>
+                <span className="muted">{summary?.byTable.length ?? 0} tables</span>
+              </div>
+              <BarList
+                items={(summary?.byTable ?? []).map((item) => ({
+                  key: item.name,
+                  spend: item.spend,
+                }))}
+                empty="No table spend yet."
+              />
+            </section>
+            <section className="panel">
+              <div className="card-header">
+                <h3>Spend by provider</h3>
+                <span className="muted">{summary?.byProvider.length ?? 0} providers</span>
+              </div>
+              <BarList
+                items={(summary?.byProvider ?? []).map((item) => ({
+                  key: item.provider,
+                  spend: item.spend,
+                }))}
+                empty="No provider spend yet."
+              />
+            </section>
           </div>
-          {ledger?.ledger.map((entry) => (
-            <div className="ledger-row" key={entry.id}>
-              <span>{new Date(entry.createdAt).toLocaleDateString()}</span>
-              <span>{entry.table?.name ?? 'Workspace'}</span>
-              <span>{entry.reason}</span>
-              <span className={entry.delta < 0 ? 'negative' : 'positive'}>
-                {entry.delta > 0 ? '+' : ''}
-                {entry.delta}
-              </span>
+          <section className="panel">
+            <div className="card-header">
+              <h3>Daily usage</h3>
+              <span className="muted">/usage/summary?groupBy=day</span>
             </div>
-          ))}
+            <BarList items={usage.slice(-30)} empty="No daily usage yet." />
+          </section>
+          <div className="split-grid">
+            <section className="panel">
+              <h3>Create budget</h3>
+              <label>
+                Scope
+                <select
+                  className="input"
+                  value={scope}
+                  onChange={(event) => setScope(event.target.value)}
+                >
+                  <option value="workspace">workspace</option>
+                  <option value="table">table</option>
+                  <option value="provider">provider</option>
+                </select>
+              </label>
+              {scope === 'table' && (
+                <label>
+                  Table
+                  <select
+                    className="input"
+                    value={scopeId}
+                    onChange={(event) => setScopeId(event.target.value)}
+                  >
+                    {tables.map((table) => (
+                      <option key={table.id} value={table.id}>
+                        {table.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {scope === 'provider' && (
+                <label>
+                  Provider
+                  <select
+                    className="input"
+                    value={scopeId}
+                    onChange={(event) => setScopeId(event.target.value)}
+                  >
+                    <option value="openai">openai</option>
+                    <option value="anthropic">anthropic</option>
+                    <option value="mock">mock</option>
+                  </select>
+                </label>
+              )}
+              <label>
+                Period
+                <select
+                  className="input"
+                  value={period}
+                  onChange={(event) => setPeriod(event.target.value)}
+                >
+                  <option>daily</option>
+                  <option>monthly</option>
+                </select>
+              </label>
+              <label>
+                Limit
+                <input
+                  className="input"
+                  type="number"
+                  value={limit}
+                  onChange={(event) => setLimit(Number(event.target.value))}
+                />
+              </label>
+              <button className="button primary" onClick={() => void create()}>
+                Save budget
+              </button>
+            </section>
+            <section className="panel">
+              <div className="card-header">
+                <h3>Budgets</h3>
+                <span className="muted">{budgets.length} configured</span>
+              </div>
+              {budgets.length ? (
+                budgets.map((budget) => (
+                  <div className="list-row" key={budget.id}>
+                    <span>
+                      <strong>{budget.scope}</strong>
+                      <small className="muted">
+                        {budget.limit} credits / {budget.period}
+                      </small>
+                    </span>
+                    <button className="button" onClick={() => void remove(budget.id)}>
+                      Delete
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="empty-state">No budgets yet.</p>
+              )}
+            </section>
+          </div>
         </div>
-        <div className="pagination">
-          <button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-            Previous
-          </button>
-          <span>
-            Page {ledger?.page ?? page} of {ledger?.pages ?? 1}
-          </span>
-          <button
-            className="button"
-            disabled={!ledger || page >= ledger.pages}
-            onClick={() => setPage(page + 1)}
-          >
-            Next
-          </button>
-        </div>
+        <section className="panel">
+          <h3>Alerts</h3>
+          {alerts.length === 0 ? (
+            <p>No alerts yet.</p>
+          ) : (
+            alerts.map((alert) => (
+              <div className="list-row" key={alert.id}>
+                <span className="chip">{alert.type}</span>
+                <span>{alert.message}</span>
+                <small className="muted">{new Date(alert.createdAt).toLocaleString()}</small>
+              </div>
+            ))
+          )}
+        </section>
+        <section className="panel">
+          <div className="card-header">
+            <h3>Credit ledger</h3>
+            <span className="muted">{ledger?.total ?? 0} entries</span>
+          </div>
+          <div className="responsive-scroll">
+            <div className="table ledger-table">
+              <div className="table-head">
+                <span>Date</span>
+                <span>Table</span>
+                <span>Reason</span>
+                <span>Delta</span>
+                <span />
+              </div>
+              {ledger?.ledger.map((entry) => (
+                <div className="table-row" key={entry.id}>
+                  <span>{new Date(entry.createdAt).toLocaleDateString()}</span>
+                  <span>{entry.table?.name ?? 'Workspace'}</span>
+                  <span>{entry.reason}</span>
+                  <span className={entry.delta < 0 ? 'negative' : 'positive'}>
+                    {entry.delta > 0 ? '+' : ''}
+                    {entry.delta}
+                  </span>
+                  <span />
+                </div>
+              ))}
+              {!ledger?.ledger.length && <div className="empty-state">No ledger entries yet.</div>}
+            </div>
+          </div>
+          <div className="pagination">
+            <button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+              Previous
+            </button>
+            <span>
+              Page {ledger?.page ?? page} of {ledger?.pages ?? 1}
+            </span>
+            <button
+              className="button"
+              disabled={!ledger || page >= ledger.pages}
+              onClick={() => setPage(page + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </section>
       </section>
     </main>
   );

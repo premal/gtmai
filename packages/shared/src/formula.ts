@@ -1,4 +1,4 @@
-type Value = string | number | boolean | null;
+type Value = string | number | boolean | null | Record<string, unknown> | unknown[];
 type Token = {
   kind: 'number' | 'string' | 'identifier' | 'operator' | 'paren' | 'comma';
   value: string;
@@ -66,10 +66,13 @@ function tokenize(source: string): Token[] {
 export function evaluateFormula(expression: string, row: Record<string, unknown>): Value {
   const tokens = tokenize(expression);
   let pos = 0;
-  const value = (v: unknown): Value =>
-    typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' || v === null
-      ? v
-      : String(v);
+  const value = (v: unknown): Value => {
+    if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' || v === null)
+      return v;
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'object') return v as Record<string, unknown>;
+    return String(v);
+  };
   const truth = (v: Value): boolean => Boolean(v);
   const primary = (): Value => {
     const t = tokens[pos++];
@@ -118,6 +121,21 @@ export function evaluateFormula(expression: string, row: Record<string, unknown>
         return String(a ?? '').length;
       case 'coalesce':
         return args.find((x) => x !== null && x !== '') ?? null;
+      case 'get': {
+        const path = String(args[1] ?? '');
+        let current: unknown = args[0];
+        for (const segment of path.split('.')) {
+          if (Array.isArray(current) && /^\d+$/.test(segment)) {
+            current = current[Number(segment)];
+          } else if (current && typeof current === 'object') {
+            current = (current as Record<string, unknown>)[segment];
+          } else {
+            return null;
+          }
+          if (current === undefined) return null;
+        }
+        return current === undefined ? null : value(current);
+      }
       default:
         throw new Error(`Unknown function ${name}`);
     }

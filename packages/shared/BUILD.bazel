@@ -51,6 +51,62 @@ vitest_bin.vitest_test(
     size = "small",
 )
 
+vitest_bin.vitest_test(
+    name = "unit_bindings",
+    args = ["run", "src/bindings.test.ts"],
+    chdir = "packages/shared",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:workspace_config_js",
+        "src/bindings.test.ts",
+    ],
+    size = "small",
+)
+
+vitest_bin.vitest_test(
+    name = "unit_filter",
+    args = ["run", "src/filter.test.ts"],
+    chdir = "packages/shared",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:workspace_config_js",
+        "src/filter.test.ts",
+    ],
+    size = "small",
+)
+
+vitest_bin.vitest_test(
+    name = "unit_workflows",
+    args = ["run", "src/workflows.test.ts"],
+    chdir = "packages/shared",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:workspace_config_js",
+        "src/workflows.test.ts",
+    ],
+    size = "small",
+)
+
+vitest_bin.vitest_test(
+    name = "unit_sequences",
+    args = ["run", "src/sequences.test.ts"],
+    chdir = "packages/shared",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:workspace_config_js",
+        "src/sequences.test.ts",
+    ],
+    size = "small",
+)
+
 # eslint flat config lives at the workspace root and imports
 # @typescript-eslint/parser from the root node_modules link.
 eslint_bin.eslint_test(

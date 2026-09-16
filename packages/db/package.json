@@ -9,6 +9,7 @@
     "dev": "tsc -p tsconfig.json --watch",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:seed": "tsc -p tsconfig.seed.json",
     "test": "vitest run --passWithNoTests",
     "prisma": "prisma",
     "db:seed": "tsx prisma/seed.ts"

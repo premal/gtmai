@@ -12,6 +12,7 @@ filegroup(
     srcs = [
         "package.json",
         "tsconfig.json",
+        "tsconfig.seed.json",
     ],
 )
 
@@ -58,6 +59,16 @@ sh_test(
     name = "typecheck",
     srcs = ["//tools/bazel:dbgen.sh"],
     args = ["--filter", "@gtmai/db", "typecheck"],
+    data = [":config", ":prisma", ":srcs", "//:workspace_config"],
+    tags = _LOCAL,
+    size = "medium",
+)
+
+# seed.ts lives outside src/ and has its own tsconfig.
+sh_test(
+    name = "typecheck_seed",
+    srcs = ["//tools/bazel:dbgen.sh"],
+    args = ["--filter", "@gtmai/db", "typecheck:seed"],
     data = [":config", ":prisma", ":srcs", "//:workspace_config"],
     tags = _LOCAL,
     size = "medium",

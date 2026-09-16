@@ -64,6 +64,20 @@ vitest_bin.vitest_test(
     size = "small",
 )
 
+vitest_bin.vitest_test(
+    name = "unit_theirstack",
+    args = ["run", "src/theirstack.test.ts"],
+    chdir = "packages/providers",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:workspace_config_js",
+        "src/theirstack.test.ts",
+    ],
+    size = "small",
+)
+
 eslint_bin.eslint_test(
     name = "lint",
     args = ["src", "--no-warn-ignored"],
