@@ -1,7 +1,7 @@
 # GTM AI
 
 Clay-style GTM data platform with a NestJS/Fastify API, BullMQ workers, Prisma
-domain model, provider SDKs, a live SSE grid, CSV workflows, connections,
+domain model, provider SDKs, a live SSE grid, CSV workflows, integrations,
 credits, Audiences, Signals, Workflows, Functions, Templates, outbound
 sequencing, ad audiences, CRM write-back, API keys, CLI, and MCP.
 
@@ -63,14 +63,14 @@ send the resulting contacts into an Audience and enroll them in a Campaign.
 
 ## Provider keys
 
-Open **Connections** in the web workspace, choose a provider, and save its API key.
+Open **Integrations** in the web workspace, choose a provider, and save its API key.
 Keys are encrypted with `ENCRYPTION_KEY` and only masked metadata is returned by the API.
 The mock provider works without a network key and is used by the seeded waterfall.
-For a real provider, add a connection in **Connections** and enter the key
+For a real provider, add an integration in **Integrations** and enter the key
 required by that provider's action. Never commit `.env` or provider keys.
 
 ## Screenshots
 
 Manual smoke screenshots can be stored under `/home/ubuntu/gtmai-p1-*.png`.
 The expected flow is: log in, add a waterfall column, run it, watch SSE updates,
-open a completed cell drawer, import CSV, and test a mock connection.
+open a completed cell drawer, import CSV, and test a mock integration.

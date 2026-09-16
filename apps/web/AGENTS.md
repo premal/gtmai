@@ -18,10 +18,11 @@ Next.js 15 App Router, client-side data fetching against `NEXT_PUBLIC_API_URL`
 | `/campaigns`                    | campaigns + enrollments                               |
 | `/ads`                          | ad audiences + sync status                            |
 | `/crm`                          | CRM sync jobs/runs                                    |
-| `/connections`                  | provider credentials                                  |
+| `/settings`                     | settings directory — cards linking to sub-pages       |
+| `/settings/integrations`        | provider credentials                                  |
+| `/settings/team`                | members, roles, invite links                          |
 | `/templates`                    | built-in table templates                              |
 | `/credits`                      | credit ledger + budgets                               |
-| `/settings`                     | workspace settings, API keys                          |
 | `/invite/[token]`               | accept a team invite (the only signup path)           |
 | `/login`                        | themed split-screen login — no register               |
 

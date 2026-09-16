@@ -103,16 +103,16 @@ async function main(): Promise<void> {
         position: 0,
       },
     }));
-  const connection = await db.connection.findFirst({
+  const integration = await db.integration.findFirst({
     where: { workspaceId: workspace.id, provider: 'mock' },
   });
-  if (connection) {
-    await db.connection.update({
-      where: { id: connection.id },
+  if (integration) {
+    await db.integration.update({
+      where: { id: integration.id },
       data: { encryptedCredentials: encrypt({ apiKey: 'demo-mock-key' }) },
     });
   } else {
-    await db.connection.create({
+    await db.integration.create({
       data: {
         workspaceId: workspace.id,
         createdById: user.id,
@@ -417,7 +417,7 @@ async function main(): Promise<void> {
       },
     },
   });
-  const workflowRunner = await import('../../../apps/worker/src/workflows');
+  const workflowRunner = await import('../../../apps/worker/src/workflows.js');
   await workflowRunner.executeWorkflowRun(run.id, workspace.id);
   await workflowRunner.closeWorkflowResources();
   const previousSequence = await db.sequence.findFirst({

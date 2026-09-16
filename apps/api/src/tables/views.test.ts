@@ -100,7 +100,7 @@ describe('workbooks and views', () => {
     expect(viewed.json().view.id).toBe(view.json().id);
     await instance.inject({
       method: 'POST',
-      url: '/connections',
+      url: '/integrations',
       headers,
       payload: { provider: 'mock', name: 'Mock', credentials: {} },
     });

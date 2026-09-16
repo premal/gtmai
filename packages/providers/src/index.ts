@@ -3,6 +3,7 @@ export * from './mock';
 export * from './http';
 export * from './rest';
 export * from './llm';
+export * from './hginsights';
 import {
   apolloProvider,
   datagmaProvider,
@@ -10,6 +11,7 @@ import {
   pdlProvider,
   prospeoProvider,
 } from './rest';
+import { hginsightsProvider } from './hginsights';
 import { httpProvider } from './http';
 import { llmProvider } from './llm';
 import { mockProvider } from './mock';
@@ -23,6 +25,7 @@ export const providers: Provider[] = [
   apolloProvider,
   pdlProvider,
   theirstackProvider,
+  hginsightsProvider,
   httpProvider,
   llmProvider,
 ];
