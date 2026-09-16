@@ -1,6 +1,10 @@
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@npm//:eslint/package_json.bzl", eslint_bin = "bin")
 
 package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
 
 filegroup(
     name = "config",
@@ -31,6 +35,22 @@ _DEPS = [
     "//packages/providers:srcs",
     "//packages/shared:srcs",
 ]
+
+# eslint flat config lives at the workspace root and imports
+# @typescript-eslint/parser from the root node_modules link.
+eslint_bin.eslint_test(
+    name = "lint",
+    args = ["src", "--no-warn-ignored"],
+    chdir = "apps/worker",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:node_modules",
+        "//:workspace_config_js",
+    ],
+    size = "medium",
+)
 
 _LOCAL = ["local", "no-sandbox", "requires-network"]
 
