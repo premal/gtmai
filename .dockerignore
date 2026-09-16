@@ -1,0 +1,14 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+**/coverage
+.git
+.github
+.agents
+*.log
+.env
+.env.test
+bazel-*
+fly.*.toml
