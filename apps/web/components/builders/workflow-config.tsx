@@ -67,6 +67,8 @@ export function WorkflowConfig({ type, config, bindings, onChange }: ConfigProps
               <option value="anthropic">anthropic</option>
               <option value="gemini">gemini</option>
               <option value="perplexity">perplexity</option>
+              <option value="openrouter">openrouter</option>
+              <option value="cometapi">cometapi</option>
             </select>
           </label>
           <label className="field-label">

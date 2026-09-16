@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   anthropicProvider,
+  cometapiProvider,
   fetchPage,
   geminiProvider,
   llmProviderIds,
   openaiProvider,
+  openrouterProvider,
   parseBing,
   parseDuckDuckGo,
   perplexityProvider,
@@ -35,12 +37,21 @@ const openAiResponse = (text: string) =>
 
 describe('llm providers', () => {
   it('registers one provider per LLM vendor with models and a chat action', () => {
-    expect(llmProviderIds).toEqual(['openai', 'anthropic', 'gemini', 'perplexity']);
+    expect(llmProviderIds).toEqual([
+      'openai',
+      'anthropic',
+      'gemini',
+      'perplexity',
+      'openrouter',
+      'cometapi',
+    ]);
     for (const provider of [
       openaiProvider,
       anthropicProvider,
       geminiProvider,
       perplexityProvider,
+      openrouterProvider,
+      cometapiProvider,
     ]) {
       expect(provider.actions[0]?.id).toBe(`${provider.id}.chat`);
       expect(provider.models?.length).toBeGreaterThan(0);
@@ -52,6 +63,8 @@ describe('llm providers', () => {
     [openaiProvider, 'api.openai.com'],
     [geminiProvider, 'generativelanguage.googleapis.com'],
     [perplexityProvider, 'api.perplexity.ai'],
+    [openrouterProvider, 'openrouter.ai'],
+    [cometapiProvider, 'api.cometapi.com'],
   ])('%s.chat posts to its own endpoint', async (provider, host) => {
     const fetcher = vi.fn(async (_input: string) => openAiResponse('{"answer":"ok"}'));
     const result = await provider.actions[0]!.run(
@@ -112,8 +125,12 @@ describe('llm providers', () => {
       true,
     ],
     [perplexityProvider, 'https://api.perplexity.ai/chat/completions', 200, true],
+    [openrouterProvider, 'https://openrouter.ai/api/v1/auth/key', 200, true],
+    [cometapiProvider, 'https://api.cometapi.com/v1/models', 200, true],
     [openaiProvider, 'https://api.openai.com/v1/models', 401, false],
     [perplexityProvider, 'https://api.perplexity.ai/chat/completions', 403, false],
+    [openrouterProvider, 'https://openrouter.ai/api/v1/auth/key', 401, false],
+    [cometapiProvider, 'https://api.cometapi.com/v1/models', 401, false],
   ])('%s.check probes %s (HTTP %i → ok=%s)', async (provider, url, status, ok) => {
     const fetcher = vi.fn(async (_input: string) => new Response('{}', { status }));
     const result = await provider.check!(testContext(fetcher as unknown as typeof fetch));

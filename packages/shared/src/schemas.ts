@@ -15,7 +15,9 @@ export const waterfallConfig = z.object({
 export const agentConfig = z.object({
   prompt: z.string(),
   outputFields: z.record(z.string()),
-  provider: z.enum(['openai', 'anthropic', 'gemini', 'perplexity']).default('openai'),
+  provider: z
+    .enum(['openai', 'anthropic', 'gemini', 'perplexity', 'openrouter', 'cometapi'])
+    .default('openai'),
   model: z.string().optional(),
   tools: z.array(z.string()).optional(),
 });

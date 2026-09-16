@@ -142,6 +142,7 @@ export class IntegrationsController {
     return providers.map((provider) => ({
       id: provider.id,
       name: provider.name,
+      group: provider.group,
       auth: provider.auth,
       models: provider.models,
       actions: provider.actions.map((action) => ({

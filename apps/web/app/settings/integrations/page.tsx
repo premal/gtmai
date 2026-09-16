@@ -22,9 +22,21 @@ type Integration = {
 type Provider = {
   id: string;
   name: string;
+  group?: string;
   auth: { fields: { key: string; label: string; secret?: boolean; optional?: boolean }[] };
   actions?: { id: string; name: string }[];
 };
+const providerGroupLabels: Record<string, string> = {
+  ai: 'AI providers',
+  enrichment: 'Enrichment',
+  search: 'Search',
+  utility: 'Utilities',
+  other: 'Other',
+};
+const providerGroupOrder = ['ai', 'enrichment', 'search', 'utility', 'other'];
+function groupLabel(group: string | undefined) {
+  return providerGroupLabels[group ?? 'other'] ?? group ?? 'Other';
+}
 const providerVisuals: Record<string, { initials: string; bg: string; fg: string }> = {
   mock: { initials: 'M', bg: '#e7e5e4', fg: '#57534e' },
   hunter: { initials: 'H', bg: '#ffedd5', fg: '#c2410c' },
@@ -40,6 +52,8 @@ const providerVisuals: Record<string, { initials: string; bg: string; fg: string
   anthropic: { initials: 'AN', bg: '#ffedd5', fg: '#c2410c' },
   gemini: { initials: 'G', bg: '#dbeafe', fg: '#1d4ed8' },
   perplexity: { initials: 'PX', bg: '#ccfbf1', fg: '#0f766e' },
+  openrouter: { initials: 'OR', bg: '#e0e7ff', fg: '#4338ca' },
+  cometapi: { initials: 'C', bg: '#fce7f3', fg: '#be185d' },
   tavily: { initials: 'TV', bg: '#fef3c7', fg: '#b45309' },
   smtp: { initials: 'S', bg: '#e7e5e4', fg: '#57534e' },
   meta: { initials: 'M', bg: '#dbeafe', fg: '#1d4ed8' },
@@ -250,73 +264,97 @@ export default function IntegrationsPage() {
               )}
             </div>
           )}
-          {integrations.map((integration) => {
-            const catalogEntry = providers.find((item) => item.id === integration.provider);
-            const actionNames = (catalogEntry?.actions ?? []).map((action) => action.name);
-            const visual = visualFor(
-              integration.provider,
-              catalogEntry?.name ?? integration.provider,
-            );
-            return (
-              <div className="table-card" key={integration.id}>
-                <div
-                  className="table-icon"
-                  style={{ background: visual.bg, color: visual.fg, fontWeight: 600 }}
-                >
-                  {visual.initials}
+          {providerGroupOrder
+            .map((group) => ({
+              group,
+              items: integrations.filter(
+                (integration) =>
+                  (providers.find((item) => item.id === integration.provider)?.group ?? 'other') ===
+                  group,
+              ),
+            }))
+            .filter(({ items }) => items.length > 0)
+            .map(({ group, items }) => (
+              <div key={group}>
+                <p className="integration-group-label">{groupLabel(group)}</p>
+                <div className="table-list">
+                  {items.map((integration) => {
+                    const catalogEntry = providers.find((item) => item.id === integration.provider);
+                    const actionNames = (catalogEntry?.actions ?? []).map((action) => action.name);
+                    const visual = visualFor(
+                      integration.provider,
+                      catalogEntry?.name ?? integration.provider,
+                    );
+                    return (
+                      <div className="table-card" key={integration.id}>
+                        <div
+                          className="table-icon"
+                          style={{ background: visual.bg, color: visual.fg, fontWeight: 600 }}
+                        >
+                          {visual.initials}
+                        </div>
+                        <div className="integration-info">
+                          <h3>
+                            {integration.name}{' '}
+                            {integration.isDefault && <span className="tag-chip">default</span>}
+                          </h3>
+                          <p>
+                            {providerName(integration.provider)} · added by{' '}
+                            {integration.createdBy?.name ?? 'Workspace'}
+                            {integration.usedInColumns > 0 &&
+                              ` · used in ${integration.usedInColumns} column${integration.usedInColumns === 1 ? '' : 's'}`}
+                          </p>
+                          {actionNames.length > 0 && (
+                            <p className="action-chips">
+                              {actionNames.slice(0, 3).map((actionName) => (
+                                <span className="tag-chip" key={actionName}>
+                                  {actionName}
+                                </span>
+                              ))}
+                              {actionNames.length > 3 && (
+                                <span className="tag-chip">+{actionNames.length - 3} more</span>
+                              )}
+                            </p>
+                          )}
+                          {integration.lastTestAt && (
+                            <p
+                              className={`integration-status ${integration.lastTestOk ? 'ok' : 'fail'}`}
+                            >
+                              <span className="status-dot" />
+                              {integration.lastTestOk ? 'Verified' : 'Failed'}{' '}
+                              {new Date(integration.lastTestAt).toLocaleDateString()}
+                              {integration.lastTestMessage
+                                ? ` — ${integration.lastTestMessage}`
+                                : ''}
+                            </p>
+                          )}
+                        </div>
+                        {admin && (
+                          <div className="toolbar">
+                            <button
+                              className="button"
+                              disabled={testingId === integration.id}
+                              onClick={() => void test(integration.id)}
+                            >
+                              {testingId === integration.id ? 'Testing…' : 'Test'}
+                            </button>
+                            <button className="button" onClick={() => openEdit(integration)}>
+                              Edit
+                            </button>
+                            <button
+                              className="icon-button danger"
+                              onClick={() => void remove(integration)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="integration-info">
-                  <h3>
-                    {integration.name}{' '}
-                    {integration.isDefault && <span className="tag-chip">default</span>}
-                  </h3>
-                  <p>
-                    {providerName(integration.provider)} · added by{' '}
-                    {integration.createdBy?.name ?? 'Workspace'}
-                    {integration.usedInColumns > 0 &&
-                      ` · used in ${integration.usedInColumns} column${integration.usedInColumns === 1 ? '' : 's'}`}
-                  </p>
-                  {actionNames.length > 0 && (
-                    <p className="action-chips">
-                      {actionNames.slice(0, 3).map((actionName) => (
-                        <span className="tag-chip" key={actionName}>
-                          {actionName}
-                        </span>
-                      ))}
-                      {actionNames.length > 3 && (
-                        <span className="tag-chip">+{actionNames.length - 3} more</span>
-                      )}
-                    </p>
-                  )}
-                  {integration.lastTestAt && (
-                    <p className={`integration-status ${integration.lastTestOk ? 'ok' : 'fail'}`}>
-                      <span className="status-dot" />
-                      {integration.lastTestOk ? 'Verified' : 'Failed'}{' '}
-                      {new Date(integration.lastTestAt).toLocaleDateString()}
-                      {integration.lastTestMessage ? ` — ${integration.lastTestMessage}` : ''}
-                    </p>
-                  )}
-                </div>
-                {admin && (
-                  <div className="toolbar">
-                    <button
-                      className="button"
-                      disabled={testingId === integration.id}
-                      onClick={() => void test(integration.id)}
-                    >
-                      {testingId === integration.id ? 'Testing…' : 'Test'}
-                    </button>
-                    <button className="button" onClick={() => openEdit(integration)}>
-                      Edit
-                    </button>
-                    <button className="icon-button danger" onClick={() => void remove(integration)}>
-                      Delete
-                    </button>
-                  </div>
-                )}
               </div>
-            );
-          })}
+            ))}
         </div>
       </section>
       {open && (
@@ -337,12 +375,22 @@ export default function IntegrationsPage() {
                 <option value="" disabled>
                   Choose a provider…
                 </option>
-                {providers
-                  .filter((item) => item.id !== 'mock')
-                  .map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
+                {providerGroupOrder
+                  .map((group) => ({
+                    group,
+                    items: providers.filter(
+                      (item) => item.id !== 'mock' && (item.group ?? 'other') === group,
+                    ),
+                  }))
+                  .filter(({ items }) => items.length > 0)
+                  .map(({ group, items }) => (
+                    <optgroup key={group} label={groupLabel(group)}>
+                      {items.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </optgroup>
                   ))}
               </select>
             </label>

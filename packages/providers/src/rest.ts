@@ -142,6 +142,7 @@ function provider(id: string, name: string, actions: ProviderAction[]): Provider
   return {
     id,
     name,
+    group: 'enrichment',
     auth: { type: 'apiKey', fields: [{ key: 'apiKey', label: 'API key', secret: true }] },
     actions,
   };

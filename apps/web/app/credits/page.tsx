@@ -255,6 +255,8 @@ export default function CreditsPage() {
                     <option value="anthropic">anthropic</option>
                     <option value="gemini">gemini</option>
                     <option value="perplexity">perplexity</option>
+                    <option value="openrouter">openrouter</option>
+                    <option value="cometapi">cometapi</option>
                     <option value="mock">mock</option>
                   </select>
                 </label>

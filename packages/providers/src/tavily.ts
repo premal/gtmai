@@ -18,6 +18,7 @@ const searchOutput = z.object({
 export const tavilyProvider: Provider = {
   id: 'tavily',
   name: 'Tavily',
+  group: 'search',
   auth: { type: 'apiKey', fields: [{ key: 'apiKey', label: 'API key', secret: true }] },
   actions: [
     {

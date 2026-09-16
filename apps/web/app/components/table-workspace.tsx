@@ -69,6 +69,8 @@ const fallbackLlmProviders: LlmProvider[] = [
   { id: 'anthropic', name: 'Anthropic' },
   { id: 'gemini', name: 'Gemini' },
   { id: 'perplexity', name: 'Perplexity' },
+  { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'cometapi', name: 'CometAPI' },
 ];
 function parseOutputFields(text: string): Record<string, string> {
   const fields: Record<string, string> = {};

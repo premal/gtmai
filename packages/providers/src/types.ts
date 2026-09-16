@@ -49,9 +49,11 @@ export const peopleOutput = z.object({
   total: z.number().optional(),
 });
 export type CheckResult = { ok: boolean; message?: string };
+export type ProviderGroup = 'ai' | 'enrichment' | 'search' | 'utility';
 export type Provider = {
   id: string;
   name: string;
+  group: ProviderGroup;
   auth: {
     type: 'apiKey';
     fields: { key: string; label: string; secret: true; optional?: boolean }[];

@@ -3,7 +3,14 @@ import OpenAI, { type ClientOptions as OpenAIClientOptions } from 'openai';
 import { z } from 'zod';
 import type { Provider, RunContext } from './types';
 
-export const llmProviderIds = ['openai', 'anthropic', 'gemini', 'perplexity'] as const;
+export const llmProviderIds = [
+  'openai',
+  'anthropic',
+  'gemini',
+  'perplexity',
+  'openrouter',
+  'cometapi',
+] as const;
 export type LlmProviderId = (typeof llmProviderIds)[number];
 
 export function normalizeLlmProviderId(value: unknown): LlmProviderId {
@@ -17,6 +24,22 @@ export const llmProviderModels: Record<LlmProviderId, string[]> = {
   anthropic: ['claude-3-5-haiku-latest', 'claude-sonnet-4-5', 'claude-opus-4-1'],
   gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
   perplexity: ['sonar', 'sonar-pro', 'sonar-reasoning'],
+  openrouter: [
+    'openai/gpt-4o-mini',
+    'openai/gpt-4o',
+    'anthropic/claude-sonnet-4',
+    'google/gemini-2.5-flash',
+    'meta-llama/llama-3.3-70b-instruct',
+    'deepseek/deepseek-chat-v3-0324',
+  ],
+  cometapi: [
+    'gpt-4o-mini',
+    'gpt-4o',
+    'claude-sonnet-4-5',
+    'gemini-2.5-flash',
+    'grok-4',
+    'deepseek-v3.1',
+  ],
 };
 
 const chatInput = z.object({
@@ -63,6 +86,7 @@ function llmChatProvider(
   return {
     id,
     name,
+    group: 'ai',
     auth: { type: 'apiKey', fields: llmAuthFields },
     models: llmProviderModels[id],
     actions: [
@@ -162,6 +186,38 @@ export const perplexityProvider = llmChatProvider(
     return response.ok
       ? { ok: true }
       : { ok: false, message: `Perplexity returned HTTP ${response.status}` };
+  },
+);
+
+export const openrouterProvider = llmChatProvider(
+  'openrouter',
+  'OpenRouter',
+  async ({ credentials, fetch }) => {
+    const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+      headers: { authorization: `Bearer ${credentials.apiKey ?? ''}` },
+    });
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, message: 'OpenRouter rejected the API key' };
+    }
+    return response.ok
+      ? { ok: true }
+      : { ok: false, message: `OpenRouter returned HTTP ${response.status}` };
+  },
+);
+
+export const cometapiProvider = llmChatProvider(
+  'cometapi',
+  'CometAPI',
+  async ({ credentials, fetch }) => {
+    const response = await fetch('https://api.cometapi.com/v1/models', {
+      headers: { authorization: `Bearer ${credentials.apiKey ?? ''}` },
+    });
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, message: 'CometAPI rejected the API key' };
+    }
+    return response.ok
+      ? { ok: true }
+      : { ok: false, message: `CometAPI returned HTTP ${response.status}` };
   },
 );
 
@@ -501,6 +557,8 @@ export async function runAgentWithClient(
 const openAiCompatibleBaseUrls: Partial<Record<LlmProviderId, string>> = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/',
   perplexity: 'https://api.perplexity.ai',
+  openrouter: 'https://openrouter.ai/api/v1',
+  cometapi: 'https://api.cometapi.com/v1',
 };
 
 // The vendor SDKs type their fetch option loosely; adapt RunContext.fetch.
