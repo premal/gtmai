@@ -63,6 +63,23 @@ type CatalogAction = {
   sourceKind?: 'companies' | 'people';
   creditCost: number;
 };
+type LlmProvider = { id: string; name: string; models?: string[] };
+const fallbackLlmProviders: LlmProvider[] = [
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'gemini', name: 'Gemini' },
+  { id: 'perplexity', name: 'Perplexity' },
+  { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'cometapi', name: 'CometAPI' },
+];
+function parseOutputFields(text: string): Record<string, string> {
+  const fields: Record<string, string> = {};
+  for (const line of text.split('\n')) {
+    const [key, value] = line.split(':', 2).map((part) => part.trim());
+    if (key) fields[key] = value || 'string';
+  }
+  return Object.keys(fields).length ? fields : { answer: 'string' };
+}
 type SourceField = {
   name: string;
   label: string;
@@ -176,6 +193,10 @@ export function TableWorkspace({
   const [httpBody, setHttpBody] = useState('');
   const [httpOutputPath, setHttpOutputPath] = useState('');
   const [agentPreview, setAgentPreview] = useState('');
+  const [llmProviders, setLlmProviders] = useState<LlmProvider[]>([]);
+  const [agentProvider, setAgentProvider] = useState('openai');
+  const [agentModel, setAgentModel] = useState('');
+  const [agentOutputFields, setAgentOutputFields] = useState('answer: string\nsummary: string');
   const [menuColumnId, setMenuColumnId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [views, setViews] = useState<SavedView[]>([]);
@@ -271,6 +292,14 @@ export function TableWorkspace({
     void fetch(`${api}/providers/catalog`)
       .then((response) => response.json() as Promise<CatalogAction[]>)
       .then(setCatalog);
+    void fetch(`${api}/integrations/catalog`, { headers })
+      .then((response) => (response.ok ? (response.json() as Promise<LlmProvider[]>) : []))
+      .then((items) =>
+        setLlmProviders(
+          items.filter((item) => Array.isArray(item.models) && item.models.length > 0),
+        ),
+      )
+      .catch(() => undefined);
     const stream = new EventSource(
       `${api}/tables/${tableId}/events?token=${encodeURIComponent(token)}`,
     );
@@ -302,7 +331,12 @@ export function TableWorkspace({
       kind === 'formula'
         ? { expression }
         : kind === 'agent'
-          ? { prompt, outputFields: { answer: 'string', summary: 'string' }, provider: 'openai' }
+          ? {
+              prompt,
+              outputFields: parseOutputFields(agentOutputFields),
+              provider: agentProvider,
+              model: agentModel || undefined,
+            }
           : kind === 'waterfall'
             ? {
                 providers: waterfallSteps.map((item) => ({
@@ -520,6 +554,15 @@ export function TableWorkspace({
     setAction(String(config.action ?? 'mock.findEmail'));
     setExpression(String(config.expression ?? expression));
     setPrompt(String(config.prompt ?? prompt));
+    setAgentProvider(column.kind === 'agent' ? String(config.provider ?? 'openai') : 'openai');
+    setAgentModel(String(config.model ?? ''));
+    setAgentOutputFields(
+      config.outputFields && typeof config.outputFields === 'object'
+        ? Object.entries(config.outputFields as Record<string, string>)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('\n')
+        : 'answer: string\nsummary: string',
+    );
     setAccept(String(config.accept ?? 'any'));
     setWaterfallSteps(
       Array.isArray(config.providers)
@@ -739,6 +782,8 @@ export function TableWorkspace({
       .filter((item) => item.category === 'search' && item.sourceKind === 'people')
       .sort((left, right) => order.indexOf(left.provider) - order.indexOf(right.provider));
   }, [catalog]);
+  const agentProviders = llmProviders.length ? llmProviders : fallbackLlmProviders;
+  const agentModels = agentProviders.find((item) => item.id === agentProvider)?.models ?? [];
   const activeView = views.find((view) => view.id === activeViewId);
   const hiddenColumnIds = activeView?.hiddenColumnIds ?? [];
   const visibleColumns =
@@ -1365,34 +1410,36 @@ export function TableWorkspace({
                   <option>url</option>
                 </select>
               </label>
-              <label>
-                Provider
-                <select
-                  value={provider}
-                  onChange={(event) => {
-                    setProvider(event.target.value);
-                    setAction('');
-                  }}
-                >
-                  <option value="mock">Mock</option>
-                  {[...new Set(catalog.map((item) => item.provider))]
-                    .filter((item) => item !== 'mock')
-                    .map((item) => (
-                      <option key={item}>{item}</option>
-                    ))}
-                </select>
-              </label>
-              {kind !== 'formula' && kind !== 'input' && (
-                <label>
-                  Action
-                  <select value={action} onChange={(event) => setAction(event.target.value)}>
-                    {actions.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} · {item.category}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              {(kind === 'enrichment' || kind === 'waterfall') && (
+                <>
+                  <label>
+                    Provider
+                    <select
+                      value={provider}
+                      onChange={(event) => {
+                        setProvider(event.target.value);
+                        setAction('');
+                      }}
+                    >
+                      <option value="mock">Mock</option>
+                      {[...new Set(catalog.map((item) => item.provider))]
+                        .filter((item) => item !== 'mock')
+                        .map((item) => (
+                          <option key={item}>{item}</option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Action
+                    <select value={action} onChange={(event) => setAction(event.target.value)}>
+                      {actions.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} · {item.category}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
               )}
               {kind === 'waterfall' && (
                 <>
@@ -1474,18 +1521,50 @@ export function TableWorkspace({
               {kind === 'agent' && (
                 <>
                   <label>
+                    Provider
+                    <select
+                      value={agentProvider}
+                      onChange={(event) => {
+                        setAgentProvider(event.target.value);
+                        setAgentModel('');
+                      }}
+                    >
+                      {agentProviders.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                      {!agentProviders.some((item) => item.id === agentProvider) && (
+                        <option value={agentProvider}>{agentProvider}</option>
+                      )}
+                    </select>
+                  </label>
+                  <label>
                     Prompt
                     <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} />
                   </label>
                   <label>
                     Output fields
-                    <textarea defaultValue={'answer: string\nsummary: string'} />
+                    <textarea
+                      value={agentOutputFields}
+                      onChange={(event) => setAgentOutputFields(event.target.value)}
+                    />
                   </label>
                   <label>
                     Model
-                    <select>
-                      <option>gpt-4o-mini</option>
-                      <option>claude-3-5-haiku-latest</option>
+                    <select
+                      value={agentModel}
+                      onChange={(event) => setAgentModel(event.target.value)}
+                    >
+                      <option value="">Provider default</option>
+                      {agentModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                      {agentModel && !agentModels.includes(agentModel) && (
+                        <option value={agentModel}>{agentModel}</option>
+                      )}
                     </select>
                   </label>
                   <button className="button" onClick={() => void previewAgent()}>

@@ -16,7 +16,7 @@ import type { Queue } from 'bullmq';
 import type { FastifyRequest } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
 import { Prisma } from '@gtmai/db';
-import { providers, runAgent } from '@gtmai/providers';
+import { normalizeLlmProviderId, providers, runAgent } from '@gtmai/providers';
 import { builtInTemplates, resolveBindingsDeep } from '@gtmai/shared';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
@@ -729,16 +729,18 @@ export class TablesController {
     });
     if (!column || column.kind !== 'agent') throw new Error('Agent column not found');
     const config = column.config as Record<string, unknown>;
-    const provider = config.provider === 'anthropic' ? 'anthropic' : 'openai';
+    const provider = normalizeLlmProviderId(config.provider);
     const integration =
       (await this.prisma.integration.findFirst({
         where: { workspaceId: request.user.workspaceId, provider },
         orderBy: { createdAt: 'asc' },
       })) ??
-      (await this.prisma.integration.findFirst({
-        where: { workspaceId: request.user.workspaceId, provider: 'llm' },
-        orderBy: { createdAt: 'asc' },
-      }));
+      (provider === 'openai' || provider === 'anthropic'
+        ? await this.prisma.integration.findFirst({
+            where: { workspaceId: request.user.workspaceId, provider: 'llm' },
+            orderBy: { createdAt: 'asc' },
+          })
+        : null);
     if (!integration) {
       const message = `No integration for ${provider} — add one in Integrations`;
       return {
@@ -752,6 +754,12 @@ export class TablesController {
       include: { cells: { include: { column: true } } },
     });
     const credentials = decryptCredentials(integration.encryptedCredentials);
+    const tavily = await this.prisma.integration.findFirst({
+      where: { workspaceId: request.user.workspaceId, provider: 'tavily' },
+      orderBy: { createdAt: 'asc' },
+    });
+    const tavilyKey = tavily ? decryptCredentials(tavily.encryptedCredentials).apiKey : undefined;
+    if (tavilyKey) credentials.tavilyApiKey = tavilyKey;
     const previews = [];
     for (const row of rows) {
       const values = Object.fromEntries(row.cells.map((cell) => [cell.column.name, cell.value]));

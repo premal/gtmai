@@ -15,14 +15,14 @@ Each `cells` job = one (rowId, columnId) pair:
 4. Write `Cell { status, value, error, creditsUsed, durationMs }`, debit
    `CreditLedger`, publish `{ rowId, columnId, status, … }` to `table:<id>`.
 
-| `column.kind`      | Executor                                                                                                                    | Credit cost                |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `input`, `formula` | inline / `evaluateWorkerFormula` (shared evaluator, no `eval`)                                                              | 0                          |
-| `enrichment`       | `executeEnrichment` — single provider action                                                                                | 1 (or `config.creditCost`) |
-| `waterfall`        | `executeWaterfall` — try providers in `config.providers[]` order, stop at first `accepted()` result; charge only the winner | winner's cost              |
-| `http`             | `executeHttp` — templated request via `rest` provider                                                                       | 1                          |
-| `agent`            | `executeAgent` — LLM w/ tool loop via `llm` provider                                                                        | 5                          |
-| `function`         | runs a `Function` version's JS                                                                                              | 1                          |
+| `column.kind`      | Executor                                                                                                                                                                                            | Credit cost                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `input`, `formula` | inline / `evaluateWorkerFormula` (shared evaluator, no `eval`)                                                                                                                                      | 0                          |
+| `enrichment`       | `executeEnrichment` — single provider action                                                                                                                                                        | 1 (or `config.creditCost`) |
+| `waterfall`        | `executeWaterfall` — try providers in `config.providers[]` order, stop at first `accepted()` result; charge only the winner                                                                         | winner's cost              |
+| `http`             | `executeHttp` — templated request via `rest` provider                                                                                                                                               | 1                          |
+| `agent`            | `executeAgent` — LLM w/ tool loop; `config.provider` picks the integration (`openai`/`anthropic`/`gemini`/`perplexity`/`openrouter`/`cometapi`); a `tavily` integration enables the web_search tool | 5                          |
+| `function`         | runs a `Function` version's JS                                                                                                                                                                      | 1                          |
 
 Credentials: `decryptCredentials` (AES-256-GCM, `ENCRYPTION_KEY`) — the api
 stores them encrypted; only the worker sees plaintext.

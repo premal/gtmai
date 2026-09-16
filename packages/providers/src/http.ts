@@ -10,6 +10,7 @@ const output = z.unknown();
 export const httpProvider: Provider = {
   id: 'http',
   name: 'HTTP',
+  group: 'utility',
   auth: { type: 'apiKey', fields: [] },
   actions: [
     {
