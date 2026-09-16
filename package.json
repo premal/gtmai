@@ -2,6 +2,9 @@
   "name": "gtmai",
   "private": true,
   "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
@@ -10,7 +13,7 @@
     "test": "turbo test"
   },
   "devDependencies": {
-    "@types/node": "22.10.2",
+    "@types/node": "24.13.5",
     "@typescript-eslint/parser": "8.18.0",
     "eslint": "9.16.0",
     "prettier": "3.4.2",
