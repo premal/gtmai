@@ -7,6 +7,7 @@ const db = new PrismaClient();
 const connection = {
   url: process.env.REDIS_URL ?? 'redis://localhost:6379',
   maxRetriesPerRequest: null,
+  family: 0,
 };
 export type CrmRunJob = { jobId: string; workspaceId: string };
 type Config = {

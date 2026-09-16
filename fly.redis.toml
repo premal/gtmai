@@ -1,8 +1,11 @@
 app = "gtmai-redis"
 primary_region = "iad"
 
+[build]
+  image = "library/redis:7-alpine"
+
 [processes]
-app = "sh -c 'redis-server --appendonly yes --dir /data --maxmemory 200mb --requirepass ${REDIS_PASSWORD}'"
+app = "sh -c 'redis-server --bind 0.0.0.0 -::* --appendonly yes --dir /data --maxmemory 200mb --requirepass ${REDIS_PASSWORD}'"
 
 [[mounts]]
 source = "redis_data"
