@@ -43,11 +43,14 @@ eslint_bin.eslint_test(
 # source tree (next build writes .next and fetches SWC deps).
 _LOCAL = ["local", "no-sandbox", "requires-network"]
 
+# typecheck resolves @gtmai/shared via tsconfig.check.json paths (sources,
+# no dist needed). build uses the ... filter suffix to compile shared's dist
+# first, matching apps/web/Dockerfile.
 sh_test(
     name = "typecheck",
     srcs = ["//tools/bazel:pnpm.sh"],
     args = ["--filter", "@gtmai/web", "typecheck"],
-    data = [":config", ":srcs", "//:workspace_config"],
+    data = [":config", ":srcs", "//:workspace_config", "//packages/shared:srcs"],
     tags = _LOCAL,
     size = "medium",
 )
@@ -55,8 +58,8 @@ sh_test(
 sh_test(
     name = "build",
     srcs = ["//tools/bazel:pnpm.sh"],
-    args = ["--filter", "@gtmai/web", "build"],
-    data = [":config", ":srcs", "//:workspace_config"],
+    args = ["--filter", "@gtmai/web...", "build"],
+    data = [":config", ":srcs", "//:workspace_config", "//packages/shared:srcs"],
     tags = _LOCAL,
     size = "large",
     timeout = "long",

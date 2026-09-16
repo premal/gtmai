@@ -1,6 +1,11 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "incremental": false },
+  "compilerOptions": {
+    "incremental": false,
+    // Resolve the workspace dep to its sources so typecheck doesn't need
+    // packages/shared/dist to be built first (moduleResolution: Bundler).
+    "paths": { "@gtmai/shared": ["../../packages/shared/src/index.ts"] }
+  },
   "include": ["next-env.d.ts", "app/**/*.ts", "app/**/*.tsx"],
   "exclude": ["node_modules", ".next"]
 }
