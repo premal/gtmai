@@ -74,6 +74,7 @@ const action = (
 export const mockProvider: Provider = {
   id: 'mock',
   name: 'Mock',
+  group: 'utility',
   auth: {
     type: 'apiKey',
     fields: [{ key: 'apiKey', label: 'API key', secret: true, optional: true }],

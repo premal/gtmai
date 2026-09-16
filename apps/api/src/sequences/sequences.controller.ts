@@ -11,7 +11,12 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Prisma } from '@gtmai/db';
-import { completeChat, type AgentMessage } from '@gtmai/providers';
+import {
+  completeChat,
+  llmProviderIds,
+  normalizeLlmProviderId,
+  type AgentMessage,
+} from '@gtmai/providers';
 import { generatedSequence } from '@gtmai/shared';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
@@ -133,12 +138,12 @@ export class SequencesController {
     const integration = await this.prisma.integration.findFirst({
       where: {
         workspaceId: request.user.workspaceId,
-        provider: { in: ['openai', 'anthropic', 'llm'] },
+        provider: { in: [...llmProviderIds, 'llm'] },
       },
       orderBy: { createdAt: 'asc' },
     });
     if (!integration) {
-      throw new Error('No LLM integration — add an OpenAI or Anthropic key in Integrations');
+      throw new Error('No LLM integration — add an AI provider key in Integrations');
     }
     const messages: AgentMessage[] = [
       {
@@ -164,7 +169,7 @@ export class SequencesController {
             logger: { info: () => undefined, error: () => undefined },
           },
           messages,
-          integration.provider === 'anthropic' ? 'anthropic' : 'openai',
+          normalizeLlmProviderId(integration.provider),
         );
         generated = generatedSequence.parse(JSON.parse(raw));
       } catch (error) {

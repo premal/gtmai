@@ -129,6 +129,7 @@ function normalizeSearchCompanies(body: unknown): {
 export const theirstackProvider: Provider = {
   id: 'theirstack',
   name: 'TheirStack',
+  group: 'enrichment',
   auth: { type: 'apiKey', fields: [{ key: 'apiKey', label: 'API key', secret: true }] },
   actions: [
     {

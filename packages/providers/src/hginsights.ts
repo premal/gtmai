@@ -126,6 +126,7 @@ function headers(credentials: Record<string, string>): Record<string, string> {
 export const hginsightsProvider: Provider = {
   id: 'hginsights',
   name: 'HG Insights',
+  group: 'enrichment',
   auth: { type: 'apiKey', fields: [{ key: 'apiKey', label: 'API key', secret: true }] },
   actions: [
     {

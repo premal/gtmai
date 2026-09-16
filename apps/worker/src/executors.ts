@@ -1,7 +1,13 @@
 import { createDecipheriv } from 'node:crypto';
 import Redis from 'ioredis';
 import { PrismaClient } from '@gtmai/db';
-import { providers, runAgent, type ActionResult, type ProviderAction } from '@gtmai/providers';
+import {
+  normalizeLlmProviderId,
+  providers,
+  runAgent,
+  type ActionResult,
+  type ProviderAction,
+} from '@gtmai/providers';
 import { evaluateFormula, resolveBindings, resolveBindingsDeep } from '@gtmai/shared';
 
 export type Values = Record<string, unknown>;
@@ -213,23 +219,34 @@ export async function executeAgent(
   values: Values,
   workspaceId: string,
 ): Promise<ExecutionResult> {
-  const agentProvider = config.provider === 'anthropic' ? 'anthropic' : 'openai';
+  const agentProvider = normalizeLlmProviderId(config.provider);
   const integration =
     (await db.integration.findFirst({
       where: { workspaceId, provider: agentProvider },
       orderBy: { createdAt: 'asc' },
     })) ??
-    (await db.integration.findFirst({
-      where: { workspaceId, provider: 'llm' },
-      orderBy: { createdAt: 'asc' },
-    }));
+    // Legacy 'llm' integrations can only hold OpenAI or Anthropic keys.
+    (agentProvider === 'openai' || agentProvider === 'anthropic'
+      ? await db.integration.findFirst({
+          where: { workspaceId, provider: 'llm' },
+          orderBy: { createdAt: 'asc' },
+        })
+      : null);
   if (!integration) {
     throw new Error(`No integration for ${agentProvider} — add one in Integrations`);
   }
+  const credentials = decryptCredentials(integration.encryptedCredentials);
+  // A standalone 'tavily' integration supplies the agent web_search backend.
+  const tavily = await db.integration.findFirst({
+    where: { workspaceId, provider: 'tavily' },
+    orderBy: { createdAt: 'asc' },
+  });
+  const tavilyKey = tavily ? decryptCredentials(tavily.encryptedCredentials).apiKey : undefined;
+  if (tavilyKey) credentials.tavilyApiKey = tavilyKey;
   const agent = await runAgent(
     resolveBindings(String(config.prompt ?? ''), values),
     {
-      credentials: decryptCredentials(integration.encryptedCredentials),
+      credentials,
       fetch,
       logger: { info: () => undefined, error: () => undefined },
     },
