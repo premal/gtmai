@@ -26,6 +26,7 @@ export type ExecutionResult = {
 const db = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
+  family: 0,
 });
 
 function encryptionKey(): Buffer {
