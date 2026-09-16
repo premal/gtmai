@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
-import { ConnectionsModule } from './connections/connections.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 import { CreditsModule } from './credits/credits.module';
 import { EventsModule } from './events/events.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -69,7 +69,7 @@ function required(name: string): string {
     PrismaModule,
     AuthModule,
     WorkspacesModule,
-    ConnectionsModule,
+    IntegrationsModule,
     TablesModule,
     ProvidersModule,
     CreditsModule,

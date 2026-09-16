@@ -48,6 +48,7 @@ export const peopleOutput = z.object({
   ),
   total: z.number().optional(),
 });
+export type CheckResult = { ok: boolean; message?: string };
 export type Provider = {
   id: string;
   name: string;
@@ -56,4 +57,5 @@ export type Provider = {
     fields: { key: string; label: string; secret: true; optional?: boolean }[];
   };
   actions: ProviderAction<unknown, unknown>[];
+  check?: (ctx: RunContext) => Promise<CheckResult>;
 };

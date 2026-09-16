@@ -44,14 +44,14 @@ const adapters: Record<string, AdPlatformAdapter> = {
     id: 'google',
     hashRecords: hashAdRecords,
     upload: async () => {
-      throw new Error('google sync not yet supported — connection accepted, upload pending');
+      throw new Error('google sync not yet supported — integration accepted, upload pending');
     },
   },
   linkedin: {
     id: 'linkedin',
     hashRecords: hashAdRecords,
     upload: async () => {
-      throw new Error('linkedin sync not yet supported — connection accepted, upload pending');
+      throw new Error('linkedin sync not yet supported — integration accepted, upload pending');
     },
   },
 };
@@ -152,11 +152,12 @@ export async function executeAdSync(job: Job<AdSyncJob>) {
   let credentials: Record<string, string> | undefined;
   try {
     if (job.data.platform !== 'mock') {
-      const connectionRow = await db.connection.findFirst({
+      const integration = await db.integration.findFirst({
         where: { workspaceId: job.data.workspaceId, provider: job.data.platform },
+        orderBy: { createdAt: 'asc' },
       });
-      if (!connectionRow) throw new Error(`No connection for ${job.data.platform}`);
-      credentials = decryptCredentials(connectionRow.encryptedCredentials);
+      if (!integration) throw new Error(`No integration for ${job.data.platform}`);
+      credentials = decryptCredentials(integration.encryptedCredentials);
     }
     const externalId = await adapter.upload(
       records,

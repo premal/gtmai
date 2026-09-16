@@ -43,14 +43,14 @@ Concurrency is per worker (`CELL_CONCURRENCY`, default 20); per-provider rate li
 ## Domain model (Prisma)
 
 - **Workspace, User, Membership(role: owner|admin|member|viewer), ApiKey**
-- **Connection** (provider, name, encrypted credentials, createdBy) — Connections page traces usage.
+- **Integration** (provider, name, encrypted credentials, createdBy) — Integrations page traces usage.
 - **Table, Column** (name, type: text|number|boolean|date|url|email|json; kind: input|enrichment|waterfall|agent|formula|http|function; config JSONB; runCondition; colorLabel; position), **Row** (position), **Cell** (rowId, columnId, value JSONB, status, error, provider, creditsUsed, provenance JSONB).
 - **Audience layer**: Company, Contact (600 string / 200 num/date/bool custom fields as JSONB with a per-workspace FieldDefinition table), DataSource (csv|crm|warehouse|table), Segment (saved filter tree), SegmentMembership.
 - **Signals**: SignalDefinition (type: job_change|new_hire|funding|website_visit|custom; config), SignalEvent (contactId/companyId, payload, occurredAt).
 - **Workflows**: Workflow (graph JSONB: nodes[trigger|enrich|agent|condition|score|route|action|delay], edges), WorkflowRun, StepRun (credits, input/output, status).
 - **Functions**: Function, FunctionVersion (program JSONB = ordered column definitions), FunctionRun; tags; test cases.
 - **Sequencer**: Inbox, Sequence, ordered SequenceStep, Campaign, Enrollment, Message, Reply. The `outbound` worker renders `{{contact.*}}` and `{{company.*}}` bindings, sends mock/SMTP messages, and schedules delayed steps.
-- **Ads**: AdAudience, AdPlatformSync. Mock, Meta, Google, and LinkedIn adapters hash PII with SHA-256 and require a matching encrypted Connection for non-mock providers.
+- **Ads**: AdAudience, AdPlatformSync. Mock, Meta, Google, and LinkedIn adapters hash PII with SHA-256 and require a matching encrypted Integration for non-mock providers.
 - **CRM**: CrmSyncJob and CrmSyncRecord support segment/table sources, mock inspection, HubSpot batch upsert, and webhook destinations.
 - **Credits**: CreditLedger, scoped CreditBudget records, UsageSnapshot, Alert, and AlertChannel. Usage rollups and spike webhooks run on the `usage` queue.
 - **Template** (kind: table|workflow, definition JSONB).
@@ -98,6 +98,6 @@ Waterfalls are just `ProviderAction[]` of the same category plus an `accept(data
 
 ## Phases
 
-1. Foundation: monorepo, DB schema, auth/workspaces, Tables + cell engine, providers (mock + Hunter/Prospeo/Datagma/Apollo/PDL + LLM agent), waterfall/formula/http columns, CSV import/export, Connections, credit ledger, SSE live grid.
+1. Foundation: monorepo, DB schema, auth/workspaces, Tables + cell engine, providers (mock + Hunter/Prospeo/Datagma/Apollo/PDL + LLM agent), waterfall/formula/http columns, CSV import/export, Integrations, credit ledger, SSE live grid.
 2. Audiences (CSV/HubSpot/Salesforce/CSV-warehouse import, segments), Signals, Workflows canvas + runner, Functions (versions, tests, observability), templates.
 3. Sequencer (inboxes, warmup stub, campaigns, AI copy, replies), Ads audiences sync, CRM write-back, public API keys + CLI + MCP, usage dashboard/budgets/spike alerts.

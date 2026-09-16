@@ -61,16 +61,21 @@ export async function executeCampaignStep(job: Job<CampaignStepJob>): Promise<vo
     const config = (inbox?.config ?? {}) as Record<string, unknown>;
     const provider = String(config.provider ?? 'mock');
     if (provider === 'smtp') {
-      const connectionId =
-        typeof config.connectionId === 'string' ? config.connectionId : undefined;
-      const smtp = await db.connection.findFirst({
+      const integrationId =
+        typeof config.integrationId === 'string'
+          ? config.integrationId
+          : typeof config.connectionId === 'string'
+            ? config.connectionId
+            : undefined;
+      const smtp = await db.integration.findFirst({
         where: {
           workspaceId: job.data.workspaceId,
           provider: 'smtp',
-          ...(connectionId ? { id: connectionId } : {}),
+          ...(integrationId ? { id: integrationId } : {}),
         },
+        orderBy: { createdAt: 'asc' },
       });
-      if (!smtp) throw new Error('No connection for smtp');
+      if (!smtp) throw new Error('No integration for smtp');
       const credentials = decryptCredentials(smtp.encryptedCredentials);
       const transport = nodemailer.createTransport({
         host: credentials.host,

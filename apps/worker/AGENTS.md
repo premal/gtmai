@@ -42,7 +42,7 @@ stores them encrypted; only the worker sees plaintext.
 ## Conventions
 
 - Every Redis connection sets `family: 0` (fly `.internal` is IPv6-only).
-- Agent cells fail fast with `No connection for <provider>` when the
+- Agent cells fail fast with `No integration for <provider>` when the
   workspace hasn't added credentials — expected, not a bug.
 - `CELL_CONCURRENCY` / `PROVIDER_RATE_LIMIT` tune throughput.
 

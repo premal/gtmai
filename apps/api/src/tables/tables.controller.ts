@@ -272,13 +272,14 @@ export class TablesController {
     if (!provider || !action || action.category !== 'search') {
       throw new Error(`Unknown search action: ${input.provider}/${input.action}`);
     }
-    const connection = await this.prisma.connection.findFirst({
+    const integration = await this.prisma.integration.findFirst({
       where: { workspaceId: request.user.workspaceId, provider: input.provider },
+      orderBy: { createdAt: 'asc' },
     });
-    if (!connection)
-      throw new Error(`No connection for ${input.provider} — add one in Connections`);
+    if (!integration)
+      throw new Error(`No integration for ${input.provider} — add one in Integrations`);
     const result = await action.run(input.input, {
-      credentials: decryptCredentials(connection.encryptedCredentials),
+      credentials: decryptCredentials(integration.encryptedCredentials),
       fetch,
       logger: { info: () => undefined, error: () => undefined },
     });
@@ -336,11 +337,12 @@ export class TablesController {
     if (!provider || !action || action.category !== 'search' || action.sourceKind !== 'people') {
       throw new Error(`Unknown people search action: ${input.provider}/${input.action}`);
     }
-    const connection = await this.prisma.connection.findFirst({
+    const integration = await this.prisma.integration.findFirst({
       where: { workspaceId: request.user.workspaceId, provider: input.provider },
+      orderBy: { createdAt: 'asc' },
     });
-    if (!connection) {
-      throw new Error(`No connection for ${input.provider} — add one in Connections`);
+    if (!integration) {
+      throw new Error(`No integration for ${input.provider} — add one in Integrations`);
     }
     const targetTemplate = builtInTemplates.find((item) => item.id === 'builtin-people-outreach');
     if (!input.target.tableId && !targetTemplate) throw new Error('People template not found');
@@ -394,7 +396,7 @@ export class TablesController {
     const rows = input.rowIds
       ? selectedRows.filter((row) => input.rowIds?.includes(row.id))
       : selectedRows;
-    const credentials = decryptCredentials(connection.encryptedCredentials);
+    const credentials = decryptCredentials(integration.encryptedCredentials);
     let imported = 0;
     const errors: { rowId: string; message: string }[] = [];
     let position = await this.prisma.row.count({ where: { tableId: target.id } });
@@ -728,16 +730,19 @@ export class TablesController {
     if (!column || column.kind !== 'agent') throw new Error('Agent column not found');
     const config = column.config as Record<string, unknown>;
     const provider = config.provider === 'anthropic' ? 'anthropic' : 'openai';
-    const connection = await this.prisma.connection.findFirst({
-      where: { workspaceId: request.user.workspaceId, provider: { in: [provider, 'llm'] } },
-    });
-    if (!connection) {
+    const integration =
+      (await this.prisma.integration.findFirst({
+        where: { workspaceId: request.user.workspaceId, provider },
+        orderBy: { createdAt: 'asc' },
+      })) ??
+      (await this.prisma.integration.findFirst({
+        where: { workspaceId: request.user.workspaceId, provider: 'llm' },
+        orderBy: { createdAt: 'asc' },
+      }));
+    if (!integration) {
+      const message = `No integration for ${provider} — add one in Integrations`;
       return {
-        previews: [
-          { error: `No connection for ${provider} — add one in Connections` },
-          { error: `No connection for ${provider} — add one in Connections` },
-          { error: `No connection for ${provider} — add one in Connections` },
-        ],
+        previews: [{ error: message }, { error: message }, { error: message }],
       };
     }
     const rows = await this.prisma.row.findMany({
@@ -746,7 +751,7 @@ export class TablesController {
       take: 3,
       include: { cells: { include: { column: true } } },
     });
-    const credentials = decryptCredentials(connection.encryptedCredentials);
+    const credentials = decryptCredentials(integration.encryptedCredentials);
     const previews = [];
     for (const row of rows) {
       const values = Object.fromEntries(row.cells.map((cell) => [cell.column.name, cell.value]));

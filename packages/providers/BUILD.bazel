@@ -65,6 +65,20 @@ vitest_bin.vitest_test(
 )
 
 vitest_bin.vitest_test(
+    name = "unit_hginsights",
+    args = ["run", "src/hginsights.test.ts"],
+    chdir = "packages/providers",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:workspace_config_js",
+        "src/hginsights.test.ts",
+    ],
+    size = "small",
+)
+
+vitest_bin.vitest_test(
     name = "unit_theirstack",
     args = ["run", "src/theirstack.test.ts"],
     chdir = "packages/providers",

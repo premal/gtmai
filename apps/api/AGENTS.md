@@ -17,7 +17,7 @@ them all + `PrismaModule` + `EventsModule`. Swagger UI at `/docs`.
 | `tables` (views.controller) | `/tables/:tableId/views`               | saved grid views (filter/sort/col-order)                          |
 | `tags`                      | `/tags`                                | workspace tags + assignments on tables                            |
 | `search`                    | `/search`                              | cross-workbook table/row search                                   |
-| `connections`               | `/connections`                         | provider credential CRUD (encrypted)                              |
+| `integrations`              | `/integrations` (`/connections` alias) | provider credential CRUD (encrypted)                              |
 | `providers`                 | `/providers`                           | list available providers/actions                                  |
 | `formula`                   | `/formula`                             | dry-run formula evaluation endpoint                               |
 | `audiences`                 | `/audiences`                           | Company/Contact upsert+dedupe, Segments                           |

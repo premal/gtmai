@@ -367,6 +367,37 @@ a {
     color: var(--color-accent-ink);
     flex-shrink: 0;
   }
+  .integration-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .integration-info .action-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 7px;
+  }
+  .integration-info .integration-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 7px;
+    font-size: 12px;
+  }
+  .integration-status .status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+  .integration-status.ok {
+    color: var(--color-accent-ink);
+  }
+  .integration-status.fail {
+    color: var(--color-danger);
+  }
   .arrow {
     margin-left: auto;
     color: var(--color-faint);

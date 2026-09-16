@@ -65,13 +65,14 @@ export async function runProviderAction(
   const provider = providers.find((item) => item.id === providerId);
   const action = provider?.actions.find((item) => item.id === actionId);
   if (!provider || !action) throw new Error(`Provider action not found: ${providerId}/${actionId}`);
-  const connection = await db.connection.findFirst({
+  const integration = await db.integration.findFirst({
     where: { workspaceId, provider: providerId },
+    orderBy: { createdAt: 'asc' },
   });
-  if (!connection) throw new Error(`No connection for ${providerId}`);
+  if (!integration) throw new Error(`No integration for ${providerId}`);
   await limitProvider(providerId);
   const result = await action.run(input, {
-    credentials: decryptCredentials(connection.encryptedCredentials),
+    credentials: decryptCredentials(integration.encryptedCredentials),
     fetch,
     logger: { info: () => undefined, error: () => undefined },
   });
@@ -172,16 +173,22 @@ export async function executeAgent(
   workspaceId: string,
 ): Promise<ExecutionResult> {
   const agentProvider = config.provider === 'anthropic' ? 'anthropic' : 'openai';
-  const connection = await db.connection.findFirst({
-    where: { workspaceId, provider: { in: [agentProvider, 'llm'] } },
-  });
-  if (!connection) {
-    throw new Error(`No connection for ${agentProvider} — add one in Connections`);
+  const integration =
+    (await db.integration.findFirst({
+      where: { workspaceId, provider: agentProvider },
+      orderBy: { createdAt: 'asc' },
+    })) ??
+    (await db.integration.findFirst({
+      where: { workspaceId, provider: 'llm' },
+      orderBy: { createdAt: 'asc' },
+    }));
+  if (!integration) {
+    throw new Error(`No integration for ${agentProvider} — add one in Integrations`);
   }
   const agent = await runAgent(
     resolveBindings(String(config.prompt ?? ''), values),
     {
-      credentials: decryptCredentials(connection.encryptedCredentials),
+      credentials: decryptCredentials(integration.encryptedCredentials),
       fetch,
       logger: { info: () => undefined, error: () => undefined },
     },

@@ -63,32 +63,37 @@ function setupSwagger(app: NestFastifyApplication): void {
   openApi.paths['/auth/me'] = {
     get: { summary: 'Get the current user', responses: { '200': { description: 'User profile' } } },
   };
-  openApi.paths['/connections'] = {
+  openApi.paths['/integrations'] = {
     get: {
-      summary: 'List workspace connections',
-      responses: { '200': { description: 'Connections' } },
+      summary: 'List workspace integrations',
+      responses: { '200': { description: 'Integrations' } },
     },
     post: {
-      summary: 'Create a provider connection',
-      responses: { '201': { description: 'Connection' } },
+      summary: 'Create a provider integration',
+      responses: { '201': { description: 'Integration' } },
     },
   };
-  openApi.paths['/connections/catalog'] = {
+  openApi.paths['/integrations/catalog'] = {
     get: {
-      summary: 'List connection fields and providers',
+      summary: 'List integration fields and providers',
       responses: { '200': { description: 'Catalog' } },
     },
   };
-  openApi.paths['/connections/{id}/test'] = {
+  openApi.paths['/integrations/{id}/test'] = {
     post: {
-      summary: 'Test a provider connection',
+      summary: 'Test a provider integration',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
-      responses: { '201': { description: 'Connection test result' } },
+      responses: { '201': { description: 'Integration test result' } },
     },
   };
-  openApi.paths['/connections/{id}'] = {
+  openApi.paths['/integrations/{id}'] = {
+    patch: {
+      summary: 'Rename or rotate a provider integration',
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { '200': { description: 'Integration' } },
+    },
     delete: {
-      summary: 'Delete a provider connection',
+      summary: 'Delete a provider integration',
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       responses: { '200': { description: 'Deleted' } },
     },
