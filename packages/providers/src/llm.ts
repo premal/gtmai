@@ -47,11 +47,14 @@ const chatInput = z.object({
   model: z.string().optional(),
   schema: z.record(z.unknown()).optional(),
 });
+const scalarText = z
+  .unknown()
+  .transform((value) => (value == null || typeof value === 'object' ? '' : String(value)));
 const output = z.object({
-  answer: z.string().default(''),
-  fields: z.record(z.unknown()).default({}),
+  answer: scalarText,
+  fields: z.record(z.unknown()).catch({}),
   sources: z.array(z.string()).default([]),
-  reasoning: z.string().default(''),
+  reasoning: scalarText,
 });
 export type AgentResult = z.infer<typeof output>;
 export type AgentMessage = { role: 'system' | 'user' | 'tool'; content: string };

@@ -801,7 +801,7 @@ Rules:
 - kind "waterfall": config = {"providers": [{"provider","action","input"}], "accept": "found"|"verified-email-only", "validate": {"provider","action","input":{"email":"{{result.email}}"}}?}. Use several providers for coverage; add "validate" with a verify-category action when results must be verified.
 - kind "formula": config = {"expression": string}. Functions: if, lower, upper, trim, concat, contains, len, coalesce, get.
 - kind "http": config = {"method","url","headers","body","outputPath"}.
-- runCondition: optional formula expression evaluated per row; the column only runs when truthy.
+- runCondition: optional formula expression evaluated per row; the column only runs when truthy. Same operators/functions as below; for "field is not empty" use len(trim({{Field}})) > 0 — there is no isblank().
 - type: "email" for emails, "boolean" for yes/no classifiers, "json" for structured output.
 
 Available provider actions:
@@ -836,6 +836,7 @@ ${catalog}`;
 - Reference columns as {{Name}} or bare names — exact names only.
 - Operators: == != > < >= <= && || ! — Functions: if, lower, upper, trim, concat, contains, len, coalesce, get.
 - The cell runs when the expression is truthy.
+- Emptiness checks: "field is empty" → len(trim({{Field}})) == 0; "field exists/has a value" → len(trim({{Field}})) > 0. There is no isblank().
 - Examples: "only when B2B is checked" → {{B2B}}; "people in New York" → contains(lower({{Location}}), "new york"); "score above 4" → {{Score}} > 4.`;
     return this.chatJson(
       request.user.workspaceId,
