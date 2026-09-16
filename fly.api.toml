@@ -1,0 +1,30 @@
+app = "gtmai-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "apps/api/Dockerfile"
+
+[deploy]
+  release_command = "pnpm --filter @gtmai/db exec prisma migrate deploy"
+
+[env]
+  PORT = "4000"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/docs"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[vm]
+  size = "shared-cpu-1x"
+  memory = "512mb"

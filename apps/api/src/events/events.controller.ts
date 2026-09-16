@@ -47,7 +47,9 @@ export class EventsController {
       Vary: 'Origin',
     });
     response.raw.write(': ok\n\n');
-    const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379');
+    const subscriber = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+      family: 0,
+    });
     await subscriber.subscribe(`table:${tableId}`);
     subscriber.on('message', (_channel, message) => response.raw.write(`data: ${message}\n\n`));
     request.raw.socket?.on('close', () => void subscriber.quit());
