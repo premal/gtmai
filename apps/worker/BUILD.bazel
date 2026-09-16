@@ -1,0 +1,65 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "config",
+    srcs = [
+        "package.json",
+        "tsconfig.json",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        ["src/**"],
+        exclude = ["src/**/*.test.ts"],
+    ),
+)
+
+# The worker imports @gtmai/db (PrismaClient), @gtmai/providers and
+# @gtmai/shared — every test/typecheck/build target needs those sources plus
+# the generated Prisma client (dbgen wrapper), so they run locally.
+_DEPS = [
+    ":config",
+    ":srcs",
+    "//:workspace_config",
+    "//packages/db:config",
+    "//packages/db:prisma",
+    "//packages/db:srcs",
+    "//packages/providers:srcs",
+    "//packages/shared:srcs",
+]
+
+_LOCAL = ["local", "no-sandbox", "requires-network"]
+
+# main.test.ts imports ./main, which constructs a PrismaClient — needs the
+# generated client but no live services (ioredis retries in the background
+# and nothing awaits it; NODE_ENV=test keeps startWorker() from running).
+sh_test(
+    name = "unit_main",
+    srcs = ["//tools/bazel:dbgen.sh"],
+    args = ["--filter", "@gtmai/worker", "test"],
+    data = _DEPS + ["src/main.test.ts"],
+    tags = _LOCAL,
+    size = "medium",
+)
+
+sh_test(
+    name = "typecheck",
+    srcs = ["//tools/bazel:dbgen.sh"],
+    args = ["--filter", "@gtmai/worker", "typecheck"],
+    data = _DEPS,
+    tags = _LOCAL,
+    size = "medium",
+)
+
+sh_test(
+    name = "build",
+    srcs = ["//tools/bazel:dbgen.sh"],
+    args = ["--filter", "@gtmai/worker", "build"],
+    data = _DEPS,
+    tags = _LOCAL,
+    size = "medium",
+)

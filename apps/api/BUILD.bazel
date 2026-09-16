@@ -1,0 +1,68 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "config",
+    srcs = [
+        "package.json",
+        "tsconfig.json",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        ["src/**"],
+        exclude = ["src/**/*.test.ts"],
+    ),
+)
+
+# Everything the Nest app touches transitively: its own sources plus the
+# workspace packages it imports and the Prisma schema it migrates/queries.
+_DEPS = [
+    ":config",
+    ":srcs",
+    "//:workspace_config",
+    "//packages/db:config",
+    "//packages/db:prisma",
+    "//packages/db:srcs",
+    "//packages/providers:srcs",
+    "//packages/shared:srcs",
+]
+
+# typecheck/build need the generated Prisma client (node_modules/.prisma),
+# which Bazel can't inject into a sandbox — run via the dbgen wrapper in the
+# real source tree.
+_LOCAL = ["local", "no-sandbox", "requires-network"]
+
+sh_test(
+    name = "typecheck",
+    srcs = ["//tools/bazel:dbgen.sh"],
+    args = ["--filter", "@gtmai/api", "typecheck"],
+    data = _DEPS,
+    tags = _LOCAL,
+    size = "medium",
+)
+
+sh_test(
+    name = "build",
+    srcs = ["//tools/bazel:dbgen.sh"],
+    args = ["--filter", "@gtmai/api", "build"],
+    data = _DEPS,
+    tags = _LOCAL,
+    size = "large",
+)
+
+# Integration test: main.test.ts exercises register → table → columns → CSV
+# import against real Postgres + Redis. itest.sh starts ephemeral containers
+# per target and applies migrations before running vitest.
+sh_test(
+    name = "itest",
+    srcs = ["//tools/bazel:itest.sh"],
+    args = ["@gtmai/api"],
+    data = _DEPS + ["src/main.test.ts"],
+    tags = _LOCAL + ["itest"],
+    size = "large",
+    timeout = "long",
+)

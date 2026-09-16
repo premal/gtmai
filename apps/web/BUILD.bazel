@@ -1,0 +1,44 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "config",
+    srcs = [
+        "next-env.d.ts",
+        "next.config.ts",
+        "package.json",
+        "tailwind.config.ts",
+        "tsconfig.check.json",
+        "tsconfig.json",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["app/**"]),
+)
+
+# web has no unit tests or lint script today — just typecheck and a real
+# `next build`, both in the source tree (next build writes .next and fetches
+# SWC deps).
+_LOCAL = ["local", "no-sandbox", "requires-network"]
+
+sh_test(
+    name = "typecheck",
+    srcs = ["//tools/bazel:pnpm.sh"],
+    args = ["--filter", "@gtmai/web", "typecheck"],
+    data = [":config", ":srcs", "//:workspace_config"],
+    tags = _LOCAL,
+    size = "medium",
+)
+
+sh_test(
+    name = "build",
+    srcs = ["//tools/bazel:pnpm.sh"],
+    args = ["--filter", "@gtmai/web", "build"],
+    data = [":config", ":srcs", "//:workspace_config"],
+    tags = _LOCAL,
+    size = "large",
+    timeout = "long",
+)
