@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createApp } from './main';
 import { AuthService } from './auth/auth.service';
 import { PrismaService } from './prisma/prisma.service';
@@ -263,6 +263,215 @@ integration('api smoke', () => {
     });
     expect(run.statusCode).toBe(201);
     expect(run.json()).toMatchObject({ workflowId: workflowBody.id, status: 'queued' });
+    await app.close();
+  });
+
+  it('serves grouped provider catalog, verifies keys via check(), and previews an agent', async () => {
+    process.env.NODE_ENV = 'test';
+    const app = await createApp();
+    await app.init();
+    const instance = app.getHttpAdapter().getInstance();
+    const auth = await createWorkspaceWithAdmin(
+      app.get(PrismaService),
+      app.get(AuthService),
+      `integrations-${Date.now()}@gtmai.dev`,
+      'Integrations User',
+    );
+    const headers = { authorization: `Bearer ${auth.token}` };
+
+    const catalog = await instance.inject({
+      method: 'GET',
+      url: '/integrations/catalog',
+      headers,
+    });
+    expect(catalog.statusCode).toBe(200);
+    const catalogProviders = catalog.json() as {
+      id: string;
+      group: string;
+      models?: string[];
+      auth: { fields: { key: string }[] };
+    }[];
+    const byId = new Map(catalogProviders.map((item) => [item.id, item]));
+    expect(byId.has('llm')).toBe(false);
+    for (const id of ['openai', 'anthropic', 'gemini', 'perplexity', 'openrouter', 'cometapi']) {
+      const entry = byId.get(id);
+      expect(entry?.group).toBe('ai');
+      expect(entry?.models?.length).toBeGreaterThan(0);
+      expect(entry?.auth.fields.map((field) => field.key)).toEqual(['apiKey']);
+    }
+    for (const id of ['tavily', 'exa', 'parallel']) {
+      expect(byId.get(id)?.group).toBe('search');
+    }
+    expect(byId.get('hunter')?.group).toBe('enrichment');
+
+    const missing = await instance.inject({
+      method: 'POST',
+      url: '/integrations',
+      headers,
+      payload: { provider: 'openrouter', name: 'Router', credentials: {} },
+    });
+    expect(missing.statusCode).toBe(400);
+    const created = await instance.inject({
+      method: 'POST',
+      url: '/integrations',
+      headers,
+      payload: {
+        provider: 'openrouter',
+        name: 'Router',
+        credentials: { apiKey: 'sk-or-test' },
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const integrationBody = created.json() as { id: string };
+    expect(JSON.stringify(created.json())).not.toContain('sk-or-test');
+    const tavily = await instance.inject({
+      method: 'POST',
+      url: '/integrations',
+      headers,
+      payload: { provider: 'tavily', name: 'Search', credentials: { apiKey: 'tvly-secret' } },
+    });
+    expect(tavily.statusCode).toBe(201);
+
+    const tableResponse = await instance.inject({
+      method: 'POST',
+      url: `/workspaces/${auth.workspaceId}/tables`,
+      headers,
+      payload: { name: 'Agent table' },
+    });
+    const table = tableResponse.json() as { id: string };
+    await instance.inject({
+      method: 'POST',
+      url: `/tables/${table.id}/columns`,
+      headers,
+      payload: { name: 'Company', type: 'text', kind: 'input', config: {} },
+    });
+    const agentColumn = await instance.inject({
+      method: 'POST',
+      url: `/tables/${table.id}/columns`,
+      headers,
+      payload: {
+        name: 'Agent',
+        type: 'json',
+        kind: 'agent',
+        config: {
+          prompt: 'Research {{Company}}',
+          outputFields: { answer: 'string' },
+          provider: 'openrouter',
+          model: 'openai/gpt-4o',
+        },
+      },
+    });
+    expect(agentColumn.statusCode).toBe(201);
+    const agentColumnId = (agentColumn.json() as { id: string }).id;
+    await instance.inject({
+      method: 'POST',
+      url: `/tables/${table.id}/rows`,
+      headers,
+      payload: { values: { Company: 'Acme' } },
+    });
+
+    const chatResponse = (content: string) =>
+      new Response(
+        JSON.stringify({
+          id: 'chatcmpl-test',
+          object: 'chat.completion',
+          created: 0,
+          model: 'openai/gpt-4o',
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', content },
+              finish_reason: 'stop',
+            },
+          ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    let chatCalls = 0;
+    const fetcher = vi.fn(async (input: unknown) => {
+      const url =
+        typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      if (url.includes('api.tavily.com')) {
+        return new Response(
+          JSON.stringify({
+            results: [{ title: 'Acme', url: 'https://acme.com', content: 'Acme makes anvils' }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('openrouter.ai') && url.includes('auth/key')) {
+        return new Response('{}', { status: 401 });
+      }
+      if (url.includes('openrouter.ai')) {
+        chatCalls += 1;
+        return chatResponse(
+          chatCalls === 1
+            ? JSON.stringify({ tool: 'web_search', arguments: { query: 'acme' } })
+            : JSON.stringify({
+                tool: 'finish',
+                result: { answer: 'done', fields: {}, sources: [], reasoning: '' },
+              }),
+        );
+      }
+      return new Response('{}', { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    try {
+      const tested = await instance.inject({
+        method: 'POST',
+        url: `/integrations/${integrationBody.id}/test`,
+        headers,
+      });
+      // The check endpoint hits /auth/key, which our stub 401s → rejected.
+      expect(tested.json()).toMatchObject({
+        ok: false,
+        provider: 'openrouter',
+        message: 'OpenRouter rejected the API key',
+      });
+
+      const preview = await instance.inject({
+        method: 'POST',
+        url: `/tables/${table.id}/columns/${agentColumnId}/preview`,
+        headers,
+      });
+      expect(preview.statusCode).toBe(201);
+      const previews = (
+        preview.json() as { previews: { value?: { answer: string; sources: string[] } }[] }
+      ).previews;
+      expect(previews[0]?.value?.answer).toBe('done');
+      expect(previews[0]?.value?.sources).toContain('https://acme.com');
+
+      const urls = fetcher.mock.calls.map((call) => {
+        const input = call[0];
+        return typeof input === 'string'
+          ? input
+          : input instanceof Request
+            ? input.url
+            : String(input);
+      });
+      expect(urls.some((url) => url.includes('openrouter.ai'))).toBe(true);
+      expect(urls.some((url) => url.includes('api.tavily.com'))).toBe(true);
+      const chatCall = fetcher.mock.calls.find((call) =>
+        String(call[0]).includes('chat/completions'),
+      );
+      expect(chatCall).toBeDefined();
+      const chatBody = JSON.parse(String((chatCall?.[1] as RequestInit).body)) as {
+        model?: string;
+      };
+      expect(chatBody.model).toBe('openai/gpt-4o');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    const list = await instance.inject({
+      method: 'GET',
+      url: '/integrations',
+      headers,
+    });
+    const items = list.json() as { provider: string; usedInColumns: number }[];
+    expect(items.find((item) => item.provider === 'openrouter')?.usedInColumns).toBe(1);
+    expect(items.find((item) => item.provider === 'tavily')?.usedInColumns).toBe(0);
     await app.close();
   });
 });
