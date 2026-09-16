@@ -15,14 +15,17 @@ Each `cells` job = one (rowId, columnId) pair:
 4. Write `Cell { status, value, error, creditsUsed, durationMs }`, debit
    `CreditLedger`, publish `{ rowId, columnId, status, … }` to `table:<id>`.
 
-| `column.kind`      | Executor                                                                                                                    | Credit cost                |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `input`, `formula` | inline / `evaluateWorkerFormula` (shared evaluator, no `eval`)                                                              | 0                          |
-| `enrichment`       | `executeEnrichment` — single provider action                                                                                | 1 (or `config.creditCost`) |
-| `waterfall`        | `executeWaterfall` — try providers in `config.providers[]` order, stop at first `accepted()` result; charge only the winner | winner's cost              |
-| `http`             | `executeHttp` — templated request via `rest` provider                                                                       | 1                          |
-| `agent`            | `executeAgent` — LLM w/ tool loop via `llm` provider                                                                        | 5                          |
-| `function`         | runs a `Function` version's JS                                                                                              | 1                          |
+| `column.kind`      | Executor                                                                                                                                                                                                                                      | Credit cost                |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `input`, `formula` | inline / `evaluateWorkerFormula` (shared evaluator, no `eval`)                                                                                                                                                                                | 0                          |
+| `enrichment`       | `executeEnrichment` — single provider action                                                                                                                                                                                                  | 1 (or `config.creditCost`) |
+| `waterfall`        | `executeWaterfall` — try providers in `config.providers[]` order, stop at first accepted result; `config.validate` runs a verify-category action on each result first (`{{result.*}}` binds the found data); charge winner + validation calls | winner's cost + validation |
+| `http`             | `executeHttp` — templated request via `rest` provider                                                                                                                                                                                         | 1                          |
+| `agent`            | `executeAgent` — LLM w/ tool loop via `llm` provider                                                                                                                                                                                          | 5                          |
+| `function`         | runs a `Function` version's JS                                                                                                                                                                                                                | 1                          |
+
+`config.maxCost` (any kind) skips the cell when the estimated credit cost
+exceeds it — the per-run cap shown as "max cost" in the column editor.
 
 Credentials: `decryptCredentials` (AES-256-GCM, `ENCRYPTION_KEY`) — the api
 stores them encrypted; only the worker sees plaintext.
@@ -30,7 +33,10 @@ stores them encrypted; only the worker sees plaintext.
 ## Phase-2+ processors (`phase2-worker.ts`)
 
 - `signals` — `pollSignal`: pull sources for due `SignalDefinition`s, emit
-  `SignalEvent`s, fire workflow triggers.
+  `SignalEvent`s, fire workflow triggers. `config.sourceTableId` scopes the
+  poll to a table's rows (domain/email columns auto-detected or pinned via
+  `config.domainColumn`/`emailColumn`); `config.alertChannelId` posts new
+  events to an `AlertChannel` webhook and writes an `Alert` row.
 - `workflows` — `runWorkflow`: execute a `WorkflowRun`'s DAG step-by-step
   (re-enqueues per step; `StepRun` rows track state).
 - `outbound` — sequence/campaign steps: send via `Inbox`, schedule the next

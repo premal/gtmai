@@ -472,3 +472,12 @@ export async function runAgent(
 ): Promise<AgentResult> {
   return runAgentWithClient(prompt, context, sdkClient(context, provider, model));
 }
+
+export async function completeChat(
+  context: RunContext,
+  messages: AgentMessage[],
+  provider: 'openai' | 'anthropic' = 'openai',
+  model?: string,
+): Promise<string> {
+  return sdkClient(context, provider, model).complete(messages);
+}

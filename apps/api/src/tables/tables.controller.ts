@@ -16,8 +16,19 @@ import type { Queue } from 'bullmq';
 import type { FastifyRequest } from 'fastify';
 import type { MultipartFile } from '@fastify/multipart';
 import { Prisma } from '@gtmai/db';
-import { providers, runAgent } from '@gtmai/providers';
-import { builtInTemplates, resolveBindingsDeep } from '@gtmai/shared';
+import {
+  completeChat,
+  providerCatalog,
+  providers,
+  runAgent,
+  type AgentMessage,
+} from '@gtmai/providers';
+import {
+  builtInTemplates,
+  evaluateFormula,
+  metapromptResult,
+  resolveBindingsDeep,
+} from '@gtmai/shared';
 import { z } from 'zod';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
@@ -714,6 +725,126 @@ export class TablesController {
       );
     }
     return { queued: columns.length };
+  }
+
+  private async llmContext(workspaceId: string) {
+    const connection = await this.prisma.connection.findFirst({
+      where: { workspaceId, provider: { in: ['openai', 'anthropic', 'llm'] } },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!connection) {
+      throw new Error('No LLM connection — add an OpenAI or Anthropic key in Connections');
+    }
+    return {
+      provider: (connection.provider === 'anthropic' ? 'anthropic' : 'openai') as
+        | 'openai'
+        | 'anthropic',
+      context: {
+        credentials: decryptCredentials(connection.encryptedCredentials),
+        fetch,
+        logger: { info: () => undefined, error: () => undefined },
+      },
+    };
+  }
+
+  private async chatJson<T>(
+    workspaceId: string,
+    system: string,
+    payload: unknown,
+    parse: (raw: string) => T,
+  ): Promise<T> {
+    const { provider, context } = await this.llmContext(workspaceId);
+    const messages: AgentMessage[] = [
+      { role: 'system', content: system },
+      { role: 'user', content: JSON.stringify(payload) },
+    ];
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return parse(await completeChat(context, messages, provider));
+      } catch (error) {
+        lastError = error;
+        messages.push({
+          role: 'user',
+          content: `That response was invalid (${error instanceof Error ? error.message : 'parse error'}). Reply with corrected JSON only.`,
+        });
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('Generation failed');
+  }
+
+  @Post(':id/metaprompt')
+  async metaprompt(@Param('id') tableId: string, @Body() body: unknown, @Req() request: Request) {
+    const input = z
+      .object({
+        description: z.string().min(3),
+        kind: z.enum(['enrichment', 'waterfall', 'agent', 'formula', 'http']).optional(),
+      })
+      .parse(body);
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      include: { columns: { orderBy: { position: 'asc' } } },
+    });
+    if (!table) throw new Error('Table not found');
+    const catalog = providerCatalog
+      .map((item) => `${item.id} — ${item.name} [${item.category}, ${item.creditCost}cr]`)
+      .join('\n');
+    const system = `You configure columns for a Clay-style GTM spreadsheet. Reply with JSON only:
+{"name": string, "kind": "enrichment"|"waterfall"|"agent"|"formula"|"http", "type": "text"|"number"|"boolean"|"date"|"url"|"email"|"json", "config": object, "runCondition": string?}
+
+Rules:
+- Reference row data with {{Column name}} bindings using exact column names.
+- kind "agent": config = {"prompt": string with {{bindings}}, "outputFields": {field: "string"|"number"|"boolean"}, "provider": "openai", "model": "gpt-4o-mini"}. The agent can search the web and fetch pages — use it for research or classification tasks (e.g. visit a company's website and decide if it sells to businesses). Always include an "answer" output field.
+- kind "enrichment": config = {"provider": id, "action": id, "input": {arg: "{{Column}}"}}.
+- kind "waterfall": config = {"providers": [{"provider","action","input"}], "accept": "found"|"verified-email-only", "validate": {"provider","action","input":{"email":"{{result.email}}"}}?}. Use several providers for coverage; add "validate" with a verify-category action when results must be verified.
+- kind "formula": config = {"expression": string}. Functions: if, lower, upper, trim, concat, contains, len, coalesce, get.
+- kind "http": config = {"method","url","headers","body","outputPath"}.
+- runCondition: optional formula expression evaluated per row; the column only runs when truthy.
+- type: "email" for emails, "boolean" for yes/no classifiers, "json" for structured output.
+
+Available provider actions:
+${catalog}`;
+    return this.chatJson(
+      request.user.workspaceId,
+      system,
+      {
+        task: input.description,
+        columns: table.columns.map((column) => column.name),
+        ...(input.kind ? { kind: input.kind } : {}),
+      },
+      (raw) => metapromptResult.parse(JSON.parse(raw)),
+    );
+  }
+
+  @Post(':id/run-condition')
+  async generateRunCondition(
+    @Param('id') tableId: string,
+    @Body() body: unknown,
+    @Req() request: Request,
+  ) {
+    const input = z.object({ description: z.string().min(3) }).parse(body);
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, workspaceId: request.user.workspaceId },
+      include: { columns: { orderBy: { position: 'asc' } } },
+    });
+    if (!table) throw new Error('Table not found');
+    const names = table.columns.map((column) => column.name);
+    const sample = Object.fromEntries(names.map((name) => [name, 'x']));
+    const system = `You translate a plain-English condition into a spreadsheet formula expression. Reply with JSON only: {"expression": string}.
+- Reference columns as {{Name}} or bare names — exact names only.
+- Operators: == != > < >= <= && || ! — Functions: if, lower, upper, trim, concat, contains, len, coalesce, get.
+- The cell runs when the expression is truthy.
+- Examples: "only when B2B is checked" → {{B2B}}; "people in New York" → contains(lower({{Location}}), "new york"); "score above 4" → {{Score}} > 4.`;
+    return this.chatJson(
+      request.user.workspaceId,
+      system,
+      { condition: input.description, columns: names },
+      (raw) => {
+        const parsed = z.object({ expression: z.string().min(1) }).parse(JSON.parse(raw));
+        evaluateFormula(parsed.expression, sample);
+        return parsed;
+      },
+    );
   }
 
   @Post(':id/columns/:columnId/preview')

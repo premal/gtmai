@@ -107,6 +107,20 @@ vitest_bin.vitest_test(
     size = "small",
 )
 
+vitest_bin.vitest_test(
+    name = "unit_schemas",
+    args = ["run", "src/schemas.test.ts"],
+    chdir = "packages/shared",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:workspace_config_js",
+        "src/schemas.test.ts",
+    ],
+    size = "small",
+)
+
 # eslint flat config lives at the workspace root and imports
 # @typescript-eslint/parser from the root node_modules link.
 eslint_bin.eslint_test(

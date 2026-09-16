@@ -11,10 +11,13 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Prisma } from '@gtmai/db';
+import { completeChat, type AgentMessage } from '@gtmai/providers';
+import { generatedSequence } from '@gtmai/shared';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
 import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { decryptCredentials } from '../common/crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 type Request = FastifyRequest & { user: AuthUser };
@@ -114,6 +117,82 @@ export class SequencesController {
         },
         include: { steps: { orderBy: { position: 'asc' } } },
       });
+    });
+  }
+
+  @Post('generate')
+  async generate(@Req() request: Request, @Body() body: unknown) {
+    const input = z
+      .object({
+        name: z.string().min(1),
+        description: z.string().min(3),
+        steps: z.number().int().min(1).max(10).default(3),
+        inboxId: z.string().optional(),
+      })
+      .parse(body);
+    const connection = await this.prisma.connection.findFirst({
+      where: {
+        workspaceId: request.user.workspaceId,
+        provider: { in: ['openai', 'anthropic', 'llm'] },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!connection) {
+      throw new Error('No LLM connection — add an OpenAI or Anthropic key in Connections');
+    }
+    const messages: AgentMessage[] = [
+      {
+        role: 'system',
+        content: `You write B2B cold-email sequences. Respond only as JSON: {"steps":[{"delayHours":int,"subjectTemplate":string,"bodyTemplate":string}]}.
+- Templates support {{contact.firstName}}, {{contact.lastName}}, {{contact.email}}, {{company.name}}, {{company.domain}} placeholders.
+- First step has delayHours 0; space later steps 48-96 hours apart.
+- Short, specific, plain-text copy — no buzzwords, no HTML.`,
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({ description: input.description, steps: input.steps }),
+      },
+    ];
+    let generated: z.infer<typeof generatedSequence> | undefined;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2 && !generated; attempt += 1) {
+      try {
+        const raw = await completeChat(
+          {
+            credentials: decryptCredentials(connection.encryptedCredentials),
+            fetch,
+            logger: { info: () => undefined, error: () => undefined },
+          },
+          messages,
+          connection.provider === 'anthropic' ? 'anthropic' : 'openai',
+        );
+        generated = generatedSequence.parse(JSON.parse(raw));
+      } catch (error) {
+        lastError = error;
+        messages.push({
+          role: 'user',
+          content: `That response was invalid (${error instanceof Error ? error.message : 'parse error'}). Reply with corrected JSON only.`,
+        });
+      }
+    }
+    if (!generated) {
+      throw lastError instanceof Error ? lastError : new Error('Generation failed');
+    }
+    return this.prisma.sequence.create({
+      data: {
+        workspaceId: request.user.workspaceId,
+        name: input.name,
+        ...(input.inboxId ? { inboxId: input.inboxId } : {}),
+        steps: {
+          create: generated.steps.map((step, index) => ({
+            position: index,
+            delayHours: step.delayHours,
+            subjectTemplate: step.subjectTemplate,
+            bodyTemplate: step.bodyTemplate,
+          })),
+        },
+      },
+      include: { steps: { orderBy: { position: 'asc' } } },
     });
   }
 

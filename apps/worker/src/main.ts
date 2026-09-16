@@ -109,6 +109,19 @@ async function execute(job: Job<CellData>): Promise<void> {
       config.creditCost ??
         (column.kind === 'agent' ? 5 : ['formula', 'input'].includes(column.kind) ? 0 : 1),
     );
+    const maxCost = Number(config.maxCost);
+    if (Number.isFinite(maxCost) && maxCost > 0 && estimatedCredits > maxCost) {
+      const message = `Estimated cost ${estimatedCredits} exceeds max cost ${maxCost}`;
+      await db.cell.update({
+        where: { id: cell.id },
+        data: { status: 'skipped', error: message, durationMs: Date.now() - started },
+      });
+      await publisher.publish(
+        `table:${column.tableId}`,
+        JSON.stringify({ rowId, columnId, status: 'skipped', error: message }),
+      );
+      return;
+    }
     const exceededBudget = await budgetExceeded(
       workspaceId,
       estimatedCredits,

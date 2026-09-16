@@ -24,6 +24,21 @@ function fake(
       reason: 'No deterministic signal for this audience record',
     };
   }
+  if (action.endsWith('verifyEmail')) {
+    const email = String(data.email ?? `${first}.${last}@${domain}`);
+    const invalid = /invalid|bounce|do[-_ ]?not|bad@/i.test(email);
+    return {
+      found: true,
+      data: {
+        email,
+        status: invalid ? 'invalid' : 'valid',
+        valid: !invalid,
+        emailStatus: invalid ? 'invalid' : 'verified',
+        confidence: invalid ? 0.05 : 0.97,
+      },
+      raw: { seed },
+    };
+  }
   return {
     found: true,
     data: {

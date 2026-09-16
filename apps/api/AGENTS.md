@@ -5,32 +5,32 @@ them all + `PrismaModule` + `EventsModule`. Swagger UI at `/docs`.
 
 ## Module → route map
 
-| Module (dir)                | Route prefix                           | Owns                                                              |
-| --------------------------- | -------------------------------------- | ----------------------------------------------------------------- |
-| `auth`                      | `/auth`                                | login, invite accept, me — JWT issue/verify                       |
-| `workspaces`                | `/workspaces`                          | workspace CRUD, switch current                                    |
-| `team`                      | `/team`                                | members, roles, invite links                                      |
-| `api-keys`                  | `/api-keys`                            | `gtm_…` key create/list/revoke                                    |
-| `folders`                   | `/folders`                             | folder CRUD (Workbook grouping)                                   |
-| `workbooks`                 | `/workbooks`                           | workbook CRUD + per-user `WorkbookAccess`                         |
-| `tables`                    | `/tables`                              | table/column/row/cell CRUD, `/run` enqueue, CSV import/export     |
-| `tables` (views.controller) | `/tables/:tableId/views`               | saved grid views (filter/sort/col-order)                          |
-| `tags`                      | `/tags`                                | workspace tags + assignments on tables                            |
-| `search`                    | `/search`                              | cross-workbook table/row search                                   |
-| `connections`               | `/connections`                         | provider credential CRUD (encrypted)                              |
-| `providers`                 | `/providers`                           | list available providers/actions                                  |
-| `formula`                   | `/formula`                             | dry-run formula evaluation endpoint                               |
-| `audiences`                 | `/audiences`                           | Company/Contact upsert+dedupe, Segments                           |
-| `signals`                   | `/signals`                             | signal defs, HMAC ingest `/signals/events`, pollers               |
-| `workflows`                 | `/workflows`, `/workflows/hooks`       | workflow CRUD/run; webhook trigger endpoint                       |
-| `functions`                 | `/functions`                           | versioned JS functions + run history                              |
-| `sequences`                 | `/sequences`, `/inboxes`, `/campaigns` | sequence + step CRUD; sending inboxes; campaign CRUD + enrollment |
-| `ads`                       | `/ads`                                 | ad audiences + platform syncs                                     |
-| `crm`                       | `/crm`                                 | CRM sync jobs/runs                                                |
-| `usage`                     | `/usage`                               | budgets, summary, alerts, rollups, alert channels                 |
-| `credits`                   | `/credits`                             | credit ledger                                                     |
-| `templates`                 | `/templates`                           | built-in table templates                                          |
-| `events`                    | `/tables/:id/events`                   | SSE stream of cell updates (JwtAuthGuard'ed)                      |
+| Module (dir)                | Route prefix                           | Owns                                                                                                                                             |
+| --------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `auth`                      | `/auth`                                | login, invite accept, me — JWT issue/verify                                                                                                      |
+| `workspaces`                | `/workspaces`                          | workspace CRUD, switch current                                                                                                                   |
+| `team`                      | `/team`                                | members, roles, invite links                                                                                                                     |
+| `api-keys`                  | `/api-keys`                            | `gtm_…` key create/list/revoke                                                                                                                   |
+| `folders`                   | `/folders`                             | folder CRUD (Workbook grouping)                                                                                                                  |
+| `workbooks`                 | `/workbooks`                           | workbook CRUD + per-user `WorkbookAccess`                                                                                                        |
+| `tables`                    | `/tables`                              | table/column/row/cell CRUD, `/run` enqueue, CSV import/export, `/:id/metaprompt` + `/:id/run-condition` (LLM-generated column drafts & formulas) |
+| `tables` (views.controller) | `/tables/:tableId/views`               | saved grid views (filter/sort/col-order)                                                                                                         |
+| `tags`                      | `/tags`                                | workspace tags + assignments on tables                                                                                                           |
+| `search`                    | `/search`                              | cross-workbook table/row search                                                                                                                  |
+| `connections`               | `/connections`                         | provider credential CRUD (encrypted)                                                                                                             |
+| `providers`                 | `/providers`                           | list available providers/actions                                                                                                                 |
+| `formula`                   | `/formula`                             | dry-run formula evaluation endpoint                                                                                                              |
+| `audiences`                 | `/audiences`                           | Company/Contact upsert+dedupe, Segments                                                                                                          |
+| `signals`                   | `/signals`                             | signal defs, HMAC ingest `/signals/events`, pollers                                                                                              |
+| `workflows`                 | `/workflows`, `/workflows/hooks`       | workflow CRUD/run; webhook trigger endpoint                                                                                                      |
+| `functions`                 | `/functions`                           | versioned JS functions + run history                                                                                                             |
+| `sequences`                 | `/sequences`, `/inboxes`, `/campaigns` | sequence + step CRUD; `/sequences/generate` writes steps via LLM; sending inboxes; campaign CRUD + enrollment                                    |
+| `ads`                       | `/ads`                                 | ad audiences + platform syncs                                                                                                                    |
+| `crm`                       | `/crm`                                 | CRM sync jobs/runs                                                                                                                               |
+| `usage`                     | `/usage`                               | budgets, summary, alerts, rollups, alert channels                                                                                                |
+| `credits`                   | `/credits`                             | credit ledger                                                                                                                                    |
+| `templates`                 | `/templates`                           | built-in table templates                                                                                                                         |
+| `events`                    | `/tables/:id/events`                   | SSE stream of cell updates (JwtAuthGuard'ed)                                                                                                     |
 
 ## Conventions
 

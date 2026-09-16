@@ -13,7 +13,9 @@ Pure TS shared by web/api/worker. No runtime deps beyond zod.
   → in-memory predicate for JSON paths (bounded — documented limitation).
 - `schemas.ts` — zod `columnConfig` discriminated union on `kind`
   (input/enrichment/waterfall/agent/formula/http/function); the api validates
-  and the worker executes against these shapes.
+  and the worker executes against these shapes. Also `metapromptResult` /
+  `generatedSequence` (LLM-generation payloads), `signalConfig` (signal
+  definition config incl. `sourceTableId`/`schedule`/`alertChannelId`).
 - `workflows.ts` — `workflowNodeTypes`, `workflowGraphSchema`,
   `topologicalOrder`, `validateWorkflowGraph(Detailed)` — the DAG the
   workflow engine runs.

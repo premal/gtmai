@@ -5,16 +5,16 @@ with zod IO schemas; `index.ts` is the registry the api/worker import.
 
 ## Adapters
 
-| Provider                | Actions                                                    |
-| ----------------------- | ---------------------------------------------------------- |
-| `mock`                  | deterministic fake data — used by tests/seed, no network   |
-| `hunter`                | email find/verify                                          |
-| `theirstack`            | job-posting signals                                        |
-| `llm`                   | `llm.chat` — agent/tool loop for `agent` columns           |
-| `rest`                  | `http.request` — generic templated HTTP for `http` columns |
-| `smtp`                  | send mail via nodemailer (outbound)                        |
-| `meta`                  | hashed audience upload (ads)                               |
-| `hubspot`, `salesforce` | CRM write-back                                             |
+| Provider                | Actions                                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `mock`                  | deterministic fake data — used by tests/seed, no network                                                                              |
+| `hunter`                | email find/verify                                                                                                                     |
+| `theirstack`            | job-posting signals                                                                                                                   |
+| `llm`                   | `llm.chat` — agent/tool loop for `agent` columns; `completeChat` is the plain JSON-chat helper used by metaprompt/sequence generation |
+| `rest`                  | `http.request` — generic templated HTTP for `http` columns                                                                            |
+| `smtp`                  | send mail via nodemailer (outbound)                                                                                                   |
+| `meta`                  | hashed audience upload (ads)                                                                                                          |
+| `hubspot`, `salesforce` | CRM write-back                                                                                                                        |
 
 ## Conventions
 
