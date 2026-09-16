@@ -40,6 +40,7 @@ const providerVisuals: Record<string, { initials: string; bg: string; fg: string
   anthropic: { initials: 'AN', bg: '#ffedd5', fg: '#c2410c' },
   gemini: { initials: 'G', bg: '#dbeafe', fg: '#1d4ed8' },
   perplexity: { initials: 'PX', bg: '#ccfbf1', fg: '#0f766e' },
+  tavily: { initials: 'TV', bg: '#fef3c7', fg: '#b45309' },
   smtp: { initials: 'S', bg: '#e7e5e4', fg: '#57534e' },
   meta: { initials: 'M', bg: '#dbeafe', fg: '#1d4ed8' },
   google: { initials: 'G', bg: '#fee2e2', fg: '#b91c1c' },
@@ -369,11 +370,6 @@ export default function IntegrationsPage() {
                     }))
                   }
                 />
-                {field.key === 'tavilyApiKey' && (
-                  <span className="muted">
-                    Enables web search for agents; falls back to DuckDuckGo/Bing
-                  </span>
-                )}
               </label>
             ))}
             <div className="modal-actions">

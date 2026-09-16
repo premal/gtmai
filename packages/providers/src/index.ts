@@ -3,6 +3,7 @@ export * from './mock';
 export * from './http';
 export * from './rest';
 export * from './llm';
+export * from './tavily';
 export * from './hginsights';
 import {
   apolloProvider,
@@ -15,6 +16,7 @@ import { hginsightsProvider } from './hginsights';
 import { httpProvider } from './http';
 import { anthropicProvider, geminiProvider, openaiProvider, perplexityProvider } from './llm';
 import { mockProvider } from './mock';
+import { tavilyProvider } from './tavily';
 import { theirstackProvider } from './theirstack';
 import type { Provider } from './types';
 export const providers: Provider[] = [
@@ -31,6 +33,7 @@ export const providers: Provider[] = [
   anthropicProvider,
   geminiProvider,
   perplexityProvider,
+  tavilyProvider,
 ];
 export const providerCatalog = providers.flatMap((provider) =>
   provider.actions.map((action) => ({

@@ -49,6 +49,21 @@ vitest_bin.vitest_test(
     size = "small",
 )
 
+vitest_bin.vitest_test(
+    name = "unit_tavily",
+    args = ["run", "src/tavily.test.ts"],
+    chdir = "packages/providers",
+    data = [
+        ":config",
+        ":node_modules",
+        "//:workspace_config_js",
+        "src/tavily.test.ts",
+        "src/tavily.ts",
+        "src/types.ts",
+    ],
+    size = "small",
+)
+
 # providers.test.ts imports ./index, which re-exports every adapter.
 vitest_bin.vitest_test(
     name = "unit_providers",

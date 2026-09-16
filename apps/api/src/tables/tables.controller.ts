@@ -754,6 +754,12 @@ export class TablesController {
       include: { cells: { include: { column: true } } },
     });
     const credentials = decryptCredentials(integration.encryptedCredentials);
+    const tavily = await this.prisma.integration.findFirst({
+      where: { workspaceId: request.user.workspaceId, provider: 'tavily' },
+      orderBy: { createdAt: 'asc' },
+    });
+    const tavilyKey = tavily ? decryptCredentials(tavily.encryptedCredentials).apiKey : undefined;
+    if (tavilyKey) credentials.tavilyApiKey = tavilyKey;
     const previews = [];
     for (const row of rows) {
       const values = Object.fromEntries(row.cells.map((cell) => [cell.column.name, cell.value]));

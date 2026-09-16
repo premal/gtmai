@@ -53,12 +53,6 @@ async function structuredChat(
 
 const llmAuthFields: Provider['auth']['fields'] = [
   { key: 'apiKey', label: 'API key', secret: true },
-  {
-    key: 'tavilyApiKey',
-    label: 'Tavily API key',
-    secret: true,
-    optional: true,
-  },
 ];
 
 function llmChatProvider(

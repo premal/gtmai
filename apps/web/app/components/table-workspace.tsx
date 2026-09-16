@@ -552,9 +552,7 @@ export function TableWorkspace({
     setAction(String(config.action ?? 'mock.findEmail'));
     setExpression(String(config.expression ?? expression));
     setPrompt(String(config.prompt ?? prompt));
-    setAgentProvider(
-      column.kind === 'agent' ? String(config.provider ?? 'openai') : 'openai',
-    );
+    setAgentProvider(column.kind === 'agent' ? String(config.provider ?? 'openai') : 'openai');
     setAgentModel(String(config.model ?? ''));
     setAgentOutputFields(
       config.outputFields && typeof config.outputFields === 'object'
