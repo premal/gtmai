@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+.git
+docker-compose.yml
+*.md
+!packages/db/prisma/**
+.env
+.env.*

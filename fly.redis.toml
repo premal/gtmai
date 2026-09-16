@@ -1,0 +1,13 @@
+app = "gtmai-redis"
+primary_region = "iad"
+
+[build]
+  image = "redis:7-alpine"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[mounts]]
+  source = "gtmai_redis_data"
+  destination = "/data"

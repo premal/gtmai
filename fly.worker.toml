@@ -1,0 +1,13 @@
+app = "gtmai-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.api"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+
+[env]
+  ENTRY = "apps/worker/dist/main.js"
+  WEB_URL = "https://gtmai-web.fly.dev"

@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+FROM node:20-alpine AS build
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/cli/package.json packages/cli/package.json
+COPY packages/db/package.json packages/db/package.json
+COPY packages/mcp/package.json packages/mcp/package.json
+COPY packages/providers/package.json packages/providers/package.json
+COPY packages/shared/package.json packages/shared/package.json
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+WORKDIR /app/packages/db
+RUN pnpm exec prisma generate
+WORKDIR /app
+RUN pnpm --filter @gtmai/db --filter @gtmai/shared --filter @gtmai/providers --filter @gtmai/api --filter @gtmai/worker build
+
+FROM node:20-alpine AS runner
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=build /app ./
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
+EXPOSE 4000
+CMD ["/app/docker-entrypoint.sh"]
