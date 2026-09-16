@@ -42,7 +42,7 @@ pnpm install            # unchanged — pnpm remains the package manager; Bazel
 ## Hermetic vs local targets
 
 - **Hermetic** (run in the Bazel sandbox with Bazel-managed Node 22 and
-  lockfile-derived node_modules): `unit_*` in `packages/*`, `lint`.
+  lockfile-derived node*modules): `unit*_`in`packages/_`, `lint`.
 - **Semi-hermetic** (declared deps drive selection, execution runs against the
   real tree via wrappers): `typecheck`, `build`, `unit_main`, `itest`. They are
   tagged `local`/`no-sandbox` and get `PATH`/`HOME`/`DOCKER_HOST` via
