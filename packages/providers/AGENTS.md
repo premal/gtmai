@@ -16,7 +16,7 @@ with zod IO schemas; `index.ts` is the registry the api/worker import.
 | `theirstack`                                                            | company tech stack, companies-by-technology search                            |
 | `hginsights`                                                            | company technographics, company search, intent signals                        |
 | `openai`, `anthropic`, `gemini`, `perplexity`, `openrouter`, `cometapi` | `<id>.chat` — LLM chat + the agent/tool loop for `agent` columns (`runAgent`) |
-| `tavily`                                                                | `tavily.search` web search; also feeds the agent `web_search` tool            |
+| `tavily`, `exa`, `parallel`                                             | `<id>.search` web search; a `tavily` key also feeds the agent `web_search`    |
 | `rest`                                                                  | `http.request` — generic templated HTTP for `http` columns                    |
 | `smtp`                                                                  | send mail via nodemailer (outbound)                                           |
 | `meta`                                                                  | hashed audience upload (ads)                                                  |

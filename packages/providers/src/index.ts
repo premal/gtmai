@@ -4,6 +4,7 @@ export * from './http';
 export * from './rest';
 export * from './llm';
 export * from './tavily';
+export * from './search';
 export * from './hginsights';
 import {
   apolloProvider,
@@ -23,6 +24,7 @@ import {
   perplexityProvider,
 } from './llm';
 import { mockProvider } from './mock';
+import { exaProvider, parallelProvider } from './search';
 import { tavilyProvider } from './tavily';
 import { theirstackProvider } from './theirstack';
 import type { Provider } from './types';
@@ -43,6 +45,8 @@ export const providers: Provider[] = [
   openrouterProvider,
   cometapiProvider,
   tavilyProvider,
+  exaProvider,
+  parallelProvider,
 ];
 export const providerCatalog = providers.flatMap((provider) =>
   provider.actions.map((action) => ({

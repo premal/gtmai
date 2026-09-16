@@ -55,6 +55,8 @@ const providerVisuals: Record<string, { initials: string; bg: string; fg: string
   openrouter: { initials: 'OR', bg: '#e0e7ff', fg: '#4338ca' },
   cometapi: { initials: 'C', bg: '#fce7f3', fg: '#be185d' },
   tavily: { initials: 'TV', bg: '#fef3c7', fg: '#b45309' },
+  exa: { initials: 'EX', bg: '#f3e8ff', fg: '#7e22ce' },
+  parallel: { initials: '∥', bg: '#ecfeff', fg: '#0e7490' },
   smtp: { initials: 'S', bg: '#e7e5e4', fg: '#57534e' },
   meta: { initials: 'M', bg: '#dbeafe', fg: '#1d4ed8' },
   google: { initials: 'G', bg: '#fee2e2', fg: '#b91c1c' },

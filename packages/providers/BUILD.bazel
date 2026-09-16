@@ -50,6 +50,21 @@ vitest_bin.vitest_test(
 )
 
 vitest_bin.vitest_test(
+    name = "unit_search",
+    args = ["run", "src/search.test.ts"],
+    chdir = "packages/providers",
+    data = [
+        ":config",
+        ":node_modules",
+        "//:workspace_config_js",
+        "src/search.test.ts",
+        "src/search.ts",
+        "src/types.ts",
+    ],
+    size = "small",
+)
+
+vitest_bin.vitest_test(
     name = "unit_tavily",
     args = ["run", "src/tavily.test.ts"],
     chdir = "packages/providers",
@@ -57,6 +72,7 @@ vitest_bin.vitest_test(
         ":config",
         ":node_modules",
         "//:workspace_config_js",
+        "src/search.ts",
         "src/tavily.test.ts",
         "src/tavily.ts",
         "src/types.ts",

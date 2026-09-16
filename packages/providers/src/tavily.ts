@@ -1,19 +1,5 @@
-import { z } from 'zod';
+import { searchInput, searchOutput } from './search';
 import type { Provider, RunContext } from './types';
-
-const searchInput = z.object({
-  query: z.string().min(1),
-  maxResults: z.number().int().min(1).max(20).default(5),
-});
-const searchOutput = z.object({
-  results: z.array(
-    z.object({
-      title: z.string().optional(),
-      url: z.string().optional(),
-      content: z.string().optional(),
-    }),
-  ),
-});
 
 export const tavilyProvider: Provider = {
   id: 'tavily',
