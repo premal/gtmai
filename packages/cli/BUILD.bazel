@@ -1,0 +1,61 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@npm//:eslint/package_json.bzl", eslint_bin = "bin")
+
+package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
+
+filegroup(
+    name = "config",
+    srcs = [
+        "package.json",
+        "tsconfig.json",
+    ],
+)
+
+filegroup(
+    name = "srcs",
+    srcs = glob(["src/**"]),
+)
+
+# Workspace-linked package contents — see packages/shared:pkg.
+js_library(
+    name = "pkg",
+    srcs = [":srcs", "package.json"],
+)
+
+eslint_bin.eslint_test(
+    name = "lint",
+    args = ["src", "--no-warn-ignored"],
+    chdir = "packages/cli",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:node_modules",
+        "//:workspace_config_js",
+    ],
+    size = "medium",
+)
+
+_LOCAL = ["local", "no-sandbox", "requires-network"]
+
+sh_test(
+    name = "typecheck",
+    srcs = ["//tools/bazel:pnpm.sh"],
+    args = ["--filter", "@gtmai/cli", "typecheck"],
+    data = [":config", ":srcs", "//:workspace_config"],
+    tags = _LOCAL,
+    size = "medium",
+)
+
+sh_test(
+    name = "build",
+    srcs = ["//tools/bazel:pnpm.sh"],
+    args = ["--filter", "@gtmai/cli", "build"],
+    data = [":config", ":srcs", "//:workspace_config"],
+    tags = _LOCAL,
+    size = "medium",
+)

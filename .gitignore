@@ -9,3 +9,4 @@ coverage
 .turbo
 prisma/generated
 *.log
+/bazel-*

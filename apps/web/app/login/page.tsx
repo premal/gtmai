@@ -44,37 +44,66 @@ export default function LoginPage() {
 
   return (
     <main className="login-shell">
-      <form className="login-card" onSubmit={(event) => void submit(event)}>
-        <div className="eyebrow">REVENUE OPERATIONS</div>
-        <h1>GTM AI</h1>
-        <p className="muted">A focused workspace for enrichment and outbound data.</p>
-        <label>
-          Email
-          <input
-            required
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder={isDevelopment ? 'demo@gtmai.dev' : 'you@company.com'}
-          />
-        </label>
-        <label>
-          Password
-          <input
-            required
-            minLength={8}
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder={isDevelopment ? 'demo1234' : 'At least 8 characters'}
-          />
-        </label>
-        {isDevelopment && <p className="muted login-hint">Demo: demo@gtmai.dev / demo1234</p>}
-        <button className="button primary" disabled={submitting} type="submit">
-          {submitting ? 'Working…' : 'Log in'}
-        </button>
-        {error && <p className="error">{error}</p>}
-      </form>
+      <aside className="login-aside">
+        <div className="brand dark">
+          <span className="brand-mark">G</span>
+          <strong>GTM AI</strong>
+        </div>
+        <div className="login-pitch">
+          <h2>Enrich rows. Waterfall providers. Watch cells fill live.</h2>
+          <p>
+            GTM AI turns a spreadsheet into a pipeline — provider waterfalls, research agents,
+            formulas and HTTP calls, streaming into a live grid.
+          </p>
+          <ul className="login-points">
+            {[
+              'Waterfall enrichment across providers',
+              'LLM agents that research each row',
+              'Formulas, bindings and run conditions',
+              'Live grid over server-sent events',
+            ].map((point) => (
+              <li key={point}>
+                <span className="tick">✓</span>
+                {point}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="login-copy">© {new Date().getFullYear()} GTM AI</p>
+      </aside>
+      <section className="login-panel">
+        <form className="login-card" onSubmit={(event) => void submit(event)}>
+          <div className="eyebrow">REVENUE OPERATIONS</div>
+          <h1>GTM AI</h1>
+          <p className="muted">A focused workspace for enrichment and outbound data.</p>
+          <label>
+            Email
+            <input
+              required
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder={isDevelopment ? 'demo@gtmai.dev' : 'you@company.com'}
+            />
+          </label>
+          <label>
+            Password
+            <input
+              required
+              minLength={8}
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder={isDevelopment ? 'demo1234' : 'At least 8 characters'}
+            />
+          </label>
+          {isDevelopment && <p className="muted login-hint">Demo: demo@gtmai.dev / demo1234</p>}
+          <button className="button primary" disabled={submitting} type="submit">
+            {submitting ? 'Working…' : 'Log in'}
+          </button>
+          {error && <p className="error">{error}</p>}
+        </form>
+      </section>
     </main>
   );
 }

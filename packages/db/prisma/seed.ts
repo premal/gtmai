@@ -230,6 +230,7 @@ async function main(): Promise<void> {
   }
   const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
     maxRetriesPerRequest: null,
+    family: 0,
   });
   const queue = new Queue('cells', { connection: redis });
   const runnableColumns = createdColumns.filter((column) =>

@@ -1,0 +1,13 @@
+app = "gtmai-redis"
+primary_region = "iad"
+
+[processes]
+app = "sh -c 'redis-server --appendonly yes --dir /data --maxmemory 200mb --requirepass ${REDIS_PASSWORD}'"
+
+[[mounts]]
+source = "redis_data"
+destination = "/data"
+
+[vm]
+size = "shared-cpu-1x"
+memory = "256mb"

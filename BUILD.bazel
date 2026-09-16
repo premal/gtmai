@@ -1,0 +1,50 @@
+load("@npm//:defs.bzl", "npm_link_all_packages")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["eslint.config.mjs"])
+
+# Package-bin entry points (eslint/vitest/tsc macros) resolve their store
+# paths relative to the workspace root.
+npm_link_all_packages(name = "node_modules")
+
+# Workspace-level inputs every target depends on. Any change here (dependency
+# versions, package-manager config, the Bazel graph itself, or the test harness
+# scripts) invalidates the whole suite by design — fail safe.
+filegroup(
+    name = "workspace_config",
+    srcs = [
+        ".bazelignore",
+        ".bazelrc",
+        ".env.example",
+        ".env.test",
+        "BUILD.bazel",
+        "MODULE.bazel",
+        "eslint.config.mjs",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "tsconfig.base.json",
+        "turbo.json",
+    ] + glob(["scripts/**"]) + [
+        "//tools/bazel:BUILD.bazel",
+        "//tools/bazel:dbgen.sh",
+        "//tools/bazel:itest.sh",
+        "//tools/bazel:pnpm.sh",
+    ],
+)
+
+# Same files, as a js_library: rules_js test targets only accept data from
+# their own package, so filegroups in // can't be used directly.
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+js_library(
+    name = "workspace_config_js",
+    srcs = [
+        "eslint.config.mjs",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "tsconfig.base.json",
+    ] + glob(["scripts/**"]),
+)
