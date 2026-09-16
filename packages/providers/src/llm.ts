@@ -1,11 +1,26 @@
-import Anthropic from '@anthropic-ai/sdk';
-import OpenAI from 'openai';
+import Anthropic, { type ClientOptions as AnthropicClientOptions } from '@anthropic-ai/sdk';
+import OpenAI, { type ClientOptions as OpenAIClientOptions } from 'openai';
 import { z } from 'zod';
 import type { Provider, RunContext } from './types';
 
-const input = z.object({
+export const llmProviderIds = ['openai', 'anthropic', 'gemini', 'perplexity'] as const;
+export type LlmProviderId = (typeof llmProviderIds)[number];
+
+export function normalizeLlmProviderId(value: unknown): LlmProviderId {
+  return (llmProviderIds as readonly string[]).includes(String(value))
+    ? (value as LlmProviderId)
+    : 'openai';
+}
+
+export const llmProviderModels: Record<LlmProviderId, string[]> = {
+  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-5-mini', 'gpt-5'],
+  anthropic: ['claude-3-5-haiku-latest', 'claude-sonnet-4-5', 'claude-opus-4-1'],
+  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+  perplexity: ['sonar', 'sonar-pro', 'sonar-reasoning'],
+};
+
+const chatInput = z.object({
   prompt: z.string(),
-  provider: z.enum(['openai', 'anthropic']).default('openai'),
   model: z.string().optional(),
   schema: z.record(z.unknown()).optional(),
 });
@@ -22,30 +37,13 @@ export type AgentClient = {
 };
 
 async function structuredChat(
-  value: z.infer<typeof input>,
+  value: z.infer<typeof chatInput>,
   context: RunContext,
+  provider: LlmProviderId,
 ): Promise<AgentResult> {
-  if (value.provider === 'anthropic') {
-    const client = new Anthropic({ apiKey: context.credentials.apiKey, maxRetries: 5 });
-    const response = await client.messages.create({
-      model: value.model ?? 'claude-3-5-haiku-latest',
-      max_tokens: 2_000,
-      messages: [{ role: 'user', content: value.prompt }],
-    });
-    const text = response.content.find((item) => item.type === 'text')?.text ?? '{}';
-    return output.parse({
-      ...(JSON.parse(text) as Record<string, unknown>),
-      sources: [],
-      reasoning: '',
-    });
-  }
-  const client = new OpenAI({ apiKey: context.credentials.apiKey, maxRetries: 5 });
-  const response = await client.chat.completions.create({
-    model: value.model ?? 'gpt-4o-mini',
-    messages: [{ role: 'user', content: value.prompt }],
-    response_format: { type: 'json_object' },
-  });
-  const text = response.choices[0]?.message.content ?? '{}';
+  const text = await sdkClient(context, provider, value.model).complete([
+    { role: 'user', content: value.prompt },
+  ]);
   return output.parse({
     ...(JSON.parse(text) as Record<string, unknown>),
     sources: [],
@@ -53,42 +51,125 @@ async function structuredChat(
   });
 }
 
-export const llmProvider: Provider = {
-  id: 'llm',
-  name: 'LLM',
-  auth: {
-    type: 'apiKey',
-    fields: [
-      { key: 'apiKey', label: 'API key', secret: true },
+const llmAuthFields: Provider['auth']['fields'] = [
+  { key: 'apiKey', label: 'API key', secret: true },
+  {
+    key: 'tavilyApiKey',
+    label: 'Tavily API key',
+    secret: true,
+    optional: true,
+  },
+];
+
+function llmChatProvider(
+  id: LlmProviderId,
+  name: string,
+  check: NonNullable<Provider['check']>,
+): Provider {
+  return {
+    id,
+    name,
+    auth: { type: 'apiKey', fields: llmAuthFields },
+    models: llmProviderModels[id],
+    actions: [
       {
-        key: 'tavilyApiKey',
-        label: 'Tavily API key',
-        secret: true,
-        optional: true,
+        id: `${id}.chat`,
+        name: 'Structured chat',
+        category: 'ai',
+        input: chatInput,
+        output,
+        creditCost: 5,
+        async run(value: unknown, context: RunContext) {
+          try {
+            return { found: true, data: await structuredChat(chatInput.parse(value), context, id) };
+          } catch (error) {
+            return {
+              found: false,
+              reason: error instanceof Error ? error.message : 'LLM request failed',
+            };
+          }
+        },
       },
     ],
+    check,
+  };
+}
+
+export const openaiProvider = llmChatProvider(
+  'openai',
+  'OpenAI',
+  async ({ credentials, fetch }) => {
+    const response = await fetch('https://api.openai.com/v1/models', {
+      headers: { authorization: `Bearer ${credentials.apiKey ?? ''}` },
+    });
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, message: 'OpenAI rejected the API key' };
+    }
+    return response.ok
+      ? { ok: true }
+      : { ok: false, message: `OpenAI returned HTTP ${response.status}` };
   },
-  actions: [
-    {
-      id: 'llm.chat',
-      name: 'Structured chat',
-      category: 'ai',
-      input,
-      output,
-      creditCost: 5,
-      async run(value: unknown, context: RunContext) {
-        try {
-          return { found: true, data: await structuredChat(input.parse(value), context) };
-        } catch (error) {
-          return {
-            found: false,
-            reason: error instanceof Error ? error.message : 'LLM request failed',
-          };
-        }
+);
+
+export const anthropicProvider = llmChatProvider(
+  'anthropic',
+  'Anthropic',
+  async ({ credentials, fetch }) => {
+    const response = await fetch('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': credentials.apiKey ?? '',
+        'anthropic-version': '2023-06-01',
       },
-    },
-  ],
-};
+    });
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, message: 'Anthropic rejected the API key' };
+    }
+    return response.ok
+      ? { ok: true }
+      : { ok: false, message: `Anthropic returned HTTP ${response.status}` };
+  },
+);
+
+export const geminiProvider = llmChatProvider(
+  'gemini',
+  'Gemini',
+  async ({ credentials, fetch }) => {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(credentials.apiKey ?? '')}`,
+    );
+    if (response.status === 400 || response.status === 401 || response.status === 403) {
+      return { ok: false, message: 'Gemini rejected the API key' };
+    }
+    return response.ok
+      ? { ok: true }
+      : { ok: false, message: `Gemini returned HTTP ${response.status}` };
+  },
+);
+
+export const perplexityProvider = llmChatProvider(
+  'perplexity',
+  'Perplexity',
+  async ({ credentials, fetch }) => {
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${credentials.apiKey ?? ''}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: llmProviderModels.perplexity[0],
+        max_tokens: 1,
+        messages: [{ role: 'user', content: 'ping' }],
+      }),
+    });
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, message: 'Perplexity rejected the API key' };
+    }
+    return response.ok
+      ? { ok: true }
+      : { ok: false, message: `Perplexity returned HTTP ${response.status}` };
+  },
+);
 
 export async function fetchPage(url: string, fetcher: typeof fetch): Promise<string> {
   const response = await fetcher(url);
@@ -423,18 +504,30 @@ export async function runAgentWithClient(
   return { answer: 'Agent reached its step limit.', fields: {}, sources, reasoning: 'max_steps' };
 }
 
-function sdkClient(
-  context: RunContext,
-  provider: 'openai' | 'anthropic',
-  model?: string,
-): AgentClient {
+const openAiCompatibleBaseUrls: Partial<Record<LlmProviderId, string>> = {
+  gemini: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  perplexity: 'https://api.perplexity.ai',
+};
+
+// The vendor SDKs type their fetch option loosely; adapt RunContext.fetch.
+function contextFetch(context: RunContext) {
+  const fetcher = context.fetch;
+  return (input: unknown, init?: unknown): Promise<Response> =>
+    fetcher(input instanceof Request ? input : String(input), init as RequestInit);
+}
+
+function sdkClient(context: RunContext, provider: LlmProviderId, model?: string): AgentClient {
   if (provider === 'anthropic') {
-    const client = new Anthropic({ apiKey: context.credentials.apiKey, maxRetries: 5 });
+    const client = new Anthropic({
+      apiKey: context.credentials.apiKey,
+      maxRetries: 5,
+      fetch: contextFetch(context) as unknown as AnthropicClientOptions['fetch'],
+    });
     return {
       async complete(messages) {
         const system = messages.find((item) => item.role === 'system')?.content;
         const response = await client.messages.create({
-          model: model ?? 'claude-3-5-haiku-latest',
+          model: model ?? llmProviderModels.anthropic[0]!,
           max_tokens: 2_000,
           ...(system ? { system } : {}),
           messages: messages
@@ -448,16 +541,22 @@ function sdkClient(
       },
     };
   }
-  const client = new OpenAI({ apiKey: context.credentials.apiKey, maxRetries: 5 });
+  const client = new OpenAI({
+    apiKey: context.credentials.apiKey,
+    baseURL: openAiCompatibleBaseUrls[provider],
+    maxRetries: 5,
+    fetch: contextFetch(context) as unknown as OpenAIClientOptions['fetch'],
+  });
   return {
     async complete(messages) {
       const response = await client.chat.completions.create({
-        model: model ?? 'gpt-4o-mini',
+        model: model ?? llmProviderModels[provider][0]!,
         messages: messages.map((item) => ({
           role: item.role === 'tool' ? ('user' as const) : item.role,
           content: item.content,
         })),
-        response_format: { type: 'json_object' },
+        // Gemini/Perplexity reject OpenAI-only params; the agent prompt enforces JSON.
+        ...(provider === 'openai' ? { response_format: { type: 'json_object' as const } } : {}),
       });
       return response.choices[0]?.message.content ?? '{}';
     },
@@ -467,7 +566,7 @@ function sdkClient(
 export async function runAgent(
   prompt: string,
   context: RunContext,
-  provider: 'openai' | 'anthropic' = 'openai',
+  provider: LlmProviderId = 'openai',
   model?: string,
 ): Promise<AgentResult> {
   return runAgentWithClient(prompt, context, sdkClient(context, provider, model));

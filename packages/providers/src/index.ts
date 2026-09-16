@@ -13,7 +13,7 @@ import {
 } from './rest';
 import { hginsightsProvider } from './hginsights';
 import { httpProvider } from './http';
-import { llmProvider } from './llm';
+import { anthropicProvider, geminiProvider, openaiProvider, perplexityProvider } from './llm';
 import { mockProvider } from './mock';
 import { theirstackProvider } from './theirstack';
 import type { Provider } from './types';
@@ -27,7 +27,10 @@ export const providers: Provider[] = [
   theirstackProvider,
   hginsightsProvider,
   httpProvider,
-  llmProvider,
+  openaiProvider,
+  anthropicProvider,
+  geminiProvider,
+  perplexityProvider,
 ];
 export const providerCatalog = providers.flatMap((provider) =>
   provider.actions.map((action) => ({

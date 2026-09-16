@@ -12,7 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { providers } from '@gtmai/providers';
+import { normalizeLlmProviderId, providers } from '@gtmai/providers';
 import type { CheckResult, Provider, RunContext } from '@gtmai/providers';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
@@ -40,15 +40,9 @@ async function probeFirstAction(provider: Provider, context: RunContext): Promis
   const action = provider.actions[0];
   if (!action) return { ok: false, message: `No actions for provider ${provider.id}` };
   const input =
-    provider.id === 'llm'
-      ? {
-          prompt:
-            'Return only this JSON shape for an integration test: {"answer":"ok","fields":{},"sources":[],"reasoning":""}.',
-          provider: 'openai',
-        }
-      : provider.id === 'mock'
-        ? { firstName: 'Integration', lastName: 'Test', domain: 'example.com' }
-        : {};
+    provider.id === 'mock'
+      ? { firstName: 'Integration', lastName: 'Test', domain: 'example.com' }
+      : {};
   try {
     const result = await action.run(input, context);
     if (result.found) return { ok: true, message: 'Integration test passed' };
@@ -92,8 +86,10 @@ function columnUsesProvider(kind: string, config: unknown, providerId: string): 
     return items.some((item) => ((item ?? {}) as Record<string, unknown>).provider === providerId);
   }
   if (kind === 'agent') {
-    if (providerId === 'llm') return true;
-    return (record.provider === 'anthropic' ? 'anthropic' : 'openai') === providerId;
+    const wanted = normalizeLlmProviderId(record.provider);
+    // Legacy 'llm' integrations can only hold OpenAI or Anthropic keys.
+    if (providerId === 'llm') return wanted === 'openai' || wanted === 'anthropic';
+    return wanted === providerId;
   }
   return record.provider === providerId;
 }
@@ -147,6 +143,7 @@ export class IntegrationsController {
       id: provider.id,
       name: provider.name,
       auth: provider.auth,
+      models: provider.models,
       actions: provider.actions.map((action) => ({
         id: action.id,
         name: action.name,

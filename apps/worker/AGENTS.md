@@ -21,7 +21,7 @@ Each `cells` job = one (rowId, columnId) pair:
 | `enrichment`       | `executeEnrichment` — single provider action                                                                                | 1 (or `config.creditCost`) |
 | `waterfall`        | `executeWaterfall` — try providers in `config.providers[]` order, stop at first `accepted()` result; charge only the winner | winner's cost              |
 | `http`             | `executeHttp` — templated request via `rest` provider                                                                       | 1                          |
-| `agent`            | `executeAgent` — LLM w/ tool loop via `llm` provider                                                                        | 5                          |
+| `agent`            | `executeAgent` — LLM w/ tool loop; `config.provider` picks the integration (`openai`/`anthropic`/`gemini`/`perplexity`)     | 5                          |
 | `function`         | runs a `Function` version's JS                                                                                              | 1                          |
 
 Credentials: `decryptCredentials` (AES-256-GCM, `ENCRYPTION_KEY`) — the api

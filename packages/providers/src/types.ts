@@ -56,6 +56,7 @@ export type Provider = {
     type: 'apiKey';
     fields: { key: string; label: string; secret: true; optional?: boolean }[];
   };
+  models?: string[];
   actions: ProviderAction<unknown, unknown>[];
   check?: (ctx: RunContext) => Promise<CheckResult>;
 };

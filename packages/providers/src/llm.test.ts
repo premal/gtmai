@@ -1,5 +1,126 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fetchPage, parseBing, parseDuckDuckGo, runAgentWithClient, webSearch } from './llm';
+import {
+  anthropicProvider,
+  fetchPage,
+  geminiProvider,
+  llmProviderIds,
+  openaiProvider,
+  parseBing,
+  parseDuckDuckGo,
+  perplexityProvider,
+  runAgent,
+  runAgentWithClient,
+  webSearch,
+} from './llm';
+import type { RunContext } from './types';
+
+const testContext = (fetcher: typeof fetch): RunContext => ({
+  credentials: { apiKey: 'sk-test' },
+  fetch: fetcher,
+  logger: { info: () => undefined, error: () => undefined },
+});
+
+const openAiResponse = (text: string) =>
+  new Response(
+    JSON.stringify({
+      id: 'chatcmpl-test',
+      object: 'chat.completion',
+      created: 0,
+      model: 'test-model',
+      choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+
+describe('llm providers', () => {
+  it('registers one provider per LLM vendor with models and a chat action', () => {
+    expect(llmProviderIds).toEqual(['openai', 'anthropic', 'gemini', 'perplexity']);
+    for (const provider of [
+      openaiProvider,
+      anthropicProvider,
+      geminiProvider,
+      perplexityProvider,
+    ]) {
+      expect(provider.actions[0]?.id).toBe(`${provider.id}.chat`);
+      expect(provider.models?.length).toBeGreaterThan(0);
+      expect(provider.auth.fields.map((field) => field.key)).toContain('apiKey');
+    }
+  });
+
+  it.each([
+    [openaiProvider, 'api.openai.com'],
+    [geminiProvider, 'generativelanguage.googleapis.com'],
+    [perplexityProvider, 'api.perplexity.ai'],
+  ])('%s.chat posts to its own endpoint', async (provider, host) => {
+    const fetcher = vi.fn(async (_input: string) => openAiResponse('{"answer":"ok"}'));
+    const result = await provider.actions[0]!.run(
+      { prompt: 'Reply with JSON' },
+      testContext(fetcher as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ found: true, data: { answer: 'ok' } });
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain(host);
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('chat/completions');
+  });
+
+  it('anthropic.chat posts to the messages API', async () => {
+    const fetcher = vi.fn(
+      async (_input: string) =>
+        new Response(
+          JSON.stringify({
+            id: 'msg-test',
+            type: 'message',
+            role: 'assistant',
+            model: 'claude-3-5-haiku-latest',
+            content: [{ type: 'text', text: '{"answer":"ok"}' }],
+            stop_reason: 'end_turn',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    const result = await anthropicProvider.actions[0]!.run(
+      { prompt: 'Reply with JSON' },
+      testContext(fetcher as unknown as typeof fetch),
+    );
+    expect(result).toMatchObject({ found: true, data: { answer: 'ok' } });
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe('https://api.anthropic.com/v1/messages');
+  });
+
+  it('runAgent dispatches to the selected provider', async () => {
+    const finish = JSON.stringify({
+      tool: 'finish',
+      result: { answer: 'done', fields: {}, sources: [], reasoning: '' },
+    });
+    const fetcher = vi.fn(async (_input: string) => openAiResponse(finish));
+    const result = await runAgent(
+      'Find Ada',
+      testContext(fetcher as unknown as typeof fetch),
+      'gemini',
+    );
+    expect(result.answer).toBe('done');
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain('generativelanguage.googleapis.com');
+  });
+
+  it.each([
+    [openaiProvider, 'https://api.openai.com/v1/models', 200, true],
+    [anthropicProvider, 'https://api.anthropic.com/v1/models', 200, true],
+    [
+      geminiProvider,
+      'https://generativelanguage.googleapis.com/v1beta/models?key=sk-test',
+      200,
+      true,
+    ],
+    [perplexityProvider, 'https://api.perplexity.ai/chat/completions', 200, true],
+    [openaiProvider, 'https://api.openai.com/v1/models', 401, false],
+    [perplexityProvider, 'https://api.perplexity.ai/chat/completions', 403, false],
+  ])('%s.check probes %s (HTTP %i → ok=%s)', async (provider, url, status, ok) => {
+    const fetcher = vi.fn(async (_input: string) => new Response('{}', { status }));
+    const result = await provider.check!(testContext(fetcher as unknown as typeof fetch));
+    expect(result.ok).toBe(ok);
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe(url);
+  });
+});
 
 describe('agent loop', () => {
   it('uses search, fetch, and finish tools within the step limit', async () => {
