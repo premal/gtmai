@@ -81,6 +81,7 @@ export class SignalsController {
     });
     const events = new QueueEvents('signals', {
       connection: new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  family: 0,
         maxRetriesPerRequest: null,
       }),
     });

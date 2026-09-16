@@ -6,6 +6,7 @@ const json = (value: unknown) => value as import('@gtmai/db').Prisma.InputJsonVa
 const db = new PrismaClient();
 const connection = {
   url: process.env.REDIS_URL ?? 'redis://localhost:6379',
+  family: 0,
   maxRetriesPerRequest: null,
 };
 export type CrmRunJob = { jobId: string; workspaceId: string };

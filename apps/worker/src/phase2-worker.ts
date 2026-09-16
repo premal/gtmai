@@ -11,6 +11,7 @@ import { startUsageWorker } from './usage';
 
 const db = new PrismaClient();
 const redis = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  family: 0,
   maxRetriesPerRequest: null,
 });
 const workflowQueue = new Queue('workflows', { connection: redis });

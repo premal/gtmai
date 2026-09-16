@@ -21,6 +21,7 @@ import {
 import { budgetExceeded } from './budgets';
 
 const redis = new (require('ioredis'))(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  family: 0,
   maxRetriesPerRequest: null,
 }) as import('ioredis').default;
 const publisher = new (require('ioredis'))(
