@@ -8,6 +8,8 @@ export type PromptField = {
   label: string;
   defaultValue?: string;
   multiline?: boolean;
+  type?: 'text' | 'select';
+  options?: { value: string; label: string }[];
 };
 export type PromptOptions = {
   title: string;
@@ -78,7 +80,21 @@ export function PromptDialog({
           {fields.map((field) => (
             <label className="field-label" key={field.name}>
               {field.label}
-              {field.multiline ? (
+              {field.type === 'select' ? (
+                <select
+                  className="input"
+                  value={values[field.name] ?? ''}
+                  onChange={(event) =>
+                    setValues((current) => ({ ...current, [field.name]: event.target.value }))
+                  }
+                >
+                  {field.options?.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : field.multiline ? (
                 <textarea
                   className="input"
                   rows={7}

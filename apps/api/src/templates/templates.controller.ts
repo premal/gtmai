@@ -55,7 +55,9 @@ export class TemplatesController {
 
   @Post(':id/instantiate')
   async instantiate(@Req() request: Request, @Param('id') id: string, @Body() body: unknown) {
-    const input = z.object({ name: z.string().optional() }).parse(body ?? {});
+    const input = z
+      .object({ name: z.string().optional(), workbookId: z.string().optional() })
+      .parse(body ?? {});
     const saved = id.startsWith('builtin-')
       ? builtIns.find((template) => template.id === id)
       : await this.prisma.template.findFirst({
@@ -69,6 +71,7 @@ export class TemplatesController {
         request.user.workspaceId,
         name,
         saved.definition as TableTemplateDefinition,
+        input.workbookId,
       );
       return { kind: 'table', id: table.id };
     }

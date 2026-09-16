@@ -59,6 +59,30 @@ async function main(): Promise<void> {
           users: { create: { userId: user.id, role: 'owner' } },
         },
       });
+  const defaultWorkbook =
+    (await db.workbook.findFirst({
+      where: { workspaceId: workspace.id },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    })) ??
+    (await db.workbook.create({
+      data: { workspaceId: workspace.id, name: 'Default workbook', position: 0 },
+    }));
+  const q3Folder =
+    (await db.folder.findFirst({ where: { workspaceId: workspace.id, name: 'Q3 campaigns' } })) ??
+    (await db.folder.create({
+      data: { workspaceId: workspace.id, name: 'Q3 campaigns', position: 0 },
+    }));
+  (await db.workbook.findFirst({
+    where: { workspaceId: workspace.id, folderId: q3Folder.id, name: 'Q3 campaigns' },
+  })) ??
+    (await db.workbook.create({
+      data: {
+        workspaceId: workspace.id,
+        folderId: q3Folder.id,
+        name: 'Q3 campaigns',
+        position: 0,
+      },
+    }));
   const connection = await db.connection.findFirst({
     where: { workspaceId: workspace.id, provider: 'mock' },
   });
@@ -82,7 +106,31 @@ async function main(): Promise<void> {
     where: { workspaceId: workspace.id, name: 'Prospects' },
   });
   if (oldTable) await db.table.delete({ where: { id: oldTable.id } });
-  const table = await db.table.create({ data: { workspaceId: workspace.id, name: 'Prospects' } });
+  const table = await db.table.create({
+    data: {
+      workspaceId: workspace.id,
+      workbookId: defaultWorkbook.id,
+      name: 'Prospects',
+      position: await db.table.count({ where: { workbookId: defaultWorkbook.id } }),
+    },
+  });
+  const activeTag = await db.tag.upsert({
+    where: { workspaceId_name: { workspaceId: workspace.id, name: 'Active' } },
+    update: {},
+    create: { workspaceId: workspace.id, name: 'Active', color: '#22c55e' },
+  });
+  const sdrTag = await db.tag.upsert({
+    where: { workspaceId_name: { workspaceId: workspace.id, name: 'SDR team' } },
+    update: {},
+    create: { workspaceId: workspace.id, name: 'SDR team', color: '#6366f1' },
+  });
+  await db.tagAssignment.createMany({
+    data: [
+      { tagId: activeTag.id, tableId: table.id },
+      { tagId: sdrTag.id, tableId: table.id },
+    ],
+    skipDuplicates: true,
+  });
   const columns = [
     { name: 'First name', type: 'text', kind: 'input', position: 0 },
     { name: 'Last name', type: 'text', kind: 'input', position: 1 },

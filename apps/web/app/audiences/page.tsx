@@ -28,6 +28,7 @@ type AudienceTable = {
   name: string;
   columns: Array<{ name: string; type: string }>;
 };
+type TableView = { id: string; name: string };
 const importFields = ['email', 'firstName', 'lastName', 'companyName', 'domain'] as const;
 
 export default function AudiencesPage() {
@@ -41,6 +42,8 @@ export default function AudiencesPage() {
   const [tables, setTables] = useState<AudienceTable[]>([]);
   const [importTableId, setImportTableId] = useState('');
   const [importMapping, setImportMapping] = useState<Record<string, string>>({});
+  const [importViews, setImportViews] = useState<TableView[]>([]);
+  const [importViewId, setImportViewId] = useState('');
   const [importing, setImporting] = useState(false);
   const [messageLink, setMessageLink] = useState('');
   const [filterRow, setFilterRow] = useState<FilterRow>({
@@ -173,13 +176,22 @@ export default function AudiencesPage() {
     if (selectedTable) setImportMapping(detectMapping(selectedTable.columns));
   }, [importTableId]);
 
+  useEffect(() => {
+    if (!importTableId) return;
+    void fetch(`${api}/tables/${importTableId}/views`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+      .then((response) => response.json() as Promise<TableView[]>)
+      .then(setImportViews);
+  }, [importTableId, token]);
+
   async function submitImport() {
     if (!importTableId) return;
     setImporting(true);
     const response = await fetch(`${api}/audiences/import/table/${importTableId}`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ mapping: importMapping }),
+      body: JSON.stringify({ mapping: importMapping, viewId: importViewId || undefined }),
     });
     const result = (await response.json()) as {
       contactsCreated?: number;
@@ -424,6 +436,20 @@ export default function AudiencesPage() {
               </label>
               {selectedTable ? (
                 <>
+                  <label className="field-label">
+                    View scope
+                    <select
+                      value={importViewId}
+                      onChange={(event) => setImportViewId(event.target.value)}
+                    >
+                      <option value="">Default view · all rows</option>
+                      {importViews.map((view) => (
+                        <option value={view.id} key={view.id}>
+                          {view.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <p className="muted">
                     Detected mapping · review or change any source column before importing.
                   </p>
