@@ -53,6 +53,7 @@ function required(name: string): string {
       useFactory: (config: ConfigService) => ({
         connection: {
           url: config.get<string>('REDIS_URL') ?? 'redis://localhost:6379',
+          family: 0,
         },
       }),
     }),
