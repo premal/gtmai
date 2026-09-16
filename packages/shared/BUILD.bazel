@@ -1,0 +1,93 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@npm//packages/shared:vitest/package_json.bzl", vitest_bin = "bin")
+load("@npm//:eslint/package_json.bzl", eslint_bin = "bin")
+
+package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
+
+filegroup(
+    name = "config",
+    srcs = [
+        "package.json",
+        "tsconfig.json",
+    ],
+)
+
+# Source files minus tests — the dependency surface for rdeps selection.
+filegroup(
+    name = "srcs",
+    srcs = glob(
+        ["src/**"],
+        exclude = ["src/**/*.test.ts"],
+    ),
+)
+
+# Workspace-linked package contents: required by npm_translate_lock, which
+# generates a store entry referencing //packages/shared:pkg so dependent
+# packages (apps/api, apps/worker) get these files in their runfiles.
+js_library(
+    name = "pkg",
+    srcs = [":srcs", "package.json"],
+)
+
+# ---------------------------------------------------------------------------
+# Hermetic targets (Bazel-managed node + node_modules from the lockfile)
+# ---------------------------------------------------------------------------
+
+vitest_bin.vitest_test(
+    name = "unit_formula",
+    args = ["run", "src/formula.test.ts"],
+    chdir = "packages/shared",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:workspace_config_js",
+        "src/formula.test.ts",
+    ],
+    size = "small",
+)
+
+# eslint flat config lives at the workspace root and imports
+# @typescript-eslint/parser from the root node_modules link.
+eslint_bin.eslint_test(
+    name = "lint",
+    args = ["src", "--no-warn-ignored"],
+    chdir = "packages/shared",
+    data = [
+        ":config",
+        ":node_modules",
+        ":srcs",
+        "//:node_modules",
+        "//:workspace_config_js",
+    ],
+    size = "medium",
+)
+
+# ---------------------------------------------------------------------------
+# Non-hermetic wrappers (run pnpm in the real source tree; declared data still
+# drives affected-test selection)
+# ---------------------------------------------------------------------------
+
+_LOCAL = ["local", "no-sandbox", "requires-network"]
+
+sh_test(
+    name = "typecheck",
+    srcs = ["//tools/bazel:pnpm.sh"],
+    args = ["--filter", "@gtmai/shared", "typecheck"],
+    data = [":config", ":srcs", "//:workspace_config"],
+    tags = _LOCAL,
+    size = "medium",
+)
+
+sh_test(
+    name = "build",
+    srcs = ["//tools/bazel:pnpm.sh"],
+    args = ["--filter", "@gtmai/shared", "build"],
+    data = [":config", ":srcs", "//:workspace_config"],
+    tags = _LOCAL,
+    size = "medium",
+)
