@@ -21,6 +21,31 @@ import { PrismaService } from '../prisma/prisma.service';
 
 type Request = FastifyRequest & { user: AuthUser };
 
+// In-process TTL cache. The universe only changes on a data reload, so facet
+// lists are cached long; filtered counts short (covers pagination re-counts).
+const ttlCache = new Map<string, { at: number; value: unknown }>();
+const inFlight = new Map<string, Promise<unknown>>();
+const cached = <T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> => {
+  const hit = ttlCache.get(key);
+  if (hit && Date.now() - hit.at < ttlMs) return Promise.resolve(hit.value as T);
+  let p = inFlight.get(key);
+  if (!p) {
+    p = load()
+      .then((value) => {
+        ttlCache.set(key, { at: Date.now(), value });
+        if (ttlCache.size > 2000) ttlCache.delete(ttlCache.keys().next().value!);
+        inFlight.delete(key);
+        return value;
+      })
+      .catch((err) => {
+        inFlight.delete(key);
+        throw err;
+      });
+    inFlight.set(key, p);
+  }
+  return p as Promise<T>;
+};
+
 const exploreQuery = z.object({
   q: z.string().optional(),
   industry: z.string().optional(),
@@ -437,6 +462,30 @@ export class AccountsController {
   async explore(@Req() _request: Request, @Query() query: Record<string, string>) {
     const input = exploreQuery.parse(query);
     const where = buildAccountWhere(input);
+    const countKey = JSON.stringify([
+      input.q,
+      input.industry,
+      input.excludeIndustry,
+      input.state,
+      input.excludeState,
+      input.city,
+      input.excludeCity,
+      input.regions,
+      input.excludeRegions,
+      input.size,
+      input.excludeSize,
+      input.country,
+      input.excludeCountry,
+      input.domain,
+      input.identifiers,
+      input.keywords,
+      input.hasDomain,
+      input.hasLinkedin,
+      input.minEmployees,
+      input.maxEmployees,
+      input.minRevenue,
+      input.maxRevenue,
+    ]);
     const [items, total] = await Promise.all([
       this.prisma.account.findMany({
         where,
@@ -444,7 +493,7 @@ export class AccountsController {
         skip: (input.page - 1) * input.limit,
         take: input.limit,
       }),
-      this.prisma.account.count({ where }),
+      cached(`count:${countKey}`, 60_000, () => this.prisma.account.count({ where })),
     ]);
     return {
       items,
@@ -457,6 +506,10 @@ export class AccountsController {
 
   @Get('facets')
   async facets() {
+    return cached('facets', 10 * 60_000, () => this.loadFacets());
+  }
+
+  private async loadFacets() {
     const [total, industries, countries, states, cities, sizes] = await Promise.all([
       this.prisma.account.count(),
       this.prisma.account.groupBy({
