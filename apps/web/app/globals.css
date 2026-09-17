@@ -2707,4 +2707,103 @@ a {
   .active-filters .chip {
     gap: 6px;
   }
+  .combo {
+    position: relative;
+    margin-top: 10px;
+  }
+  .combo-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--color-ink-2);
+    margin-bottom: 4px;
+  }
+  .combo-hint {
+    font-size: 11px;
+    color: var(--color-faint);
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }
+  .combo-box {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-height: 34px;
+    padding: 4px 8px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 6px;
+    background: var(--color-surface);
+    cursor: text;
+  }
+  .combo-box:focus-within {
+    border-color: var(--color-accent);
+  }
+  .combo-input {
+    flex: 1;
+    min-width: 60px;
+    border: 0;
+    outline: none;
+    padding: 3px 0;
+    font: inherit;
+    font-size: 12px;
+    background: transparent;
+    color: var(--color-ink);
+  }
+  .combo-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--color-accent-soft);
+    color: var(--color-accent-ink);
+    font-size: 11px;
+    font-weight: 600;
+    max-width: 100%;
+  }
+  .combo-chip button {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    font-size: 9px;
+    line-height: 1;
+  }
+  .combo-dropdown {
+    position: absolute;
+    z-index: 30;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 220px;
+    overflow-y: auto;
+    margin-top: 4px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: 8px;
+    background: var(--color-surface);
+    box-shadow: 0 8px 24px rgb(28 25 23 / 10%);
+  }
+  .combo-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    border: 0;
+    background: none;
+    padding: 7px 10px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--color-ink);
+    cursor: pointer;
+    text-align: left;
+  }
+  .combo-option:hover {
+    background: var(--color-accent-soft);
+  }
+  .combo textarea.input {
+    width: 100%;
+    resize: vertical;
+    font-size: 12px;
+  }
 } /* @layer components */

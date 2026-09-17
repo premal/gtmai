@@ -23,12 +23,26 @@ type Account = {
   ticker?: string;
 };
 type Facet = { value: string; count: number };
-type Facets = { total: number; industries: Facet[]; states: Facet[]; sizes: Facet[] };
+type Facets = {
+  total: number;
+  industries: Facet[];
+  states: Facet[];
+  cities: Facet[];
+  sizes: Facet[];
+};
 type Table = { id: string; name: string };
 type SearchSpec = {
   q: string;
+  keywords: string;
+  identifiers: string;
   industries: string[];
+  excludeIndustries: string[];
+  regions: string[];
+  excludeRegions: string[];
   states: string[];
+  excludeStates: string[];
+  cities: string[];
+  excludeCities: string[];
   sizes: string[];
   minEmployees: string;
   maxEmployees: string;
@@ -49,11 +63,92 @@ const SIZE_ORDER = [
   '5001-10000',
   '10001+',
 ];
+const REGIONS = [
+  {
+    value: 'West',
+    states: [
+      'Alaska',
+      'Arizona',
+      'California',
+      'Colorado',
+      'Hawaii',
+      'Idaho',
+      'Montana',
+      'Nevada',
+      'New Mexico',
+      'Oregon',
+      'Utah',
+      'Washington',
+      'Wyoming',
+    ],
+  },
+  {
+    value: 'Midwest',
+    states: [
+      'Illinois',
+      'Indiana',
+      'Iowa',
+      'Kansas',
+      'Michigan',
+      'Minnesota',
+      'Missouri',
+      'Nebraska',
+      'North Dakota',
+      'Ohio',
+      'South Dakota',
+      'Wisconsin',
+    ],
+  },
+  {
+    value: 'South',
+    states: [
+      'Alabama',
+      'Arkansas',
+      'Delaware',
+      'District of Columbia',
+      'Florida',
+      'Georgia',
+      'Kentucky',
+      'Louisiana',
+      'Maryland',
+      'Mississippi',
+      'North Carolina',
+      'Oklahoma',
+      'South Carolina',
+      'Tennessee',
+      'Texas',
+      'Virginia',
+      'West Virginia',
+    ],
+  },
+  {
+    value: 'Northeast',
+    states: [
+      'Connecticut',
+      'Maine',
+      'Massachusetts',
+      'New Hampshire',
+      'New Jersey',
+      'New York',
+      'Pennsylvania',
+      'Rhode Island',
+      'Vermont',
+    ],
+  },
+];
 const SAVED_KEY = 'gtmai-account-searches';
 const EMPTY_SPEC: SearchSpec = {
   q: '',
+  keywords: '',
+  identifiers: '',
   industries: [],
+  excludeIndustries: [],
+  regions: [],
+  excludeRegions: [],
   states: [],
+  excludeStates: [],
+  cities: [],
+  excludeCities: [],
   sizes: [],
   minEmployees: '',
   maxEmployees: '',
@@ -66,24 +161,84 @@ const EMPTY_SPEC: SearchSpec = {
 const fmt = (n?: number) => (n === undefined || n === null ? '—' : n.toLocaleString());
 const fmtM = (n?: number) => (n === undefined || n === null ? '—' : `$${n.toLocaleString()}M`);
 
-function FacetList({
+// Searchable multi-select: chips for picked values, input filters the dropdown.
+function Combo({
+  label,
+  hint,
+  placeholder,
   options,
   picked,
-  onToggle,
+  onChange,
 }: {
+  label: string;
+  hint?: string;
+  placeholder: string;
   options: Facet[];
-  picked: Set<string>;
-  onToggle: (value: string) => void;
+  picked: string[];
+  onChange: (next: string[]) => void;
 }) {
+  const [text, setText] = useState('');
+  const [open, setOpen] = useState(false);
+  const pickedSet = new Set(picked.map((p) => p.toLowerCase()));
+  const filtered = options
+    .filter((o) => o.value && !pickedSet.has(o.value.toLowerCase()))
+    .filter((o) => o.value.toLowerCase().includes(text.toLowerCase()))
+    .slice(0, 40);
+
+  function add(value: string) {
+    onChange([...picked, value]);
+    setText('');
+  }
+
   return (
-    <div className="filter-options">
-      {options.map((f) => (
-        <label className="filter-option" key={f.value}>
-          <input type="checkbox" checked={picked.has(f.value)} onChange={() => onToggle(f.value)} />
-          <span className="filter-option-name">{f.value}</span>
-          <span className="filter-option-count">{f.count.toLocaleString()}</span>
-        </label>
-      ))}
+    <div className="combo">
+      <div className="combo-label">{label}</div>
+      {hint && <div className="combo-hint">{hint}</div>}
+      <div className="combo-box">
+        {picked.map((value) => (
+          <span className="combo-chip" key={value}>
+            {value}
+            <button
+              type="button"
+              onClick={() => onChange(picked.filter((p) => p !== value))}
+              aria-label={`remove ${value}`}
+            >
+              ✕
+            </button>
+          </span>
+        ))}
+        <input
+          className="combo-input"
+          placeholder={picked.length ? '' : placeholder}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === 'Backspace' && !text && picked.length) {
+              onChange(picked.slice(0, -1));
+            }
+          }}
+        />
+      </div>
+      {open && filtered.length > 0 && (
+        <div className="combo-dropdown">
+          {filtered.map((f) => (
+            <button
+              type="button"
+              className="combo-option"
+              key={f.value}
+              onMouseDown={() => add(f.value)}
+            >
+              <span className="filter-option-name">{f.value}</span>
+              <span className="filter-option-count">{f.count.toLocaleString()}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -113,8 +268,16 @@ export default function AccountsPage() {
   const filterParams = useCallback(() => {
     const params: Record<string, string> = {};
     if (spec.q) params.q = spec.q;
+    if (spec.keywords) params.keywords = spec.keywords;
+    if (spec.identifiers) params.identifiers = spec.identifiers;
     if (spec.industries.length) params.industry = spec.industries.join(',');
+    if (spec.excludeIndustries.length) params.excludeIndustry = spec.excludeIndustries.join(',');
+    if (spec.regions.length) params.regions = spec.regions.join(',');
+    if (spec.excludeRegions.length) params.excludeRegions = spec.excludeRegions.join(',');
     if (spec.states.length) params.state = spec.states.join(',');
+    if (spec.excludeStates.length) params.excludeState = spec.excludeStates.join(',');
+    if (spec.cities.length) params.city = spec.cities.join(',');
+    if (spec.excludeCities.length) params.excludeCity = spec.excludeCities.join(',');
     if (spec.sizes.length) params.size = spec.sizes.join(',');
     if (spec.minEmployees) params.minEmployees = spec.minEmployees;
     if (spec.maxEmployees) params.maxEmployees = spec.maxEmployees;
@@ -177,12 +340,15 @@ export default function AccountsPage() {
     setPage(1);
   }
 
-  function toggleSet(key: 'industries' | 'states' | 'sizes', value: string) {
-    const next = new Set(spec[key]);
-    if (next.has(value)) next.delete(value);
-    else next.add(value);
-    patch({ [key]: [...next] });
-  }
+  const setList = (key: keyof SearchSpec & string) => (next: string[]) =>
+    patch({ [key]: next } as Partial<SearchSpec>);
+
+  const toggleSet = (key: keyof SearchSpec & string, value: string) => {
+    const current = (spec[key] as string[]) ?? [];
+    setList(key)(
+      current.includes(value) ? current.filter((v) => v !== value) : [...current, value],
+    );
+  };
 
   function onQ(value: string) {
     setQ(value);
@@ -275,8 +441,14 @@ export default function AccountsPage() {
     }
   }
 
-  const industries = (facets?.industries ?? []).filter((f) => f.value).slice(0, 25);
-  const states = (facets?.states ?? []).filter((f) => f.value).slice(0, 25);
+  const industries = (facets?.industries ?? []).filter((f) => f.value);
+  const states = (facets?.states ?? []).filter((f) => f.value);
+  const cities = (facets?.cities ?? []).filter((f) => f.value);
+  const stateCounts = new Map(states.map((f) => [f.value.toLowerCase(), f.count]));
+  const regions = REGIONS.map((r) => ({
+    value: r.value,
+    count: r.states.reduce((sum, s) => sum + (stateCounts.get(s.toLowerCase()) ?? 0), 0),
+  }));
   const sizes = SIZE_ORDER.filter((s) => facets?.sizes.some((f) => f.value === s)).map((s) => ({
     value: s,
     count: facets?.sizes.find((f) => f.value === s)?.count ?? 0,
@@ -291,10 +463,24 @@ export default function AccountsPage() {
         patch({ q: '' });
       },
     });
-  for (const v of spec.industries)
-    chips.push({ label: v, clear: () => toggleSet('industries', v) });
-  for (const v of spec.states) chips.push({ label: v, clear: () => toggleSet('states', v) });
-  for (const v of spec.sizes) chips.push({ label: `${v} emp`, clear: () => toggleSet('sizes', v) });
+  if (spec.keywords) chips.push({ label: spec.keywords, clear: () => patch({ keywords: '' }) });
+  if (spec.identifiers)
+    chips.push({ label: 'identifiers', clear: () => patch({ identifiers: '' }) });
+  const listChips: [keyof SearchSpec, string, string][] = [
+    ['industries', '', ''],
+    ['excludeIndustries', 'not ', ''],
+    ['regions', '', ''],
+    ['excludeRegions', 'not ', ''],
+    ['states', '', ''],
+    ['excludeStates', 'not ', ''],
+    ['cities', '', ''],
+    ['excludeCities', 'not ', ''],
+    ['sizes', '', ' emp'],
+  ];
+  for (const [key, prefix, suffix] of listChips) {
+    for (const v of (spec[key] as string[]) ?? [])
+      chips.push({ label: `${prefix}${v}${suffix}`, clear: () => toggleSet(key, v) });
+  }
   if (spec.minEmployees)
     chips.push({
       label: `≥${spec.minEmployees} employees`,
@@ -374,30 +560,92 @@ export default function AccountsPage() {
               />
             </details>
 
-            <details className="filter-section" open={spec.industries.length > 0}>
-              <summary>Industry</summary>
-              <FacetList
+            <details
+              className="filter-section"
+              open={spec.industries.length + spec.excludeIndustries.length > 0}
+            >
+              <summary>Company attributes</summary>
+              <Combo
+                label="Industries to include"
+                placeholder="e.g. Software and IT"
                 options={industries}
-                picked={new Set(spec.industries)}
-                onToggle={(v) => toggleSet('industries', v)}
+                picked={spec.industries}
+                onChange={setList('industries')}
+              />
+              <Combo
+                label="Industries to exclude"
+                placeholder="e.g. Gambling"
+                options={industries}
+                picked={spec.excludeIndustries}
+                onChange={setList('excludeIndustries')}
               />
             </details>
 
-            <details className="filter-section" open={spec.states.length > 0}>
+            <details
+              className="filter-section"
+              open={
+                spec.regions.length +
+                  spec.excludeRegions.length +
+                  spec.states.length +
+                  spec.excludeStates.length +
+                  spec.cities.length +
+                  spec.excludeCities.length >
+                0
+              }
+            >
               <summary>Location</summary>
-              <FacetList
+              <Combo
+                label="Regions to include"
+                placeholder="e.g. West, South"
+                options={regions}
+                picked={spec.regions}
+                onChange={setList('regions')}
+              />
+              <Combo
+                label="Regions to exclude"
+                placeholder="e.g. Midwest"
+                options={regions}
+                picked={spec.excludeRegions}
+                onChange={setList('excludeRegions')}
+              />
+              <Combo
+                label="States to include"
+                placeholder="e.g. California, New York"
                 options={states}
-                picked={new Set(spec.states)}
-                onToggle={(v) => toggleSet('states', v)}
+                picked={spec.states}
+                onChange={setList('states')}
+              />
+              <Combo
+                label="States to exclude"
+                placeholder="e.g. Texas, Florida"
+                options={states}
+                picked={spec.excludeStates}
+                onChange={setList('excludeStates')}
+              />
+              <Combo
+                label="Cities to include"
+                placeholder="e.g. San Francisco, Austin"
+                options={cities}
+                picked={spec.cities}
+                onChange={setList('cities')}
+              />
+              <Combo
+                label="Cities to exclude"
+                placeholder="e.g. New York"
+                options={cities}
+                picked={spec.excludeCities}
+                onChange={setList('excludeCities')}
               />
             </details>
 
             <details className="filter-section" open={spec.sizes.length > 0}>
               <summary>Company size</summary>
-              <FacetList
+              <Combo
+                label="Employee ranges to include"
+                placeholder="e.g. 1001-5000"
                 options={sizes}
-                picked={new Set(spec.sizes)}
-                onToggle={(v) => toggleSet('sizes', v)}
+                picked={spec.sizes}
+                onChange={setList('sizes')}
               />
             </details>
 
@@ -440,6 +688,37 @@ export default function AccountsPage() {
                   inputMode="numeric"
                   value={spec.maxRevenue}
                   onChange={(e) => patch({ maxRevenue: e.target.value })}
+                />
+              </div>
+            </details>
+
+            <details className="filter-section" open={Boolean(spec.identifiers)}>
+              <summary>Company identifiers</summary>
+              <div className="combo">
+                <div className="combo-label">Domains or LinkedIn URLs</div>
+                <div className="combo-hint">
+                  Only return matching domains or LinkedIn URLs. Use one type per search.
+                </div>
+                <textarea
+                  className="input"
+                  rows={3}
+                  placeholder="e.g. clay.com, linkedin.com/company/clay"
+                  value={spec.identifiers}
+                  onChange={(e) => patch({ identifiers: e.target.value })}
+                />
+              </div>
+            </details>
+
+            <details className="filter-section" open={Boolean(spec.keywords)}>
+              <summary>Products &amp; services</summary>
+              <div className="combo">
+                <div className="combo-label">Describe products and services</div>
+                <textarea
+                  className="input"
+                  rows={3}
+                  placeholder="e.g. sales prospecting tools, solar panels"
+                  value={spec.keywords}
+                  onChange={(e) => patch({ keywords: e.target.value })}
                 />
               </div>
             </details>

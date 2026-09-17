@@ -41,6 +41,49 @@ describe('buildAccountWhere', () => {
     expect(buildAccountWhere({ hasLinkedin: 'false' }).linkedinUrl).toBeNull();
   });
 
+  it('excludes preserve NULLs', () => {
+    const where = buildAccountWhere({ excludeIndustry: 'Retail,Gambling' });
+    expect(where.AND).toEqual([
+      {
+        OR: [
+          { industry: null },
+          { industry: { notIn: ['Retail', 'Gambling'], mode: 'insensitive' } },
+        ],
+      },
+    ]);
+  });
+
+  it('expands regions to states and intersects with explicit states', () => {
+    const where = buildAccountWhere({ regions: 'West', state: 'Texas,California' });
+    expect(where.state).toEqual({ in: ['california'], mode: 'insensitive' });
+  });
+
+  it('parses identifiers into domains or LinkedIn slugs', () => {
+    const domains = buildAccountWhere({ identifiers: 'acme.com, https://www.foo.io/path' });
+    expect(domains.domain).toEqual({ in: ['acme.com', 'foo.io'] });
+    const linkedin = buildAccountWhere({
+      identifiers: 'linkedin.com/company/acme https://www.linkedin.com/company/foo/',
+    });
+    expect(linkedin.AND).toEqual([
+      {
+        OR: [
+          { linkedinUrl: { contains: 'acme', mode: 'insensitive' } },
+          { linkedinUrl: { contains: 'foo', mode: 'insensitive' } },
+        ],
+      },
+    ]);
+  });
+
+  it('requires every keyword term to match name or industry', () => {
+    const where = buildAccountWhere({ keywords: 'solar,roofing' });
+    const and = where.AND as import('@gtmai/db').Prisma.AccountWhereInput[];
+    expect(and).toHaveLength(2);
+    expect(and[0]?.OR).toEqual([
+      { name: { contains: 'solar', mode: 'insensitive' } },
+      { industry: { contains: 'solar', mode: 'insensitive' } },
+    ]);
+  });
+
   it('returns an empty where for no filters', () => {
     expect(buildAccountWhere({})).toEqual({});
   });

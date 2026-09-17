@@ -24,10 +24,19 @@ type Request = FastifyRequest & { user: AuthUser };
 const exploreQuery = z.object({
   q: z.string().optional(),
   industry: z.string().optional(),
+  excludeIndustry: z.string().optional(),
   state: z.string().optional(),
+  excludeState: z.string().optional(),
+  city: z.string().optional(),
+  excludeCity: z.string().optional(),
+  regions: z.string().optional(),
+  excludeRegions: z.string().optional(),
   size: z.string().optional(),
+  excludeSize: z.string().optional(),
   country: z.string().optional(),
   domain: z.string().optional(),
+  identifiers: z.string().optional(),
+  keywords: z.string().optional(),
   hasDomain: z.enum(['true', 'false']).optional(),
   hasLinkedin: z.enum(['true', 'false']).optional(),
   minEmployees: z.coerce.number().optional(),
@@ -44,8 +53,81 @@ const filtersQuery = exploreQuery.partial();
 type ExploreInput = z.infer<typeof exploreQuery>;
 type FiltersInput = z.infer<typeof filtersQuery>;
 
+// US census regions — lets the UI offer Clay-style region include/exclude
+// even though the universe only stores state names.
+const REGIONS: Record<string, string[]> = {
+  west: [
+    'alaska',
+    'arizona',
+    'california',
+    'colorado',
+    'hawaii',
+    'idaho',
+    'montana',
+    'nevada',
+    'new mexico',
+    'oregon',
+    'utah',
+    'washington',
+    'wyoming',
+  ],
+  midwest: [
+    'illinois',
+    'indiana',
+    'iowa',
+    'kansas',
+    'michigan',
+    'minnesota',
+    'missouri',
+    'nebraska',
+    'north dakota',
+    'ohio',
+    'south dakota',
+    'wisconsin',
+  ],
+  south: [
+    'alabama',
+    'arkansas',
+    'delaware',
+    'district of columbia',
+    'florida',
+    'georgia',
+    'kentucky',
+    'louisiana',
+    'maryland',
+    'mississippi',
+    'north carolina',
+    'oklahoma',
+    'south carolina',
+    'tennessee',
+    'texas',
+    'virginia',
+    'west virginia',
+  ],
+  northeast: [
+    'connecticut',
+    'maine',
+    'massachusetts',
+    'new hampshire',
+    'new jersey',
+    'new york',
+    'pennsylvania',
+    'rhode island',
+    'vermont',
+  ],
+};
+
+const list = (v?: string) =>
+  (v ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+const regionStates = (v?: string) => list(v).flatMap((r) => REGIONS[r.toLowerCase()] ?? []);
+
 export function buildAccountWhere(input: FiltersInput): Prisma.AccountWhereInput {
   const where: Prisma.AccountWhereInput = {};
+  const and: Prisma.AccountWhereInput[] = [];
   const or: Prisma.AccountWhereInput[] = [];
   if (input.q) {
     for (const field of ['name', 'domain', 'linkedinUrl', 'ticker'] as const) {
@@ -54,15 +136,78 @@ export function buildAccountWhere(input: FiltersInput): Prisma.AccountWhereInput
   }
   if (input.domain) or.push({ domain: { contains: input.domain, mode: 'insensitive' } });
   if (or.length) where.OR = or;
-  // industry/state/size accept comma-separated multi-select values
-  if (input.industry) where.industry = { in: input.industry.split(','), mode: 'insensitive' };
-  if (input.state) where.state = { in: input.state.split(','), mode: 'insensitive' };
-  if (input.size) where.size = { in: input.size.split(',') };
+
+  // include filters accept comma-separated multi-select values
+  if (list(input.industry).length)
+    where.industry = { in: list(input.industry), mode: 'insensitive' };
+  if (list(input.city).length) where.city = { in: list(input.city), mode: 'insensitive' };
+  if (list(input.size).length) where.size = { in: list(input.size) };
   if (input.country) where.country = { equals: input.country, mode: 'insensitive' };
-  if (input.hasDomain === 'true') where.domain = { not: null };
+
+  // state includes AND region includes intersect (state=Texas AND region=West → none)
+  const stateGroups: string[][] = [];
+  if (list(input.state).length) stateGroups.push(list(input.state));
+  const regionInclude = regionStates(input.regions);
+  if (regionInclude.length) stateGroups.push(regionInclude);
+  if (stateGroups.length === 1) {
+    where.state = { in: stateGroups[0] ?? [], mode: 'insensitive' };
+  } else if (stateGroups.length > 1) {
+    const [first = [], ...rest] = stateGroups.map((g) => g.map((s) => s.toLowerCase()));
+    const inter = first.filter((s) => rest.every((g) => g.includes(s)));
+    where.state = { in: inter, mode: 'insensitive' };
+  }
+
+  // excludes preserve NULLs — most accounts lack industry/city labels
+  const exclude = (field: 'industry' | 'state' | 'city' | 'size', values: string[]) => {
+    if (!values.length) return;
+    and.push({
+      OR: [{ [field]: null }, { [field]: { notIn: values, mode: 'insensitive' } }],
+    });
+  };
+  exclude('industry', list(input.excludeIndustry));
+  exclude('state', [...list(input.excludeState), ...regionStates(input.excludeRegions)]);
+  exclude('city', list(input.excludeCity));
+  exclude('size', list(input.excludeSize));
+
+  // pasted domains or LinkedIn URLs ("one type per search" like Clay)
+  if (input.identifiers) {
+    const domains: string[] = [];
+    const slugs: string[] = [];
+    for (const token of input.identifiers.split(/[\s,;]+/).filter(Boolean)) {
+      if (token.toLowerCase().includes('linkedin.com')) {
+        const slug = token.replace(/\/+$/, '').split('/').filter(Boolean).pop();
+        if (slug) slugs.push(slug);
+      } else {
+        const d = token
+          .toLowerCase()
+          .replace(/^https?:\/\//, '')
+          .replace(/^www\./, '')
+          .replace(/\/.*$/, '');
+        if (d) domains.push(d);
+      }
+    }
+    if (domains.length) where.domain = { in: domains };
+    if (slugs.length)
+      and.push({
+        OR: slugs.map((s) => ({ linkedinUrl: { contains: s, mode: 'insensitive' as const } })),
+      });
+  }
+
+  // "products & services" — every term must match name or industry
+  for (const term of list(input.keywords)) {
+    and.push({
+      OR: [
+        { name: { contains: term, mode: 'insensitive' } },
+        { industry: { contains: term, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  if (input.hasDomain === 'true') where.domain ??= { not: null };
   if (input.hasDomain === 'false') where.domain = null;
   if (input.hasLinkedin === 'true') where.linkedinUrl = { not: null };
   if (input.hasLinkedin === 'false') where.linkedinUrl = null;
+  if (and.length) where.AND = and;
   const employees: Prisma.IntFilter = {};
   if (input.minEmployees !== undefined) employees.gte = input.minEmployees;
   if (input.maxEmployees !== undefined) employees.lte = input.maxEmployees;
@@ -135,7 +280,7 @@ export class AccountsController {
 
   @Get('facets')
   async facets() {
-    const [total, industries, states, sizes] = await Promise.all([
+    const [total, industries, states, cities, sizes] = await Promise.all([
       this.prisma.account.count(),
       this.prisma.account.groupBy({
         by: ['industry'],
@@ -150,6 +295,12 @@ export class AccountsController {
         take: 60,
       }),
       this.prisma.account.groupBy({
+        by: ['city'],
+        _count: { _all: true },
+        orderBy: { _count: { city: 'desc' } },
+        take: 80,
+      }),
+      this.prisma.account.groupBy({
         by: ['size'],
         _count: { _all: true },
         orderBy: { _count: { size: 'desc' } },
@@ -159,6 +310,7 @@ export class AccountsController {
       total,
       industries: industries.map((f) => ({ value: f.industry, count: f._count._all })),
       states: states.map((f) => ({ value: f.state, count: f._count._all })),
+      cities: cities.map((f) => ({ value: f.city, count: f._count._all })),
       sizes: sizes.map((f) => ({ value: f.size, count: f._count._all })),
     };
   }
