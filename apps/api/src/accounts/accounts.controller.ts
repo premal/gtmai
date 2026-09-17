@@ -28,6 +28,8 @@ const exploreQuery = z.object({
   size: z.string().optional(),
   country: z.string().optional(),
   domain: z.string().optional(),
+  hasDomain: z.enum(['true', 'false']).optional(),
+  hasLinkedin: z.enum(['true', 'false']).optional(),
   minEmployees: z.coerce.number().optional(),
   maxEmployees: z.coerce.number().optional(),
   minRevenue: z.coerce.number().optional(),
@@ -52,10 +54,15 @@ export function buildAccountWhere(input: FiltersInput): Prisma.AccountWhereInput
   }
   if (input.domain) or.push({ domain: { contains: input.domain, mode: 'insensitive' } });
   if (or.length) where.OR = or;
-  if (input.industry) where.industry = { equals: input.industry, mode: 'insensitive' };
-  if (input.state) where.state = { equals: input.state, mode: 'insensitive' };
-  if (input.size) where.size = input.size;
+  // industry/state/size accept comma-separated multi-select values
+  if (input.industry) where.industry = { in: input.industry.split(','), mode: 'insensitive' };
+  if (input.state) where.state = { in: input.state.split(','), mode: 'insensitive' };
+  if (input.size) where.size = { in: input.size.split(',') };
   if (input.country) where.country = { equals: input.country, mode: 'insensitive' };
+  if (input.hasDomain === 'true') where.domain = { not: null };
+  if (input.hasDomain === 'false') where.domain = null;
+  if (input.hasLinkedin === 'true') where.linkedinUrl = { not: null };
+  if (input.hasLinkedin === 'false') where.linkedinUrl = null;
   const employees: Prisma.IntFilter = {};
   if (input.minEmployees !== undefined) employees.gte = input.minEmployees;
   if (input.maxEmployees !== undefined) employees.lte = input.maxEmployees;
