@@ -22,12 +22,13 @@ type Account = {
   founded?: number;
   ticker?: string;
 };
-type Facet = { value: string; count: number };
+type Facet = { value: string; count?: number };
 type Facets = {
   total: number;
   industries: Facet[];
   states: Facet[];
   cities: Facet[];
+  countries: Facet[];
   sizes: Facet[];
 };
 type Table = { id: string; name: string };
@@ -39,6 +40,8 @@ type SearchSpec = {
   excludeIndustries: string[];
   regions: string[];
   excludeRegions: string[];
+  countries: string[];
+  excludeCountries: string[];
   states: string[];
   excludeStates: string[];
   cities: string[];
@@ -63,78 +66,17 @@ const SIZE_ORDER = [
   '5001-10000',
   '10001+',
 ];
+// Values map to region keys in the accounts API (macro regions expand to
+// country lists, US-* sub-regions expand to state lists).
 const REGIONS = [
-  {
-    value: 'West',
-    states: [
-      'Alaska',
-      'Arizona',
-      'California',
-      'Colorado',
-      'Hawaii',
-      'Idaho',
-      'Montana',
-      'Nevada',
-      'New Mexico',
-      'Oregon',
-      'Utah',
-      'Washington',
-      'Wyoming',
-    ],
-  },
-  {
-    value: 'Midwest',
-    states: [
-      'Illinois',
-      'Indiana',
-      'Iowa',
-      'Kansas',
-      'Michigan',
-      'Minnesota',
-      'Missouri',
-      'Nebraska',
-      'North Dakota',
-      'Ohio',
-      'South Dakota',
-      'Wisconsin',
-    ],
-  },
-  {
-    value: 'South',
-    states: [
-      'Alabama',
-      'Arkansas',
-      'Delaware',
-      'District of Columbia',
-      'Florida',
-      'Georgia',
-      'Kentucky',
-      'Louisiana',
-      'Maryland',
-      'Mississippi',
-      'North Carolina',
-      'Oklahoma',
-      'South Carolina',
-      'Tennessee',
-      'Texas',
-      'Virginia',
-      'West Virginia',
-    ],
-  },
-  {
-    value: 'Northeast',
-    states: [
-      'Connecticut',
-      'Maine',
-      'Massachusetts',
-      'New Hampshire',
-      'New Jersey',
-      'New York',
-      'Pennsylvania',
-      'Rhode Island',
-      'Vermont',
-    ],
-  },
+  'North America',
+  'Latin America',
+  'EMEA',
+  'APAC',
+  'US - West',
+  'US - Midwest',
+  'US - South',
+  'US - Northeast',
 ];
 const SAVED_KEY = 'gtmai-account-searches';
 const EMPTY_SPEC: SearchSpec = {
@@ -145,6 +87,8 @@ const EMPTY_SPEC: SearchSpec = {
   excludeIndustries: [],
   regions: [],
   excludeRegions: [],
+  countries: [],
+  excludeCountries: [],
   states: [],
   excludeStates: [],
   cities: [],
@@ -234,7 +178,9 @@ function Combo({
               onMouseDown={() => add(f.value)}
             >
               <span className="filter-option-name">{f.value}</span>
-              <span className="filter-option-count">{f.count.toLocaleString()}</span>
+              {f.count !== undefined && (
+                <span className="filter-option-count">{f.count.toLocaleString()}</span>
+              )}
             </button>
           ))}
         </div>
@@ -274,6 +220,8 @@ export default function AccountsPage() {
     if (spec.excludeIndustries.length) params.excludeIndustry = spec.excludeIndustries.join(',');
     if (spec.regions.length) params.regions = spec.regions.join(',');
     if (spec.excludeRegions.length) params.excludeRegions = spec.excludeRegions.join(',');
+    if (spec.countries.length) params.country = spec.countries.join(',');
+    if (spec.excludeCountries.length) params.excludeCountry = spec.excludeCountries.join(',');
     if (spec.states.length) params.state = spec.states.join(',');
     if (spec.excludeStates.length) params.excludeState = spec.excludeStates.join(',');
     if (spec.cities.length) params.city = spec.cities.join(',');
@@ -444,11 +392,8 @@ export default function AccountsPage() {
   const industries = (facets?.industries ?? []).filter((f) => f.value);
   const states = (facets?.states ?? []).filter((f) => f.value);
   const cities = (facets?.cities ?? []).filter((f) => f.value);
-  const stateCounts = new Map(states.map((f) => [f.value.toLowerCase(), f.count]));
-  const regions = REGIONS.map((r) => ({
-    value: r.value,
-    count: r.states.reduce((sum, s) => sum + (stateCounts.get(s.toLowerCase()) ?? 0), 0),
-  }));
+  const countries = (facets?.countries ?? []).filter((f) => f.value);
+  const regions = REGIONS.map((value) => ({ value }));
   const sizes = SIZE_ORDER.filter((s) => facets?.sizes.some((f) => f.value === s)).map((s) => ({
     value: s,
     count: facets?.sizes.find((f) => f.value === s)?.count ?? 0,
@@ -471,6 +416,8 @@ export default function AccountsPage() {
     ['excludeIndustries', 'not ', ''],
     ['regions', '', ''],
     ['excludeRegions', 'not ', ''],
+    ['countries', '', ''],
+    ['excludeCountries', 'not ', ''],
     ['states', '', ''],
     ['excludeStates', 'not ', ''],
     ['cities', '', ''],
@@ -586,6 +533,8 @@ export default function AccountsPage() {
               open={
                 spec.regions.length +
                   spec.excludeRegions.length +
+                  spec.countries.length +
+                  spec.excludeCountries.length +
                   spec.states.length +
                   spec.excludeStates.length +
                   spec.cities.length +
@@ -596,17 +545,31 @@ export default function AccountsPage() {
               <summary>Location</summary>
               <Combo
                 label="Regions to include"
-                placeholder="e.g. West, South"
+                placeholder="e.g. EMEA, US - West"
                 options={regions}
                 picked={spec.regions}
                 onChange={setList('regions')}
               />
               <Combo
                 label="Regions to exclude"
-                placeholder="e.g. Midwest"
+                placeholder="e.g. APAC"
                 options={regions}
                 picked={spec.excludeRegions}
                 onChange={setList('excludeRegions')}
+              />
+              <Combo
+                label="Countries to include"
+                placeholder="e.g. Germany, Brazil"
+                options={countries}
+                picked={spec.countries}
+                onChange={setList('countries')}
+              />
+              <Combo
+                label="Countries to exclude"
+                placeholder="e.g. China"
+                options={countries}
+                picked={spec.excludeCountries}
+                onChange={setList('excludeCountries')}
               />
               <Combo
                 label="States to include"
@@ -842,7 +805,13 @@ export default function AccountsPage() {
                       <span>{fmt(item.employees)}</span>
                       <span>{fmtM(item.revenueUsdM)}</span>
                       <span className="muted">
-                        {[item.city, item.state].filter(Boolean).join(', ') || '—'}
+                        {[
+                          item.city,
+                          item.state,
+                          item.country === 'United States' ? null : item.country,
+                        ]
+                          .filter(Boolean)
+                          .join(', ') || '—'}
                       </span>
                       <span>
                         {item.linkedinUrl && (

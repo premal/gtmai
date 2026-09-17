@@ -34,6 +34,7 @@ const exploreQuery = z.object({
   size: z.string().optional(),
   excludeSize: z.string().optional(),
   country: z.string().optional(),
+  excludeCountry: z.string().optional(),
   domain: z.string().optional(),
   identifiers: z.string().optional(),
   keywords: z.string().optional(),
@@ -53,10 +54,9 @@ const filtersQuery = exploreQuery.partial();
 type ExploreInput = z.infer<typeof exploreQuery>;
 type FiltersInput = z.infer<typeof filtersQuery>;
 
-// US census regions — lets the UI offer Clay-style region include/exclude
-// even though the universe only stores state names.
-const REGIONS: Record<string, string[]> = {
-  west: [
+// US census sub-regions → state names (region clause = US + state IN …).
+const US_SUBREGIONS: Record<string, string[]> = {
+  'us - west': [
     'alaska',
     'arizona',
     'california',
@@ -71,7 +71,7 @@ const REGIONS: Record<string, string[]> = {
     'washington',
     'wyoming',
   ],
-  midwest: [
+  'us - midwest': [
     'illinois',
     'indiana',
     'iowa',
@@ -85,7 +85,7 @@ const REGIONS: Record<string, string[]> = {
     'south dakota',
     'wisconsin',
   ],
-  south: [
+  'us - south': [
     'alabama',
     'arkansas',
     'delaware',
@@ -104,7 +104,7 @@ const REGIONS: Record<string, string[]> = {
     'virginia',
     'west virginia',
   ],
-  northeast: [
+  'us - northeast': [
     'connecticut',
     'maine',
     'massachusetts',
@@ -117,13 +117,193 @@ const REGIONS: Record<string, string[]> = {
   ],
 };
 
+// Macro regions → PDL country names (stored titlecased; matched insensitive).
+const MACRO_REGIONS: Record<string, string[]> = {
+  'north america': ['united states', 'canada'],
+  'latin america': [
+    'mexico',
+    'brazil',
+    'argentina',
+    'colombia',
+    'chile',
+    'peru',
+    'venezuela',
+    'ecuador',
+    'uruguay',
+    'paraguay',
+    'bolivia',
+    'costa rica',
+    'dominican republic',
+    'guatemala',
+    'panama',
+    'el salvador',
+    'honduras',
+    'nicaragua',
+    'jamaica',
+    'trinidad and tobago',
+    'bahamas',
+    'barbados',
+    'puerto rico',
+    'haiti',
+    'cuba',
+    'guyana',
+    'suriname',
+    'belize',
+  ],
+  emea: [
+    'united kingdom',
+    'france',
+    'spain',
+    'germany',
+    'netherlands',
+    'italy',
+    'belgium',
+    'switzerland',
+    'poland',
+    'sweden',
+    'norway',
+    'portugal',
+    'denmark',
+    'austria',
+    'ireland',
+    'czechia',
+    'finland',
+    'romania',
+    'hungary',
+    'greece',
+    'bulgaria',
+    'serbia',
+    'croatia',
+    'slovakia',
+    'lithuania',
+    'estonia',
+    'slovenia',
+    'latvia',
+    'luxembourg',
+    'iceland',
+    'russia',
+    'ukraine',
+    'turkey',
+    'cyprus',
+    'malta',
+    'albania',
+    'montenegro',
+    'bosnia and herzegovina',
+    'north macedonia',
+    'moldova',
+    'belarus',
+    'georgia',
+    'armenia',
+    'azerbaijan',
+    'united arab emirates',
+    'saudi arabia',
+    'israel',
+    'jordan',
+    'qatar',
+    'lebanon',
+    'iran',
+    'iraq',
+    'kuwait',
+    'oman',
+    'bahrain',
+    'south africa',
+    'nigeria',
+    'egypt',
+    'kenya',
+    'morocco',
+    'senegal',
+    'ghana',
+    'tunisia',
+    'uganda',
+    'cameroon',
+    'algeria',
+    "côte d'ivoire",
+    'ethiopia',
+    'tanzania',
+    'zimbabwe',
+    'zambia',
+    'rwanda',
+    'angola',
+    'mozambique',
+    'namibia',
+    'botswana',
+    'mauritius',
+    'libya',
+    'sudan',
+  ],
+  apac: [
+    'india',
+    'china',
+    'japan',
+    'australia',
+    'indonesia',
+    'new zealand',
+    'singapore',
+    'malaysia',
+    'philippines',
+    'vietnam',
+    'thailand',
+    'south korea',
+    'taiwan',
+    'hong kong',
+    'pakistan',
+    'bangladesh',
+    'sri lanka',
+    'nepal',
+    'myanmar',
+    'cambodia',
+    'mongolia',
+    'fiji',
+    'papua new guinea',
+    'maldives',
+    'bhutan',
+    'laos',
+    'brunei',
+    'kazakhstan',
+    'uzbekistan',
+    'kyrgyzstan',
+    'tajikistan',
+    'turkmenistan',
+    'afghanistan',
+    'macau',
+  ],
+};
+
+export const REGION_OPTIONS = [
+  'North America',
+  'Latin America',
+  'EMEA',
+  'APAC',
+  'US - West',
+  'US - Midwest',
+  'US - South',
+  'US - Northeast',
+];
+
 const list = (v?: string) =>
   (v ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
 
-const regionStates = (v?: string) => list(v).flatMap((r) => REGIONS[r.toLowerCase()] ?? []);
+// Selected regions UNION: each maps to a US-subregion (country+state) or
+// macro-region (country) clause; values within the list OR together.
+const regionClauses = (v?: string): Prisma.AccountWhereInput[] =>
+  list(v).flatMap((r): Prisma.AccountWhereInput[] => {
+    const usStates = US_SUBREGIONS[r.toLowerCase()];
+    if (usStates) {
+      return [
+        {
+          AND: [
+            { country: { equals: 'united states', mode: 'insensitive' } },
+            { state: { in: usStates, mode: 'insensitive' } },
+          ],
+        },
+      ];
+    }
+    const countries = MACRO_REGIONS[r.toLowerCase()];
+    return countries ? [{ country: { in: countries, mode: 'insensitive' } }] : [];
+  });
 
 export function buildAccountWhere(input: FiltersInput): Prisma.AccountWhereInput {
   const where: Prisma.AccountWhereInput = {};
@@ -142,31 +322,28 @@ export function buildAccountWhere(input: FiltersInput): Prisma.AccountWhereInput
     where.industry = { in: list(input.industry), mode: 'insensitive' };
   if (list(input.city).length) where.city = { in: list(input.city), mode: 'insensitive' };
   if (list(input.size).length) where.size = { in: list(input.size) };
-  if (input.country) where.country = { equals: input.country, mode: 'insensitive' };
+  if (list(input.state).length) where.state = { in: list(input.state), mode: 'insensitive' };
+  if (list(input.country).length) where.country = { in: list(input.country), mode: 'insensitive' };
 
-  // state includes AND region includes intersect (state=Texas AND region=West → none)
-  const stateGroups: string[][] = [];
-  if (list(input.state).length) stateGroups.push(list(input.state));
-  const regionInclude = regionStates(input.regions);
-  if (regionInclude.length) stateGroups.push(regionInclude);
-  if (stateGroups.length === 1) {
-    where.state = { in: stateGroups[0] ?? [], mode: 'insensitive' };
-  } else if (stateGroups.length > 1) {
-    const [first = [], ...rest] = stateGroups.map((g) => g.map((s) => s.toLowerCase()));
-    const inter = first.filter((s) => rest.every((g) => g.includes(s)));
-    where.state = { in: inter, mode: 'insensitive' };
-  }
+  // regions: selected values OR together (West + South → both), then AND
+  // with the rest of the query
+  const regionInclude = regionClauses(input.regions);
+  if (regionInclude.length) and.push({ OR: regionInclude });
+  // excluded regions keep NULL-country/state rows (NOT of an OR group)
+  const regionExclude = regionClauses(input.excludeRegions);
+  if (regionExclude.length) and.push({ NOT: { OR: regionExclude } });
 
   // excludes preserve NULLs — most accounts lack industry/city labels
-  const exclude = (field: 'industry' | 'state' | 'city' | 'size', values: string[]) => {
+  const exclude = (field: 'industry' | 'state' | 'city' | 'country' | 'size', values: string[]) => {
     if (!values.length) return;
     and.push({
       OR: [{ [field]: null }, { [field]: { notIn: values, mode: 'insensitive' } }],
     });
   };
   exclude('industry', list(input.excludeIndustry));
-  exclude('state', [...list(input.excludeState), ...regionStates(input.excludeRegions)]);
+  exclude('state', list(input.excludeState));
   exclude('city', list(input.excludeCity));
+  exclude('country', list(input.excludeCountry));
   exclude('size', list(input.excludeSize));
 
   // pasted domains or LinkedIn URLs ("one type per search" like Clay)
@@ -280,13 +457,19 @@ export class AccountsController {
 
   @Get('facets')
   async facets() {
-    const [total, industries, states, cities, sizes] = await Promise.all([
+    const [total, industries, countries, states, cities, sizes] = await Promise.all([
       this.prisma.account.count(),
       this.prisma.account.groupBy({
         by: ['industry'],
         _count: { _all: true },
         orderBy: { _count: { industry: 'desc' } },
         take: 60,
+      }),
+      this.prisma.account.groupBy({
+        by: ['country'],
+        _count: { _all: true },
+        orderBy: { _count: { country: 'desc' } },
+        take: 250,
       }),
       this.prisma.account.groupBy({
         by: ['state'],
@@ -311,6 +494,7 @@ export class AccountsController {
       industries: industries.map((f) => ({ value: f.industry, count: f._count._all })),
       states: states.map((f) => ({ value: f.state, count: f._count._all })),
       cities: cities.map((f) => ({ value: f.city, count: f._count._all })),
+      countries: countries.map((f) => ({ value: f.country, count: f._count._all })),
       sizes: sizes.map((f) => ({ value: f.size, count: f._count._all })),
     };
   }

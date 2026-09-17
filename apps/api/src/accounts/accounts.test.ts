@@ -53,9 +53,74 @@ describe('buildAccountWhere', () => {
     ]);
   });
 
-  it('expands regions to states and intersects with explicit states', () => {
-    const where = buildAccountWhere({ regions: 'West', state: 'Texas,California' });
-    expect(where.state).toEqual({ in: ['california'], mode: 'insensitive' });
+  it('expands US sub-regions to US+state clauses ANDed with explicit states', () => {
+    const where = buildAccountWhere({ regions: 'US - West', state: 'Texas,California' });
+    expect(where.state).toEqual({ in: ['Texas', 'California'], mode: 'insensitive' });
+    expect(where.AND).toEqual([
+      {
+        OR: [
+          {
+            AND: [
+              { country: { equals: 'united states', mode: 'insensitive' } },
+              {
+                state: {
+                  in: expect.arrayContaining(['california', 'washington']),
+                  mode: 'insensitive',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('unions multiple selected regions', () => {
+    const where = buildAccountWhere({ regions: 'US - West,US - Northeast' });
+    const ors = (where.AND as Array<{ OR: unknown[] }>)[0]?.OR;
+    expect(ors).toHaveLength(2);
+  });
+
+  it('expands macro regions to country lists', () => {
+    const where = buildAccountWhere({ regions: 'EMEA' });
+    expect(where.AND).toEqual([
+      {
+        OR: [
+          {
+            country: {
+              in: expect.arrayContaining(['germany', 'france', 'nigeria']),
+              mode: 'insensitive',
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('excluded regions keep rows with NULL country/state', () => {
+    const where = buildAccountWhere({ excludeRegions: 'APAC' });
+    expect(where.AND).toEqual([
+      {
+        NOT: {
+          OR: [
+            {
+              country: {
+                in: expect.arrayContaining(['japan', 'australia']),
+                mode: 'insensitive',
+              },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it('supports country include and NULL-preserving exclude', () => {
+    const where = buildAccountWhere({ country: 'Germany,France', excludeCountry: 'China' });
+    expect(where.country).toEqual({ in: ['Germany', 'France'], mode: 'insensitive' });
+    expect(where.AND).toEqual([
+      { OR: [{ country: null }, { country: { notIn: ['China'], mode: 'insensitive' } }] },
+    ]);
   });
 
   it('parses identifiers into domains or LinkedIn slugs', () => {
