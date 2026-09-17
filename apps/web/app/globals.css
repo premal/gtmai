@@ -2572,4 +2572,14 @@ a {
     color: var(--color-muted);
     text-transform: capitalize;
   }
+  .accounts-table .table-head,
+  .accounts-table .table-row {
+    grid-template-columns:
+      34px minmax(180px, 1.5fr) minmax(140px, 0.9fr) minmax(130px, 1fr)
+      90px 95px 105px minmax(130px, 1fr) 44px;
+  }
+  .accounts-table .table-head > :nth-child(4),
+  .accounts-table .table-row > :nth-child(4) {
+    display: revert;
+  }
 } /* @layer components */

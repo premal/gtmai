@@ -410,6 +410,31 @@ model SegmentMembership {
   @@unique([segmentId, contactId])
 }
 
+model Account {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?  @unique
+  linkedinUrl String?
+  industry    String?
+  size        String?
+  employees   Int?
+  revenueUsdM Float?
+  city        String?
+  state       String?
+  country     String?  @default("United States")
+  founded     Int?
+  ticker      String?
+  source      String   @default("universe")
+  data        Json?
+  createdAt   DateTime @default(now())
+
+  @@index([industry])
+  @@index([state])
+  @@index([size])
+  @@index([employees])
+  @@index([revenueUsdM])
+}
+
 model SignalDefinition {
   id                String        @id @default(cuid())
   workspaceId       String
