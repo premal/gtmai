@@ -121,6 +121,7 @@ test_suite(
         size = "medium",
     )
     for path in [
+        "accounts/accounts",
         "audiences/audiences",
         "functions/functions",
         "tables/view-helper",
