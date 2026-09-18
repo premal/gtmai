@@ -12,7 +12,8 @@
     "typecheck:seed": "tsc -p tsconfig.seed.json",
     "test": "vitest run --passWithNoTests",
     "prisma": "prisma",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "accounts:import": "tsx prisma/import-accounts.ts"
   },
   "dependencies": {
     "@prisma/client": "6.1.0",
