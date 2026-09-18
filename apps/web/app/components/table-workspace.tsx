@@ -31,6 +31,7 @@ type Column = {
   width?: number;
   config?: unknown;
   colorLabel?: string;
+  runCondition?: string | null;
 };
 type Row = { id: string; cells: Cell[] };
 type Table = {
@@ -188,6 +189,11 @@ export function TableWorkspace({
   const [waterfallSteps, setWaterfallSteps] = useState<
     { provider: string; action: string; input: Record<string, string> }[]
   >([{ provider: 'mock', action: 'mock.findEmail', input: {} }]);
+  const [validateAction, setValidateAction] = useState('');
+  const [enrichmentInput, setEnrichmentInput] = useState('');
+  const [maxCost, setMaxCost] = useState('');
+  const [metapromptText, setMetapromptText] = useState('');
+  const [metapromptBusy, setMetapromptBusy] = useState(false);
   const [httpUrl, setHttpUrl] = useState('');
   const [httpHeaders, setHttpHeaders] = useState('{}');
   const [httpBody, setHttpBody] = useState('');
@@ -323,10 +329,22 @@ export function TableWorkspace({
       toast(await responseMessage(response, 'Unable to run column'), { kind: 'error' });
   }
 
+  function parseOutputFields(text: string): Record<string, string> {
+    const fields: Record<string, string> = {};
+    for (const line of text.split('\n')) {
+      const [name, ...rest] = line.split(':');
+      const key = name?.trim();
+      if (key) fields[key] = rest.join(':').trim() || 'string';
+    }
+    return Object.keys(fields).length ? fields : { answer: 'string' };
+  }
+
   async function saveColumn(): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
     const editing = Boolean(selectedColumn);
     const defaultInput = fuzzyInputMapping();
+    const costCap = maxCost.trim() ? Number(maxCost) : undefined;
+    const cap = costCap !== undefined && Number.isFinite(costCap) ? { maxCost: costCap } : {};
     const config =
       kind === 'formula'
         ? { expression }
@@ -336,6 +354,7 @@ export function TableWorkspace({
               outputFields: parseOutputFields(agentOutputFields),
               provider: agentProvider,
               model: agentModel || undefined,
+              ...cap,
             }
           : kind === 'waterfall'
             ? {
@@ -344,6 +363,16 @@ export function TableWorkspace({
                   input: Object.keys(item.input).length ? item.input : fuzzyInputMapping(),
                 })),
                 accept,
+                ...(validateAction
+                  ? {
+                      validate: {
+                        provider: validateAction.split('|')[0],
+                        action: validateAction.split('|')[1],
+                        input: { email: '{{result.email}}' },
+                      },
+                    }
+                  : {}),
+                ...cap,
               }
             : kind === 'http'
               ? {
@@ -352,12 +381,28 @@ export function TableWorkspace({
                   headers: JSON.parse(httpHeaders || '{}') as Record<string, string>,
                   body: httpBody || undefined,
                   outputPath: httpOutputPath || undefined,
+                  ...cap,
                 }
               : kind === 'function'
                 ? { functionId: '', input: {} }
                 : kind === 'input'
                   ? { value: '' }
-                  : { provider, action, input: defaultInput };
+                  : {
+                      provider,
+                      action,
+                      input: (() => {
+                        try {
+                          const parsed = JSON.parse(enrichmentInput || '{}') as Record<
+                            string,
+                            unknown
+                          >;
+                          return Object.keys(parsed).length ? parsed : defaultInput;
+                        } catch {
+                          return defaultInput;
+                        }
+                      })(),
+                      ...cap,
+                    };
     await fetch(
       editing
         ? `${api}/tables/${tableId}/columns/${selectedColumn?.id}`
@@ -549,7 +594,7 @@ export function TableWorkspace({
     setKind(column.kind as ColumnKind);
     setColumnType(column.type);
     setColorLabel(column.colorLabel ?? 'indigo');
-    setRunCondition('');
+    setRunCondition(column.runCondition ?? '');
     setProvider(String(config.provider ?? 'mock'));
     setAction(String(config.action ?? 'mock.findEmail'));
     setExpression(String(config.expression ?? expression));
@@ -564,6 +609,9 @@ export function TableWorkspace({
         : 'answer: string\nsummary: string',
     );
     setAccept(String(config.accept ?? 'any'));
+    const validate = config.validate as { provider?: string; action?: string } | undefined;
+    setValidateAction(validate?.provider ? `${validate.provider}|${validate.action}` : '');
+    setMaxCost(config.maxCost !== undefined ? String(config.maxCost) : '');
     setWaterfallSteps(
       Array.isArray(config.providers)
         ? (config.providers as {
@@ -577,6 +625,9 @@ export function TableWorkspace({
     setHttpHeaders(JSON.stringify(config.headers ?? {}, null, 2));
     setHttpBody(typeof config.body === 'string' ? config.body : '');
     setHttpOutputPath(String(config.outputPath ?? ''));
+    setEnrichmentInput(
+      config.input && typeof config.input === 'object' ? JSON.stringify(config.input, null, 2) : '',
+    );
     setStep(0);
     setAdding(true);
   }
@@ -730,6 +781,122 @@ export function TableWorkspace({
     setMessage(result.error ?? `Preview: ${String(result.value ?? '')}`);
   }
 
+  type MetapromptDraft = {
+    name: string;
+    kind: ColumnKind;
+    type: string;
+    config: Record<string, unknown>;
+    runCondition?: string;
+  };
+
+  function applyDraft(draft: MetapromptDraft): void {
+    setSelectedColumn(null);
+    setColumnName(draft.name);
+    setKind(draft.kind);
+    setColumnType(draft.type);
+    setRunCondition(draft.runCondition ?? '');
+    const config = draft.config ?? {};
+    if (typeof config.maxCost === 'number') setMaxCost(String(config.maxCost));
+    if (draft.kind === 'agent') {
+      setPrompt(String(config.prompt ?? ''));
+      setAgentProvider(String(config.provider ?? 'openai'));
+      setAgentModel(String(config.model ?? ''));
+      setAgentOutputFields(
+        config.outputFields && typeof config.outputFields === 'object'
+          ? Object.entries(config.outputFields as Record<string, string>)
+              .map(([key, value]) => `${key}: ${value}`)
+              .join('\n')
+          : agentOutputFields,
+      );
+    } else if (draft.kind === 'formula') {
+      setExpression(String(config.expression ?? ''));
+    } else if (draft.kind === 'waterfall') {
+      if (Array.isArray(config.providers) && config.providers.length) {
+        setWaterfallSteps(
+          (
+            config.providers as {
+              provider: string;
+              action: string;
+              input?: Record<string, string>;
+            }[]
+          ).map((item) => ({
+            provider: item.provider,
+            action: item.action,
+            input: item.input ?? {},
+          })),
+        );
+      }
+      setAccept(String(config.accept ?? 'any'));
+      const validate = config.validate as { provider?: string; action?: string } | undefined;
+      setValidateAction(validate?.provider ? `${validate.provider}|${validate.action}` : '');
+    } else if (draft.kind === 'http') {
+      setHttpUrl(String(config.url ?? ''));
+      setHttpHeaders(JSON.stringify(config.headers ?? {}, null, 2));
+      setHttpBody(
+        typeof config.body === 'string'
+          ? config.body
+          : config.body
+            ? JSON.stringify(config.body)
+            : '',
+      );
+      setHttpOutputPath(String(config.outputPath ?? ''));
+    } else if (draft.kind === 'enrichment') {
+      setProvider(String(config.provider ?? 'mock'));
+      setAction(String(config.action ?? ''));
+      setEnrichmentInput(
+        config.input && typeof config.input === 'object'
+          ? JSON.stringify(config.input, null, 2)
+          : '',
+      );
+    }
+  }
+
+  async function generateColumnDraft(): Promise<void> {
+    if (!metapromptText.trim()) return;
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    setMetapromptBusy(true);
+    try {
+      const response = await fetch(`${api}/tables/${tableId}/metaprompt`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ description: metapromptText }),
+      });
+      const body = (await response.json()) as MetapromptDraft & { message?: string };
+      if (!response.ok) {
+        toast(body.message ?? 'Generation failed', { kind: 'error' });
+        return;
+      }
+      applyDraft(body);
+      toast('Draft generated — review and save');
+      setStep(1);
+    } finally {
+      setMetapromptBusy(false);
+    }
+  }
+
+  async function generateCondition(): Promise<void> {
+    const values = await dialog.prompt({
+      title: 'Generate run condition',
+      description:
+        'Describe when this column should run, e.g. "only when B2B is checked" or "people in New York".',
+      fields: [{ name: 'description', label: 'Condition' }],
+      confirmLabel: 'Generate',
+    });
+    if (!values?.description) return;
+    const token = localStorage.getItem('gtmai-token') ?? '';
+    const response = await fetch(`${api}/tables/${tableId}/run-condition`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ description: values.description }),
+    });
+    const body = (await response.json()) as { expression?: string; message?: string };
+    if (!response.ok) {
+      toast(body.message ?? 'Condition generation failed', { kind: 'error' });
+      return;
+    }
+    setRunCondition(body.expression ?? '');
+  }
+
   async function exportCsv(): Promise<void> {
     const token = localStorage.getItem('gtmai-token') ?? '';
     const suffix = activeViewId ? `?viewId=${encodeURIComponent(activeViewId)}` : '';
@@ -782,6 +949,10 @@ export function TableWorkspace({
       .filter((item) => item.category === 'search' && item.sourceKind === 'people')
       .sort((left, right) => order.indexOf(left.provider) - order.indexOf(right.provider));
   }, [catalog]);
+  const verifyActions = useMemo(
+    () => catalog.filter((item) => item.category === 'verify'),
+    [catalog],
+  );
   const agentProviders = llmProviders.length ? llmProviders : fallbackLlmProviders;
   const agentModels = agentProviders.find((item) => item.id === agentProvider)?.models ?? [];
   const activeView = views.find((view) => view.id === activeViewId);
@@ -841,6 +1012,11 @@ export function TableWorkspace({
                   setSelectedColumn(null);
                   setColumnName('New enrichment');
                   setKind('enrichment');
+                  setRunCondition('');
+                  setEnrichmentInput('');
+                  setValidateAction('');
+                  setMaxCost('');
+                  setMetapromptText('');
                   setStep(0);
                   setAdding(true);
                 }}
@@ -1376,28 +1552,50 @@ export function TableWorkspace({
             <input value={columnName} onChange={(event) => setColumnName(event.target.value)} />
           </label>
           {step === 0 && (
-            <div className="picker-grid">
-              {(
-                [
-                  'input',
-                  'enrichment',
-                  'waterfall',
-                  'agent',
-                  'formula',
-                  'http',
-                  'function',
-                ] as ColumnKind[]
-              ).map((value) => (
-                <button
-                  key={value}
-                  className={`picker ${kind === value ? 'selected' : ''}`}
-                  onClick={() => setKind(value)}
-                >
-                  {value}
-                  <strong>{value === 'input' ? 'Manual values' : 'Configure action'}</strong>
-                </button>
-              ))}
-            </div>
+            <>
+              {!selectedColumn && (
+                <>
+                  <label>
+                    Describe this column
+                    <textarea
+                      value={metapromptText}
+                      onChange={(event) => setMetapromptText(event.target.value)}
+                      placeholder='e.g. "Visit each company website and check if they sell B2B" or "Find work email across providers"'
+                    />
+                  </label>
+                  <button
+                    className="button"
+                    disabled={metapromptBusy || !metapromptText.trim()}
+                    onClick={() => void generateColumnDraft()}
+                  >
+                    {metapromptBusy ? 'Generating…' : '✦ Generate with AI'}
+                  </button>
+                  <p className="muted">Or pick a column type manually:</p>
+                </>
+              )}
+              <div className="picker-grid">
+                {(
+                  [
+                    'input',
+                    'enrichment',
+                    'waterfall',
+                    'agent',
+                    'formula',
+                    'http',
+                    'function',
+                  ] as ColumnKind[]
+                ).map((value) => (
+                  <button
+                    key={value}
+                    className={`picker ${kind === value ? 'selected' : ''}`}
+                    onClick={() => setKind(value)}
+                  >
+                    {value}
+                    <strong>{value === 'input' ? 'Manual values' : 'Configure action'}</strong>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
           {step === 1 && (
             <>
@@ -1441,6 +1639,16 @@ export function TableWorkspace({
                   </label>
                 </>
               )}
+              {kind === 'enrichment' && (
+                <label>
+                  Input bindings
+                  <textarea
+                    value={enrichmentInput}
+                    onChange={(event) => setEnrichmentInput(event.target.value)}
+                    placeholder='{"domain": "{{Domain}}", "firstName": "{{First name}}"}'
+                  />
+                </label>
+              )}
               {kind === 'waterfall' && (
                 <>
                   <label>
@@ -1450,6 +1658,26 @@ export function TableWorkspace({
                       <option value="verified-email-only">Verified email only</option>
                     </select>
                   </label>
+                  <label>
+                    Validation provider
+                    <select
+                      value={validateAction}
+                      onChange={(event) => setValidateAction(event.target.value)}
+                    >
+                      <option value="">None</option>
+                      {verifyActions.map((item) => (
+                        <option key={item.id} value={`${item.provider}|${item.id}`}>
+                          {item.name} · {item.provider} · {item.creditCost}cr
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {validateAction && (
+                    <p className="muted">
+                      Each found result is verified before accepting — the validator receives{' '}
+                      {'{{result.email}}'} and other result fields.
+                    </p>
+                  )}
                   <div className="waterfall-list">
                     {waterfallSteps.map((item, index) => (
                       <div
@@ -1659,6 +1887,18 @@ export function TableWorkspace({
                   value={runCondition}
                   onChange={(event) => setRunCondition(event.target.value)}
                   placeholder="optional condition"
+                />
+              </label>
+              <button className="button" onClick={() => void generateCondition()}>
+                ✦ Generate from description
+              </button>
+              <label>
+                Max credits per row
+                <input
+                  value={maxCost}
+                  onChange={(event) => setMaxCost(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="no cap"
                 />
               </label>
               <p className="muted">

@@ -215,6 +215,30 @@ describe('agent loop', () => {
     });
   });
 
+  it('coerces non-string finish payloads instead of discarding them', async () => {
+    const result = await runAgentWithClient(
+      'Is the company B2B?',
+      {
+        credentials: {},
+        fetch: vi.fn() as unknown as typeof fetch,
+        logger: { info: () => undefined, error: () => undefined },
+      },
+      {
+        complete: vi.fn(async () =>
+          JSON.stringify({
+            tool: 'finish',
+            result: { answer: true, fields: { answer: true }, reasoning: { why: 1 } },
+          }),
+        ),
+      },
+    );
+    expect(result).toMatchObject({
+      answer: 'true',
+      fields: { answer: true },
+      reasoning: '',
+    });
+  });
+
   it('decodes DuckDuckGo redirects and uses result snippets', async () => {
     const fixture = `
         <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fstory&amp;rut=abc">Story</a>

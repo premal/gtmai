@@ -4,6 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { QueueEvents, type Queue } from 'bullmq';
 import Redis from 'ioredis';
 import { Prisma } from '@gtmai/db';
+import { signalConfig } from '@gtmai/shared';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { AuthUser } from '../common/auth-user';
@@ -46,23 +47,44 @@ export class SignalsController {
   @UseGuards(JwtAuthGuard)
   async createDefinition(@Req() request: Request, @Body() body: unknown) {
     const input = definitionBody.parse(body);
+    const config = signalConfig.parse(input.config);
+    if (config.sourceTableId) {
+      const table = await this.prisma.table.findFirst({
+        where: { id: config.sourceTableId, workspaceId: request.user.workspaceId },
+        select: { id: true },
+      });
+      if (!table) throw new Error('Source table not found');
+    }
+    if (config.alertChannelId) {
+      const channel = await this.prisma.alertChannel.findFirst({
+        where: { id: config.alertChannelId, workspaceId: request.user.workspaceId },
+        select: { id: true },
+      });
+      if (!channel) throw new Error('Alert channel not found');
+    }
     const secret = randomBytes(24).toString('hex');
     const definition = await this.prisma.signalDefinition.create({
       data: {
         workspaceId: request.user.workspaceId,
         name: input.name,
         type: input.type,
-        config: input.config as Prisma.InputJsonValue,
+        config: config as Prisma.InputJsonValue,
         ...(input.triggerWorkflowId ? { triggerWorkflowId: input.triggerWorkflowId } : {}),
         secret,
       },
     });
-    const schedule = input.config.schedule;
-    if (schedule === 'hourly' || schedule === 'daily') {
+    const repeatMs: Record<string, number> = {
+      hourly: 3_600_000,
+      daily: 86_400_000,
+      weekly: 604_800_000,
+      monthly: 2_592_000_000,
+    };
+    const every = config.schedule ? repeatMs[config.schedule] : undefined;
+    if (every) {
       await this.queue.add(
         `signal:${definition.id}`,
         { definitionId: definition.id, workspaceId: request.user.workspaceId },
-        { repeat: { every: schedule === 'hourly' ? 3_600_000 : 86_400_000 } },
+        { repeat: { every } },
       );
     }
     return { ...definition, secret };

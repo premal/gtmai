@@ -54,17 +54,29 @@ eslint_bin.eslint_test(
 
 _LOCAL = ["local", "no-sandbox", "requires-network"]
 
-# main.test.ts imports ./main, which constructs a PrismaClient — needs the
-# generated client but no live services (ioredis retries in the background
-# and nothing awaits it; NODE_ENV=test keeps startWorker() from running).
-sh_test(
-    name = "unit_main",
-    srcs = ["//tools/bazel:dbgen.sh"],
-    args = ["--filter", "@gtmai/worker", "test"],
-    data = _DEPS + ["src/main.test.ts"],
-    tags = _LOCAL,
-    size = "medium",
-)
+# One target per test file so bazel-affected.sh maps a changed test file to
+# exactly its test. They import modules that construct PrismaClient, so they
+# need the generated client (dbgen wrapper) but no live services — ioredis
+# retries in the background and NODE_ENV=test keeps the workers from running.
+[
+    sh_test(
+        name = "unit_%s" % name,
+        srcs = ["//tools/bazel:dbgen.sh"],
+        args = ["--filter", "@gtmai/worker", "test", "src/%s.test.ts" % name],
+        data = _DEPS + ["src/%s.test.ts" % name],
+        tags = _LOCAL,
+        size = "medium",
+    )
+    for name in [
+        "main",
+        "executors",
+        "ads",
+        "budgets",
+        "crm",
+        "outbound",
+        "signal-targets",
+    ]
+]
 
 sh_test(
     name = "typecheck",

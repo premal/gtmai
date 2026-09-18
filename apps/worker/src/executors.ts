@@ -19,6 +19,7 @@ export type EnrichmentConfig = {
 export type WaterfallConfig = {
   providers?: Array<{ provider: string; action: string; input?: Values }>;
   accept?: string;
+  validate?: { provider: string; action: string; input?: Values };
 };
 export type ExecutionResult = {
   result: ActionResult<unknown>;
@@ -104,6 +105,26 @@ export function acceptsWaterfallResult(
   return data.emailStatus === 'verified' || data.email_status === 'verified';
 }
 
+const INVALID_VERDICTS = new Set([
+  'invalid',
+  'undeliverable',
+  'bounced',
+  'bad',
+  'rejected',
+  'do_not_mail',
+]);
+
+export function isValidationAccepted(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return true;
+  const record = data as Values;
+  if (record.valid === false) return false;
+  for (const key of ['status', 'emailStatus', 'email_status', 'verdict', 'result']) {
+    const value = record[key];
+    if (typeof value === 'string' && INVALID_VERDICTS.has(value.toLowerCase())) return false;
+  }
+  return true;
+}
+
 export async function executeEnrichment(
   config: EnrichmentConfig,
   values: Values,
@@ -136,8 +157,10 @@ export async function executeWaterfall(
   config: WaterfallConfig,
   values: Values,
   workspaceId: string,
+  run: typeof runProviderAction = runProviderAction,
 ): Promise<ExecutionResult> {
   let attempted = false;
+  let validationCost = 0;
   for (const item of config.providers ?? []) {
     const input = boundInputs(item.input, values);
     if (
@@ -152,17 +175,34 @@ export async function executeWaterfall(
     attempted = true;
     let current: { result: ActionResult<unknown>; action: ProviderAction; provider: string };
     try {
-      current = await runProviderAction(item.provider, item.action, input, workspaceId);
+      current = await run(item.provider, item.action, input, workspaceId);
     } catch {
       continue;
     }
-    if (acceptsWaterfallResult(current.result, config.accept)) {
-      return {
-        result: current.result,
-        provider: current.provider,
-        creditsUsed: current.action.creditCost,
-      };
+    if (!current.result.found || !acceptsWaterfallResult(current.result, config.accept)) continue;
+    if (config.validate) {
+      const validateInput = boundInputs(config.validate.input ?? { email: '{{result.email}}' }, {
+        ...values,
+        result: current.result.data,
+      });
+      try {
+        const verdict = await run(
+          config.validate.provider,
+          config.validate.action,
+          validateInput,
+          workspaceId,
+        );
+        validationCost += verdict.action.creditCost;
+        if (!verdict.result.found || !isValidationAccepted(verdict.result.data)) continue;
+      } catch {
+        continue;
+      }
     }
+    return {
+      result: current.result,
+      provider: current.provider,
+      creditsUsed: current.action.creditCost + validationCost,
+    };
   }
   return {
     result: {
