@@ -65,6 +65,41 @@ export default function SequencesPage() {
     });
     await load();
   }
+  async function generate() {
+    const values = await dialog.prompt({
+      title: 'Generate sequence with AI',
+      description: 'Describe the campaign — audience, offer, tone. Steps are written for you.',
+      fields: [
+        { name: 'name', label: 'Sequence name', defaultValue: 'AI outbound sequence' },
+        {
+          name: 'description',
+          label: 'Campaign brief',
+          defaultValue: 'Reach out to new CMOs at B2B companies about our lead-gen agency',
+        },
+        { name: 'steps', label: 'Number of steps (1-10)', defaultValue: '3' },
+      ],
+      confirmLabel: 'Generate',
+    });
+    if (!values?.name || !values.description) return;
+    setMessage('Generating…');
+    const response = await fetch(`${api}/sequences/generate`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: values.name,
+        description: values.description,
+        steps: Number(values.steps) || 3,
+      }),
+    });
+    const body = (await response.json()) as Sequence & { message?: string };
+    if (!response.ok) {
+      setMessage(body.message ?? 'Generation failed');
+      return;
+    }
+    setMessage('Sequence generated');
+    await load();
+    setSelected(body);
+  }
   function updateSelected(mutator: (sequence: Sequence) => Sequence) {
     setSelected((current) => (current ? mutator(current) : current));
   }
@@ -139,9 +174,14 @@ export default function SequencesPage() {
             <div className="eyebrow">OUTBOUND</div>
             <h2>Sequences</h2>
           </div>
-          <button className="button primary" onClick={() => void create()}>
-            + New sequence
-          </button>
+          <div className="button-row">
+            <button className="button" onClick={() => void generate()}>
+              ✦ Generate with AI
+            </button>
+            <button className="button primary" onClick={() => void create()}>
+              + New sequence
+            </button>
+          </div>
         </header>
         <div className="split-grid">
           <div className="panel page-stack">

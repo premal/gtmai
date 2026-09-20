@@ -137,6 +137,13 @@ export class UsageController {
     const job = await this.queue.add('rollup', { workspaceId: request.user.workspaceId });
     return { queued: true, jobId: job.id };
   }
+  @Get('channels')
+  channels(@Req() request: Request) {
+    return this.prisma.alertChannel.findMany({
+      where: { workspaceId: request.user.workspaceId },
+      orderBy: { id: 'asc' },
+    });
+  }
   @Post('channels')
   channel(@Req() request: Request, @Body() body: unknown) {
     const input = z.object({ url: z.string().url() }).parse(body);

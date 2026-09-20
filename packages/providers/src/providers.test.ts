@@ -154,6 +154,20 @@ describe('providers', () => {
     expect(fetcher.mock.calls[0]?.[0]).toContain('limit=10');
   });
 
+  it('mock verifyEmail returns a deterministic verdict', async () => {
+    const verify = mockProvider.actions.find((item) => item.id === 'mock.verifyEmail')!;
+    const valid = await verify.run({ email: 'ada@acme.com' }, context(fetch));
+    expect(valid).toMatchObject({
+      found: true,
+      data: { status: 'valid', valid: true, emailStatus: 'verified' },
+    });
+    const invalid = await verify.run({ email: 'invalid@acme.com' }, context(fetch));
+    expect(invalid).toMatchObject({
+      found: true,
+      data: { status: 'invalid', valid: false, emailStatus: 'invalid' },
+    });
+  });
+
   it('http adapter parses json', async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
     const result = await httpProvider.actions[0]!.run(
