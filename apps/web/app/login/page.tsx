@@ -46,13 +46,13 @@ export default function LoginPage() {
     <main className="login-shell">
       <aside className="login-aside">
         <div className="brand dark">
-          <span className="brand-mark">G</span>
-          <strong>GTM AI</strong>
+          <span className="brand-mark">L</span>
+          <strong>Leadsmith</strong>
         </div>
         <div className="login-pitch">
           <h2>Enrich rows. Waterfall providers. Watch cells fill live.</h2>
           <p>
-            GTM AI turns a spreadsheet into a pipeline — provider waterfalls, research agents,
+            Leadsmith turns a spreadsheet into a pipeline — provider waterfalls, research agents,
             formulas and HTTP calls, streaming into a live grid.
           </p>
           <ul className="login-points">
@@ -69,12 +69,12 @@ export default function LoginPage() {
             ))}
           </ul>
         </div>
-        <p className="login-copy">© {new Date().getFullYear()} GTM AI</p>
+        <p className="login-copy">© {new Date().getFullYear()} Leadsmith</p>
       </aside>
       <section className="login-panel">
         <form className="login-card" onSubmit={(event) => void submit(event)}>
           <div className="eyebrow">REVENUE OPERATIONS</div>
-          <h1>GTM AI</h1>
+          <h1>Leadsmith</h1>
           <p className="muted">A focused workspace for enrichment and outbound data.</p>
           <label>
             Email
@@ -83,7 +83,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              placeholder={isDevelopment ? 'demo@gtmai.dev' : 'you@company.com'}
+              placeholder={isDevelopment ? 'demo@leadsmith.dev' : 'you@company.com'}
             />
           </label>
           <label>
@@ -97,7 +97,7 @@ export default function LoginPage() {
               placeholder={isDevelopment ? 'demo1234' : 'At least 8 characters'}
             />
           </label>
-          {isDevelopment && <p className="muted login-hint">Demo: demo@gtmai.dev / demo1234</p>}
+          {isDevelopment && <p className="muted login-hint">Demo: demo@leadsmith.dev / demo1234</p>}
           <button className="button primary" disabled={submitting} type="submit">
             {submitting ? 'Working…' : 'Log in'}
           </button>

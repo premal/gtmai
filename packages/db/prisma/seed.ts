@@ -46,9 +46,9 @@ function encrypt(value: Record<string, string>): string {
 async function main(): Promise<void> {
   const passwordHash = await argon2.hash('demo1234');
   const user = await db.user.upsert({
-    where: { email: 'demo@gtmai.dev' },
+    where: { email: 'demo@leadsmith.dev' },
     update: { passwordHash },
-    create: { email: 'demo@gtmai.dev', name: 'Demo User', passwordHash },
+    create: { email: 'demo@leadsmith.dev', name: 'Demo User', passwordHash },
   });
   const existingMembership = await db.membership.findFirst({ where: { userId: user.id } });
   const workspace = existingMembership
@@ -60,9 +60,9 @@ async function main(): Promise<void> {
         },
       });
   const editor = await db.user.upsert({
-    where: { email: 'editor@gtmai.dev' },
+    where: { email: 'editor@leadsmith.dev' },
     update: { passwordHash, name: 'Demo Editor' },
-    create: { email: 'editor@gtmai.dev', name: 'Demo Editor', passwordHash },
+    create: { email: 'editor@leadsmith.dev', name: 'Demo Editor', passwordHash },
   });
   await db.membership.upsert({
     where: { workspaceId_userId: { workspaceId: workspace.id, userId: editor.id } },
@@ -70,9 +70,9 @@ async function main(): Promise<void> {
     create: { workspaceId: workspace.id, userId: editor.id, role: 'editor' },
   });
   const viewer = await db.user.upsert({
-    where: { email: 'viewer@gtmai.dev' },
+    where: { email: 'viewer@leadsmith.dev' },
     update: { passwordHash, name: 'Demo Viewer' },
-    create: { email: 'viewer@gtmai.dev', name: 'Demo Viewer', passwordHash },
+    create: { email: 'viewer@leadsmith.dev', name: 'Demo Viewer', passwordHash },
   });
   await db.membership.upsert({
     where: { workspaceId_userId: { workspaceId: workspace.id, userId: viewer.id } },
@@ -441,7 +441,7 @@ async function main(): Promise<void> {
     data: {
       workspaceId: workspace.id,
       name: 'Demo mock inbox',
-      config: { provider: 'mock', from: 'demo@gtmai.dev' },
+      config: { provider: 'mock', from: 'demo@leadsmith.dev' },
     },
   });
   const sequence = await db.sequence.create({

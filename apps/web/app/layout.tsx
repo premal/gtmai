@@ -10,8 +10,8 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: { default: 'GTM AI', template: '%s · GTM AI' },
-  description: 'A focused workspace for enrichment and outbound data',
+  title: { default: 'Leadsmith', template: '%s · Leadsmith' },
+  description: 'A spreadsheet that fills itself — enrichment waterfalls, AI research and outbound',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

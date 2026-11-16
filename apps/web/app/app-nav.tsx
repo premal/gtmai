@@ -40,8 +40,8 @@ export function AppNav({
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span className="brand-mark">G</span>
-        <strong>GTM AI</strong>
+        <span className="brand-mark">L</span>
+        <strong>Leadsmith</strong>
       </div>
       <div className="workspace-pill">⌘ Demo Workspace</div>
       {children && <div className="sidebar-context">{children}</div>}
